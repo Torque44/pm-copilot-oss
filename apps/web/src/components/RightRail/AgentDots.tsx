@@ -84,27 +84,36 @@ export function AgentDots({ states, details }: AgentDotsProps) {
       <span className="agent-label mono">agents</span>
       {AGENTS.map((a, i) => {
         const status: AgentStatus = states[i] ?? 'pending';
-        const detail = details?.[i];
-        const elapsed = fmtElapsed(detail?.elapsedMs);
-        return (
-          <span key={a.key} className="agent-dot-wrap">
-            <span className={`dot ${status}`} />
-            <span className="agent-dot-tooltip" role="tooltip">
-              <span className="agent-dot-tooltip-head">
-                <span className="agent-dot-tooltip-name">{a.label}</span>
-                <span className={`agent-dot-tooltip-status ${status}`}>
+        return <span key={a.key} className={`dot ${status}`} aria-label={`${a.label} · ${status}`} />;
+      })}
+
+      {/* Single shared overlay — surfaces on hover of any dot or the row.
+          Lists all 7 agents with status + description in one panel rather
+          than per-dot popovers. Positioned below the dot row, anchored to
+          the right rail edge so it doesn't clip past the viewport. */}
+      <div className="agents-overlay" role="tooltip" aria-label="agent pipeline">
+        <div className="agents-overlay-head mono">agent pipeline</div>
+        <ul className="agents-overlay-list">
+          {AGENTS.map((a, i) => {
+            const status: AgentStatus = states[i] ?? 'pending';
+            const detail = details?.[i];
+            const elapsed = fmtElapsed(detail?.elapsedMs);
+            return (
+              <li key={a.key} className={`agents-overlay-row status-${status}`}>
+                <span className={`dot ${status}`} />
+                <span className="agents-overlay-name">{a.label}</span>
+                <span className={`agents-overlay-status mono ${status}`}>
                   {STATUS_COPY[status]}{elapsed ? ` · ${elapsed}` : ''}
                 </span>
-              </span>
-              <span className="agent-dot-tooltip-body">{a.does}</span>
-              {status === 'error' && detail?.error && (
-                <span className="agent-dot-tooltip-error mono">{detail.error.slice(0, 200)}</span>
-              )}
-              <span className="agent-dot-tooltip-meta mono">{a.source}</span>
-            </span>
-          </span>
-        );
-      })}
+                <span className="agents-overlay-body">{a.does}</span>
+                {status === 'error' && detail?.error && (
+                  <span className="agents-overlay-error mono">{detail.error.slice(0, 220)}</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

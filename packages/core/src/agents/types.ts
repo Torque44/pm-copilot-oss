@@ -1,6 +1,6 @@
 // Shared types for agents, SSE events, and the final Brief.
 
-export type CitationKind = 'book' | 'whale' | 'news' | 'kol';
+export type CitationKind = 'book' | 'whale' | 'news' | 'kol' | 'comp';
 
 export type Citation = {
   id: string;                // e.g. "book·1", "whale·3", "news·2"
@@ -135,11 +135,19 @@ export type NewsItem = {
   url: string;
   publishedAt?: string;        // ISO date when available
   snippet?: string;
+  /** How relevant this item is to the market resolution. */
+  relevance?: 'high' | 'med' | 'low';
+  /** Provenance — 'web' if found via search; 'training' when the model
+   *  filled in from its own knowledge because search was thin. */
+  from?: 'web' | 'training';
 };
 
 export type NewsGrounding = {
   kind: 'news';
   items: NewsItem[];
+  /** Optional 1-2 sentence background blurb explaining what the market is
+   *  really asking about. Useful when the topic is niche/obscure. */
+  background?: string;
   raw?: unknown;
 };
 
@@ -147,7 +155,7 @@ export type GroundingData = BookGrounding | HoldersGrounding | NewsGrounding;
 
 // --- SSE events the Supervisor emits ---
 
-export type AgentId = 'market' | 'holders' | 'news' | 'synthesis' | 'sentiment' | 'thesis' | 'ask';
+export type AgentId = 'market' | 'holders' | 'news' | 'synthesis' | 'sentiment' | 'thesis' | 'ask' | 'comparables';
 
 export type AgentEvent =
   | { t: 'agent:start'; agent: AgentId }

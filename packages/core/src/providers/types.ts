@@ -34,6 +34,20 @@ export type CompleteOpts = {
    *  Most providers ignore this. The Anthropic-via-Claude-Code path uses it to
    *  pass `--allowedTools` so a specialist (e.g. NewsAgent) can run web search. */
   allowedTools?: string[];
+  /** Live-search opts. Today only the xAI/Grok provider honours these — Grok
+   *  has X + web + news search baked into its API. Other providers ignore. */
+  liveSearch?: {
+    /** 'on' forces search every call; 'auto' lets Grok decide; 'off' disables. */
+    mode: 'on' | 'auto' | 'off';
+    /** Source channels. Default ['x','web','news'] when sources omitted. */
+    sources?: Array<'x' | 'web' | 'news'>;
+    /** Time window — only consider sources from the last N days. */
+    fromDays?: number;
+    /** Maximum search results to fold into the answer. */
+    maxResults?: number;
+    /** Ask Grok to attach `citations` array (URLs) to its response. */
+    returnCitations?: boolean;
+  };
 };
 
 export type CompleteResult = {
@@ -49,6 +63,9 @@ export type CompleteResult = {
   model: string;
   /** Provider that served the call (informational). */
   provider: ProviderName;
+  /** Source URLs the provider used during a live-search call. xAI/Grok
+   *  attaches these when search_parameters.return_citations=true. */
+  citations?: string[];
 };
 
 export interface ProviderCapabilities {

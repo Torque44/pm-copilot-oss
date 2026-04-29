@@ -24,9 +24,20 @@ import { useSSE, type SSEState } from './useSSE';
 import { buildBriefSSEUrl } from '../lib/client';
 import { formatRelativeDuration, fmtMoney } from '../lib/format';
 
-// Keys we track for agent status. Server today emits market/holders/news/
-// synthesis; UI surfaces a few extra slots for future agents.
-type ServerAgentId = 'market' | 'holders' | 'news' | 'sentiment' | 'thesis' | 'synthesis' | 'ask';
+// Keys we track for agent status. The supervisor today emits market/holders/
+// news/comparables/thesis/synthesis (+ sentiment when xAI configured), plus
+// ask on demand from /api/ask. The 7-dot AgentDots surfaces 7 of these in a
+// fixed order; comparables is intentionally NOT in the dot row — it's a
+// fast HTTP fan-out whose result lands as a tab on the Thesis panel.
+type ServerAgentId =
+  | 'market'
+  | 'holders'
+  | 'news'
+  | 'sentiment'
+  | 'thesis'
+  | 'synthesis'
+  | 'ask'
+  | 'comparables';
 
 type BriefEventLike =
   | { t: 'market'; market: unknown }

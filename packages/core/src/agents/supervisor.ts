@@ -31,6 +31,7 @@ import { runNewsAgent } from './news';
 import { runSynthesis } from './synthesis';
 import { runSentimentAgent, type SentimentInput } from './sentiment';
 import { runThesisAgent, type ThesisInput } from './thesis';
+import { runComparablesAgent, type ComparablesInput } from './comparables';
 
 export type RememberGrounding = {
   (marketId: string, kind: 'book', data: BookGrounding | null): void;
@@ -71,7 +72,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
 
   // Emit start for the agents the UI should render as pending. Sentiment only
   // appears when xAI is configured; thesis always appears (runs on primary).
-  const startedAgents: AgentId[] = ['market', 'holders', 'news', 'thesis', 'synthesis'];
+  const startedAgents: AgentId[] = ['market', 'holders', 'news', 'comparables', 'thesis', 'synthesis'];
   if (sentimentEnabled) startedAgents.splice(3, 0, 'sentiment');
   for (const a of startedAgents) emit({ t: 'agent:start', agent: a });
 
@@ -124,10 +125,18 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   const primaryProvider = routing?.primary;
   const newsProvider = routing?.news ?? routing?.primary;
 
+  const comparablesInput: ComparablesInput = {
+    marketTitle: market.title,
+    category: market.category,
+  };
+
   const fanOut: Array<Promise<AgentResult>> = [
     runOne('market', (c) => runMarketAgent(c, primaryProvider)),
     runOne('holders', (c) => runHoldersAgent(c, primaryProvider)),
     runOne('news', (c) => runNewsAgent(c, newsProvider)),
+    // Comparables is deterministic (HTTP only, no LLM) — fans out with the
+    // specialists so its result is ready when thesis runs.
+    runOne('comparables', () => runComparablesAgent(ctx, comparablesInput)),
   ];
   if (sentimentEnabled && routing) {
     fanOut.push(
@@ -136,10 +145,12 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   }
 
   const results = await Promise.all(fanOut);
+  // fanOut order: market, holders, news, comparables, [sentiment]
   const marketR = results[0]!;
   const holdersR = results[1]!;
   const newsR = results[2]!;
-  const sentimentR = sentimentEnabled ? results[3] ?? null : null;
+  const comparablesR = results[3]!;
+  const sentimentR = sentimentEnabled ? results[4] ?? null : null;
 
   // Stash the raw grounding per-market so /api/ask can reuse it. The cast is
   // safe because each agent only ever returns its own grounding kind.
@@ -162,12 +173,13 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   }
 
   // ---- Thesis: runs after specialists, before synthesis. ----
-  // Receives the merged citation set from upstream so its sub-claims must
-  // resolve to IDs in the supplied evidence (the agent enforces this).
+  // Receives the merged citation set from upstream (book/whale/news/kol/comp)
+  // so its sub-claims must resolve to IDs in the supplied evidence.
   const upstreamCitations: Citation[] = [
     ...marketR.output.citations,
     ...holdersR.output.citations,
     ...newsR.output.citations,
+    ...comparablesR.output.citations,
     ...(sentimentR ? sentimentR.output.citations : []),
   ];
 
@@ -175,6 +187,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
     ...marketR.output.claims,
     ...holdersR.output.claims,
     ...newsR.output.claims,
+    ...comparablesR.output.claims,
     ...(sentimentR ? sentimentR.output.claims : []),
   ]
     .map((c) => c.text)

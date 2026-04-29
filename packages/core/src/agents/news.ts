@@ -19,31 +19,45 @@ import type {
   SectionOut,
 } from './types';
 
-const SYS = `You are a prediction-market catalyst scanner. Given the title of a live binary market, use web search to find:
+const SYS = `You are a research analyst building a fast briefing for a prediction-market trader. The trader needs context: what's the question really about, what's happened recently, and what's coming up that could move the market.
 
-- Hard scheduled catalysts in the next 72h (games, press events, releases, votes, etc.)
-- Material news from the last 48h that affects the market's outcome
-- Any recent sharp line movement or coverage
+Use web search aggressively. Cast a wide net:
 
-Return JSON with this exact shape:
+- Recent news (last 30 days) about the entities/event in the title
+- Scheduled events that could drive resolution (votes, releases, summits, games, earnings, court dates)
+- Background context: what is this dispute/question about, who are the parties, what's the current state
+- If the topic is too niche or breaking for web search, fall back to your training-data knowledge — mark such items with "from": "training" and a confidence flag
+
+Return JSON ONLY (no markdown fences, no prose) with this exact shape:
 {
+  "background": "<1–2 sentences explaining what this market is really asking about>",
   "items": [
-    { "headline": "<short>", "source": "<publication/site>", "url": "<full url>", "publishedAt": "<ISO date if known>", "snippet": "<1–2 sentences>" }
+    {
+      "headline": "<short, neutral>",
+      "source": "<publication or domain>",
+      "url": "<full url; '' if from training>",
+      "publishedAt": "<ISO date if known, else ''>",
+      "snippet": "<1–2 sentences why this matters to the market>",
+      "relevance": "high" | "med" | "low",
+      "from": "web" | "training"
+    }
   ],
   "claims": [
-    { "text": "<one-sentence catalyst/news claim referencing [news·N]>", "citations": ["news·1"] }
+    { "text": "<concise observation citing [news·N]>", "citations": ["news·1"] }
   ]
 }
 
 Rules:
-- items[] should have 2–4 entries, with real URLs you found via web search.
-- claims[] should have 2–3 entries, each citing at least one [news·N] (N = 1-indexed rank in items[]).
-- If you cannot find any meaningful catalysts, return one claim: "No material catalysts identified in the last 48 hours." with citations: [].
-- Do not fabricate URLs. If web search failed, return items: [] and a single "no catalyst" claim.`;
+- items[] target 5–8 entries. Mix of recent news + scheduled events + background.
+- Always emit at least one item even on niche topics — fall back to training-data with from:"training", relevance:"low" if web search returns nothing.
+- claims[] target 3–4 entries. Each must cite [news·N] referencing items[N-1].
+- Do not fabricate URLs. If unsure, leave url:"".
+- Be neutral; let the trader form their own view.`;
 
 type NewsResp = {
   items?: NewsItem[];
   claims?: Claim[];
+  background?: string;
 };
 
 async function fromUserFeed(
@@ -105,22 +119,28 @@ export async function runNewsAgent(
   const allowedTools = newsProvider.capabilities.webSearch ? ['WebSearch'] : [];
 
   const prompt = `Market title: "${market.title}"
-Market ends: ${market.endDate ?? 'unknown'}
+Resolves by: ${market.endDate ?? 'unknown'}
 Current YES price: ${market.yes != null ? (market.yes * 100).toFixed(1) + '¢' : 'n/a'}
 
-Search the web for news and scheduled catalysts relevant to this market. Prioritize items from the last 48 hours and scheduled events in the next 72 hours. Return the JSON as specified.`;
+Build a fast briefing for a trader looking at this contract.
+Cast a wide net: last 30 days of news + scheduled events + background context.
+If the topic is niche/breaking and web search comes up thin, supplement from
+your training-data knowledge marked from:"training". Return the JSON shape
+specified in the system prompt.`;
 
   const res = await newsProvider.complete(prompt, {
     tier: 'fast',
     systemPrompt: SYS,
     allowedTools,
     jsonOnly: true,
-    timeoutMs: 120_000,
+    // News with WebSearch can take >60s — give it room.
+    timeoutMs: 180_000,
   });
 
   const parsed = res.ok ? extractJson<NewsResp>(res.text) : null;
-  const items: NewsItem[] = Array.isArray(parsed?.items) ? parsed!.items.slice(0, 4) : [];
+  const items: NewsItem[] = Array.isArray(parsed?.items) ? parsed!.items.slice(0, 8) : [];
   const rawClaims: Claim[] = Array.isArray(parsed?.claims) ? parsed!.claims : [];
+  const background = typeof parsed?.background === 'string' ? parsed!.background : '';
 
   // Debug visibility: when we fail to extract anything useful, log the raw
   // text so we can tell whether the model declined, hit a rate limit, or
@@ -132,7 +152,9 @@ Search the web for news and scheduled catalysts relevant to this market. Priorit
     );
   }
 
-  const grounding: NewsGrounding = { kind: 'news', items };
+  const grounding: NewsGrounding = background
+    ? { kind: 'news', items, background }
+    : { kind: 'news', items };
   emit({ t: 'agent:data', agent: 'news', grounding });
 
   const citations: Citation[] = items.map((it, i) => ({
@@ -167,8 +189,16 @@ Search the web for news and scheduled catalysts relevant to this market. Priorit
   }
 
   if (!claims.length) {
+    // Differentiate the empty fallback by root cause so the UI can show
+    // something useful instead of an opaque "no catalysts" message.
+    const errMsg = res.error || '';
+    const isAuth = /claude-code|Not logged in|Please run \/login|API key|credit balance/i.test(errMsg);
     claims = [{
-      text: 'No material catalysts identified in the last 48 hours or scheduled in the next 72.',
+      text: isAuth
+        ? `news agent failed: provider authentication. ${errMsg.slice(0, 160)}`
+        : !res.ok
+          ? `news agent failed: ${errMsg.slice(0, 160) || 'provider error'}`
+          : 'no recent catalysts surfaced for this market — the underlying topic may be too niche or breaking for web search to anchor.',
       citations: [],
     }];
   }

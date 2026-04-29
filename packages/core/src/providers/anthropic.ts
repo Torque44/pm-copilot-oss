@@ -158,6 +158,28 @@ async function callViaSubprocess(
         });
         return;
       }
+      // Claude Code returns its own status messages on stdout when the
+      // session is expired or the API key is bad — these aren't model
+      // outputs and parsing them as JSON would silently fail downstream.
+      // Detect and surface as a real error so the UI can prompt re-auth.
+      const authPatterns = [
+        /^Not logged in/i,
+        /Please run \/login/i,
+        /API key.*invalid/i,
+        /credit balance/i,
+        /rate.?limit/i,
+      ];
+      if (text && authPatterns.some((re) => re.test(text))) {
+        resolve({
+          ok: false,
+          text: '',
+          error: `claude-code: ${text.slice(0, 200)}`,
+          elapsedMs: Date.now() - started,
+          model,
+          provider: 'anthropic',
+        });
+        return;
+      }
       resolve({
         ok: true,
         text,

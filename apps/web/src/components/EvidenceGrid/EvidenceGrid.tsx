@@ -8,6 +8,7 @@ import { NewsPanel } from './NewsPanel';
 import { ThesisPanel } from './ThesisPanel';
 import type {
   BookRow,
+  ComparableHit,
   HolderRow,
   KOLSentimentItem,
   NewsItem,
@@ -27,6 +28,8 @@ export interface EvidenceGridProps {
   sentiment?: KOLSentimentItem[] | null;
   resolution?: string;
   thesis?: Thesis;
+  comparables?: ComparableHit[];
+  baseRate?: { yesCount: number; resolvedCount: number; totalCount: number } | null;
 }
 
 export function EvidenceGrid({
@@ -42,6 +45,8 @@ export function EvidenceGrid({
   sentiment = null,
   resolution = '',
   thesis,
+  comparables,
+  baseRate,
 }: EvidenceGridProps) {
   // Per-panel loading: keep the skeleton up only until that panel's data
   // (or fallback) is available. Once grounding arrives for one agent, that
@@ -50,7 +55,10 @@ export function EvidenceGrid({
   const bookLoading = loading && (!bookRows || bookRows.length === 0);
   const holdersLoading = loading && (!holderRows || holderRows.length === 0);
   const newsLoading = loading && (!catalysts || catalysts.length === 0);
-  const thesisLoading = loading && !thesis;
+  // Thesis loading flips off when we have either real thesis OR comparables —
+  // even a thin market should surface the comparables tab as soon as Gamma
+  // returns base-rate data, so the panel never sits empty for long.
+  const thesisLoading = loading && !thesis && (!comparables || comparables.length === 0);
 
   // Subheaders derived from the actual data (or "—" placeholders before
   // grounding arrives). Avoids the previous design-bundle mock strings like
@@ -66,7 +74,9 @@ export function EvidenceGrid({
     : 'awaiting catalysts';
   const thesisSub = thesis
     ? `${thesis.nodes.length} node${thesis.nodes.length === 1 ? '' : 's'}`
-    : 'awaiting thesis';
+    : (comparables && comparables.length > 0)
+      ? `${comparables.length} comparable${comparables.length === 1 ? '' : 's'}`
+      : 'awaiting thesis';
 
   return (
     <div className={`evidence-grid focus-${focusedPanel ?? 'none'}`}>
@@ -117,7 +127,12 @@ export function EvidenceGrid({
         loading={thesisLoading}
         onFocus={onFocus}
       >
-        <ThesisPanel onFlash={onFlash} thesis={thesis} />
+        <ThesisPanel
+          onFlash={onFlash}
+          thesis={thesis}
+          {...(comparables && comparables.length > 0 ? { comparables } : {})}
+          {...(baseRate ? { baseRate } : {})}
+        />
       </Panel>
     </div>
   );

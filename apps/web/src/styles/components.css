@@ -701,6 +701,58 @@
   transform: rotate(45deg);
 }
 
+/* ---------- Comparables (resolved markets as base-rate anchor) ---------- */
+.thesis-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+.comparables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+.comparables-baserate {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid var(--accent, #0a66ff);
+  margin-bottom: 4px;
+}
+.comparable-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+}
+.comparable-row .cite-id {
+  color: var(--text-muted, #888);
+  font-size: 10px;
+}
+.comparable-title {
+  color: var(--text, #e6e8ee);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.comparable-verdict {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.comparable-verdict.yes { color: var(--success, #10b981); }
+.comparable-verdict.no { color: var(--danger, #ef4444); }
+.comparable-verdict.muted { color: var(--text-muted, #888); }
+
+.news-tab.disabled {
+  opacity: 0.4;
+}
+
 /* ---------- Panel placeholders (replace mock fallback rows) ---------- */
 .panel-placeholder {
   color: var(--text-muted, #888);

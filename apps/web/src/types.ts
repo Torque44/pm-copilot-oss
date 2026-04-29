@@ -43,7 +43,7 @@ export type EventSummary = {
   isMultiOutcome?: boolean;
 };
 
-export type CitationKind = 'book' | 'whale' | 'news' | 'kol';
+export type CitationKind = 'book' | 'whale' | 'news' | 'kol' | 'comp';
 
 export type Citation = {
   id: string;
@@ -140,6 +140,17 @@ export type ThesisNode = {
 export type Thesis = {
   rootLabel: string;
   nodes: ThesisNode[];
+};
+
+/** A resolved-market comparable used by the Thesis panel as a base-rate anchor. */
+export type ComparableHit = {
+  eventId: string;
+  title: string;
+  endDate: string | null;
+  outcome: 'yes' | 'no' | 'unresolved';
+  resolvedPrice: number | null;
+  slug?: string;
+  score: number;
 };
 
 export type VerdictSection = {

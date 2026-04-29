@@ -60,6 +60,26 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
       const body: Record<string, unknown> = { model, messages, temperature: 0.2 };
       if (opts.jsonOnly) body['response_format'] = { type: 'json_object' };
 
+      // xAI Live Search — Grok pulls fresh X/web/news at request time.
+      // Costs ~25 cents / 1k results so we cap maxResults conservatively.
+      // Docs: https://docs.x.ai/docs/guides/live-search
+      if (opts.liveSearch && opts.liveSearch.mode !== 'off') {
+        const sources = (opts.liveSearch.sources ?? ['x', 'web', 'news']).map((s) => ({ type: s }));
+        const sp: Record<string, unknown> = {
+          mode: opts.liveSearch.mode,
+          sources,
+          return_citations: opts.liveSearch.returnCitations ?? true,
+        };
+        if (typeof opts.liveSearch.maxResults === 'number') {
+          sp['max_search_results'] = Math.max(1, Math.min(30, opts.liveSearch.maxResults));
+        }
+        if (typeof opts.liveSearch.fromDays === 'number' && opts.liveSearch.fromDays > 0) {
+          const from = new Date(Date.now() - opts.liveSearch.fromDays * 86400_000);
+          sp['from_date'] = from.toISOString().slice(0, 10);
+        }
+        body['search_parameters'] = sp;
+      }
+
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
@@ -89,14 +109,29 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
 
         const json = (await res.json()) as {
           choices?: Array<{ message?: { content?: string } }>;
+          citations?: unknown;
         };
         const text = String(json.choices?.[0]?.message?.content ?? '').trim();
+        // xAI returns citations either as a flat string[] or {url, type}[]
+        // depending on API version. Normalise to string[] of URLs.
+        const rawCitations = Array.isArray(json.citations) ? json.citations : [];
+        const citations = rawCitations
+          .map((c): string | null => {
+            if (typeof c === 'string') return c;
+            if (c && typeof c === 'object') {
+              const o = c as { url?: unknown };
+              if (typeof o.url === 'string') return o.url;
+            }
+            return null;
+          })
+          .filter((c): c is string => !!c);
         return {
           ok: true,
           text,
           model,
           elapsedMs: Date.now() - started,
           provider: 'xai' as 'perplexity',
+          citations,
         };
       } catch (err) {
         clearTimeout(timer);

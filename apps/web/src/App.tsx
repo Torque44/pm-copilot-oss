@@ -38,6 +38,7 @@ import { deriveVerdictStats } from './lib/derivedStats';
 import type {
   AgentStatus,
   Citation,
+  ComparableHit,
   EventOutcome,
   EventSummary,
   KOLSentimentItem,
@@ -136,6 +137,36 @@ function newsCitationsToItems(cits: Citation[]): NewsItem[] {
       when: '',
       ...(c.url ? { url: c.url } : {}),
     }));
+}
+
+function comparablesFromCitations(cits: Citation[]): ComparableHit[] {
+  return cits
+    .filter((c) => c.kind === 'comp')
+    .map((c): ComparableHit | null => {
+      const p = (c as Citation & { payload?: unknown }).payload as Partial<ComparableHit> | undefined;
+      if (!p || typeof p !== 'object') return null;
+      if (typeof p.eventId !== 'string' || typeof p.title !== 'string') return null;
+      const outcome: 'yes' | 'no' | 'unresolved' =
+        p.outcome === 'yes' || p.outcome === 'no' ? p.outcome : 'unresolved';
+      const hit: ComparableHit = {
+        eventId: p.eventId,
+        title: p.title,
+        endDate: p.endDate ?? null,
+        outcome,
+        resolvedPrice: typeof p.resolvedPrice === 'number' ? p.resolvedPrice : null,
+        score: typeof p.score === 'number' ? p.score : 0,
+      };
+      if (typeof p.slug === 'string') hit.slug = p.slug;
+      return hit;
+    })
+    .filter((x): x is ComparableHit => x !== null);
+}
+
+function baseRateFromComparables(hits: ComparableHit[]): { yesCount: number; resolvedCount: number; totalCount: number } | null {
+  if (hits.length === 0) return null;
+  const yesCount = hits.filter((h) => h.outcome === 'yes').length;
+  const noCount = hits.filter((h) => h.outcome === 'no').length;
+  return { yesCount, resolvedCount: yesCount + noCount, totalCount: hits.length };
 }
 
 function kolCitationsToItems(cits: Citation[]): KOLSentimentItem[] {
@@ -432,6 +463,8 @@ export function App() {
     : null;
   const thesisSection = brief.sections.find((s) => s.id === 'thesis');
   const thesisForPanel = thesisFromSection(thesisSection?.claims);
+  const comparablesForPanel = comparablesFromCitations(brief.citations);
+  const baseRateForPanel = baseRateFromComparables(comparablesForPanel);
   const resolutionText = market?.criteria || '';
 
   return (
@@ -494,6 +527,8 @@ export function App() {
               sentiment={sentimentForPanel}
               resolution={resolutionText}
               {...(thesisForPanel ? { thesis: thesisForPanel } : {})}
+              {...(comparablesForPanel.length ? { comparables: comparablesForPanel } : {})}
+              {...(baseRateForPanel ? { baseRate: baseRateForPanel } : {})}
             />
             <PositionStrip matches={matchingPositions} />
             <VerdictBand

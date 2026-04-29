@@ -27,6 +27,7 @@ import { PositionStrip } from './components/PositionStrip/PositionStrip';
 import { useEventsList } from './hooks/useEventsList';
 import { useBrief } from './hooks/useBrief';
 import { useProvider } from './hooks/useProvider';
+import { useProviderHealth } from './hooks/useProviderHealth';
 import { useWatchlist } from './hooks/useWatchlist';
 import { usePositions } from './hooks/usePositions';
 import { useRecentlyViewed } from './hooks/useRecentlyViewed';
@@ -274,6 +275,7 @@ function thesisFromSection(
 
 export function App() {
   const { config: providerConfig, loading: providerLoading, setKey } = useProvider();
+  const providerHealthHook = useProviderHealth();
   const { route, navigate } = useRoute();
   const [category, setCategory] = useState<string>('crypto');
 
@@ -587,6 +589,13 @@ export function App() {
           primary: providerConfig.primary,
           perplexity: providerConfig.hasPerplexity,
           xai: providerConfig.hasXai,
+        }}
+        providerHealth={{
+          data: providerHealthHook.health,
+          loading: providerHealthHook.loading,
+          error: providerHealthHook.error,
+          lastCheckedAt: providerHealthHook.lastCheckedAt,
+          onRecheck: providerHealthHook.recheck,
         }}
       />
 

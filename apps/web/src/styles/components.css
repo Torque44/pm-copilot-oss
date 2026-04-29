@@ -597,6 +597,66 @@
   text-align: center;
 }
 
+/* ---------- Provider connection-health row ---------- */
+.provider-health {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, #262a38);
+}
+.provider-health-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+.provider-health-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted, #6a7382);
+}
+.provider-health-dot.ok { background: var(--success, #10b981); box-shadow: 0 0 6px rgba(16, 185, 129, 0.5); }
+.provider-health-dot.err { background: var(--danger, #ef4444); box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+.provider-health-dot.pending { background: var(--text-muted, #888); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+.provider-health-name {
+  color: var(--text, #e6e8ee);
+  font-size: 11px;
+}
+.provider-health-status {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+}
+.provider-health-foot {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  margin-top: 2px;
+}
+.provider-health-recheck {
+  background: transparent;
+  border: 1px solid var(--border, #262a38);
+  color: var(--text-muted, #888);
+  font: inherit;
+  font-size: 10px;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.provider-health-recheck:hover:not(:disabled) {
+  color: var(--text, #fff);
+  border-color: var(--border-strong, #555);
+}
+.provider-health-recheck:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ---------- AgentDots hover tooltip ---------- */
 .agent-dot-wrap {
   position: relative;

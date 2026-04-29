@@ -13,6 +13,7 @@ import { positionsHandler } from './routes/positions.js';
 import { profileHandler } from './routes/profile.js';
 import { authTestHandler } from './routes/auth-test.js';
 import { resolveHandler } from './routes/resolve.js';
+import { healthProvidersHandler } from './routes/health-providers.js';
 import { briefHandler } from './routes/brief.js';
 import { askHandler } from './routes/ask.js';
 import {
@@ -50,6 +51,7 @@ async function main() {
 
   // ---- BYOK auth check ----
   app.post('/api/auth/test', authTestHandler);
+  app.get('/api/health/providers', healthProvidersHandler);
 
   // ---- New beta routes ----
   app.get('/api/positions', positionsHandler);

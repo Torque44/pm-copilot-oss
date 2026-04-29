@@ -3,6 +3,8 @@
 import { AgentDots } from './AgentDots';
 import { WatchlistTab } from './WatchlistTab';
 import { PositionsTab } from './PositionsTab';
+import { ProviderHealth } from './ProviderHealth';
+import type { ProviderHealthResponse } from '../../hooks/useProviderHealth';
 import type { AgentStatus, BriefAgentDetail, Position, WatchItem } from '../../types';
 
 export interface RightRailProps {
@@ -20,6 +22,15 @@ export interface RightRailProps {
   /** Whether the user has additional provider keys configured (drives the
    *  small badge next to the providers button). */
   providerSummary?: { primary: string | null; perplexity: boolean; xai: boolean };
+  /** Live connection-status probe data (drives the green/red dot row
+   *  under "agents"). Optional — hides the section when omitted. */
+  providerHealth?: {
+    data: ProviderHealthResponse | null;
+    loading: boolean;
+    error: string | null;
+    lastCheckedAt: number | null;
+    onRecheck: () => void;
+  };
 }
 
 export function RightRail({
@@ -33,6 +44,7 @@ export function RightRail({
   onWalletChange,
   onOpenSetup,
   providerSummary,
+  providerHealth,
 }: RightRailProps) {
   if (collapsed) return null;
 
@@ -78,6 +90,15 @@ export function RightRail({
           </span>
         </div>
         <div className="rail-providers-summary mono">{providerLine}</div>
+        {providerHealth && (
+          <ProviderHealth
+            health={providerHealth.data}
+            loading={providerHealth.loading}
+            error={providerHealth.error}
+            lastCheckedAt={providerHealth.lastCheckedAt}
+            onRecheck={providerHealth.onRecheck}
+          />
+        )}
       </div>
 
       <div className="rail-section">

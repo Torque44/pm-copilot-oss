@@ -597,6 +597,110 @@
   text-align: center;
 }
 
+/* ---------- AgentDots hover tooltip ---------- */
+.agent-dot-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 2px;
+}
+.agent-dot-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  z-index: 100;
+  width: 240px;
+  padding: 10px 12px;
+  background: var(--bg, #0a0b10);
+  border: 1px solid var(--border-strong, #3a3f52);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.agent-dot-wrap:hover .agent-dot-tooltip,
+.agent-dot-wrap:focus-within .agent-dot-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+/* Small triangle pointing up to the dot. */
+.agent-dot-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: var(--bg, #0a0b10);
+  border-top: 1px solid var(--border-strong, #3a3f52);
+  border-left: 1px solid var(--border-strong, #3a3f52);
+}
+.agent-dot-tooltip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-dot-tooltip-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text, #e6e8ee);
+  text-transform: lowercase;
+}
+.agent-dot-tooltip-status {
+  font-size: 10px;
+  font-family: var(--font-mono, ui-monospace);
+  color: var(--text-muted, #888);
+}
+.agent-dot-tooltip-status.running {
+  color: var(--accent, #0a66ff);
+}
+.agent-dot-tooltip-status.done {
+  color: var(--success, #10b981);
+}
+.agent-dot-tooltip-status.error {
+  color: var(--danger, #ef4444);
+}
+.agent-dot-tooltip-body {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text, #e6e8ee);
+}
+.agent-dot-tooltip-meta {
+  font-size: 10px;
+  color: var(--text-muted, #6a7382);
+  border-top: 1px solid var(--border, #262a38);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+/* When the dot is in the right-most slot, shift the tooltip left so it
+   doesn't clip past the edge of the rail. */
+.agent-dot-wrap:nth-last-child(1) .agent-dot-tooltip,
+.agent-dot-wrap:nth-last-child(2) .agent-dot-tooltip {
+  left: auto;
+  right: 0;
+  transform: translateY(-4px);
+}
+.agent-dot-wrap:nth-last-child(1):hover .agent-dot-tooltip,
+.agent-dot-wrap:nth-last-child(2):hover .agent-dot-tooltip,
+.agent-dot-wrap:nth-last-child(1):focus-within .agent-dot-tooltip,
+.agent-dot-wrap:nth-last-child(2):focus-within .agent-dot-tooltip {
+  transform: translateY(0);
+}
+.agent-dot-wrap:nth-last-child(1) .agent-dot-tooltip::before,
+.agent-dot-wrap:nth-last-child(2) .agent-dot-tooltip::before {
+  left: auto;
+  right: 8px;
+  transform: rotate(45deg);
+}
+
 /* ---------- Panel placeholders (replace mock fallback rows) ---------- */
 .panel-placeholder {
   color: var(--text-muted, #888);

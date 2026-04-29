@@ -122,6 +122,16 @@ Search the web for news and scheduled catalysts relevant to this market. Priorit
   const items: NewsItem[] = Array.isArray(parsed?.items) ? parsed!.items.slice(0, 4) : [];
   const rawClaims: Claim[] = Array.isArray(parsed?.claims) ? parsed!.claims : [];
 
+  // Debug visibility: when we fail to extract anything useful, log the raw
+  // text so we can tell whether the model declined, hit a rate limit, or
+  // simply returned `{items:[],claims:[]}` after a real (empty) web search.
+  if (items.length === 0 && rawClaims.length === 0) {
+    const sample = (res.text || '').replace(/\s+/g, ' ').slice(0, 400);
+    console.warn(
+      `[news] empty result for "${market.title}" (${res.ok ? 'ok' : 'err: ' + res.error}): ${sample}`,
+    );
+  }
+
   const grounding: NewsGrounding = { kind: 'news', items };
   emit({ t: 'agent:data', agent: 'news', grounding });
 

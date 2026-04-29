@@ -94,6 +94,12 @@ export async function runThesisAgent(
   }
 
   if (!parsed?.topClaim || !Array.isArray(parsed.subClaims)) {
+    // Log the raw text so callers can debug refusals / off-script output.
+    // Truncate so we don't flood stdout if the model returned a wall of prose.
+    const sample = (res.text || '').replace(/\s+/g, ' ').slice(0, 400);
+    console.warn(
+      `[thesis] non-structured output for "${ctx.market.title}" (${res.ok ? 'ok' : 'err: ' + res.error}, ${Date.now() - started}ms): ${sample}`,
+    );
     return {
       agent: 'thesis',
       output: {

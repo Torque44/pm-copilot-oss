@@ -2,17 +2,10 @@
 
 import type { BookRow } from '../../types';
 
-const DEFAULT_ROWS: BookRow[] = [
-  { id: 'c-001', side: 'NO', price: 0.41, size: 12400, cum: 12400 },
-  { id: 'c-002', side: 'NO', price: 0.4, size: 38100, cum: 50500 },
-  { id: 'c-003', side: 'YES', price: 0.62, size: 84700, cum: 84700 },
-  { id: 'c-004', side: 'YES', price: 0.61, size: 22300, cum: 107000 },
-  { id: 'c-005', side: 'YES', price: 0.58, size: 4900, cum: 111900 },
-];
-
 export interface BookPanelProps {
   flashId: string | null;
   rows?: BookRow[];
+  /** Pre-computed spread; if omitted, derived from rows. */
   spread?: number;
 }
 
@@ -20,11 +13,22 @@ function fmtMoney(n: number): string {
   return `$${n.toLocaleString('en-US').padStart(7, ' ')}`;
 }
 
-export function BookPanel({ flashId, rows, spread = 0.03 }: BookPanelProps) {
-  const data = rows && rows.length > 0 ? rows : DEFAULT_ROWS;
-  // Split NO (asks) and YES (bids) so the spread divider falls in between.
+function deriveSpread(noRows: BookRow[], yesRows: BookRow[]): number | null {
+  if (noRows.length === 0 || yesRows.length === 0) return null;
+  const bestYesAsk = yesRows[0]!.price;
+  const bestYesBid = 1 - noRows[0]!.price;
+  const s = bestYesAsk - bestYesBid;
+  return Number.isFinite(s) ? Math.max(0, s) : null;
+}
+
+export function BookPanel({ flashId, rows, spread }: BookPanelProps) {
+  const data = rows ?? [];
+  if (data.length === 0) {
+    return <div className="panel-placeholder mono">no orderbook data</div>;
+  }
   const noRows = data.filter((r) => r.side === 'NO');
   const yesRows = data.filter((r) => r.side === 'YES');
+  const sp = spread ?? deriveSpread(noRows, yesRows);
 
   return (
     <table className="dense">
@@ -47,7 +51,7 @@ export function BookPanel({ flashId, rows, spread = 0.03 }: BookPanelProps) {
         ))}
         <tr className="spread-row">
           <td colSpan={4} className="mono">
-            — spread {spread.toFixed(2)} —
+            — spread {sp != null ? sp.toFixed(3) : '—'} —
           </td>
         </tr>
         {yesRows.map((r) => (

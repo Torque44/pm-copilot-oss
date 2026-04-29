@@ -2,14 +2,6 @@
 
 import type { VerdictSection } from '../../types';
 
-const DEFAULT_SECTIONS: VerdictSection[] = [
-  { label: 'implied yield', value: '+4.8%' },
-  { label: 'days to resolve', value: '14d 6h' },
-  { label: 'book depth (yes)', value: '$184k @ 0.62' },
-  { label: 'spread', value: '0.03' },
-  { label: 'holders concentration', value: '47.3% top10' },
-];
-
 export interface VerdictBandProps {
   sections?: VerdictSection[];
   citationCount?: number;
@@ -19,12 +11,16 @@ export interface VerdictBandProps {
 export function VerdictBand({
   sections,
   citationCount,
-  verdict = 'signals split',
+  verdict,
 }: VerdictBandProps) {
-  const data = sections && sections.length > 0 ? sections : DEFAULT_SECTIONS;
+  const data = sections ?? [];
+  // Verdict text defaults from the section count: while the brief is still
+  // streaming and we have nothing to surface, show "synthesizing…" rather
+  // than the misleading "signals split" baked-in copy.
+  const text = verdict || (data.length === 0 ? 'synthesizing…' : 'evidence summary');
   return (
     <div className="verdict-band">
-      <div className="verdict-text">{verdict}</div>
+      <div className="verdict-text">{text}</div>
       <div className="verdict-sep" />
       {data.map((s, i) => (
         <div key={i} className="verdict-stat">
@@ -32,7 +28,7 @@ export function VerdictBand({
           <div className="verdict-value mono">{s.value}</div>
         </div>
       ))}
-      {citationCount !== undefined && (
+      {citationCount !== undefined && citationCount > 0 && (
         <div className="verdict-stat">
           <div className="verdict-label mono">citations</div>
           <div className="verdict-value mono">{citationCount}</div>

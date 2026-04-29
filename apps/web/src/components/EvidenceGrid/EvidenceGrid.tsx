@@ -51,11 +51,28 @@ export function EvidenceGrid({
   const holdersLoading = loading && (!holderRows || holderRows.length === 0);
   const newsLoading = loading && (!catalysts || catalysts.length === 0);
   const thesisLoading = loading && !thesis;
+
+  // Subheaders derived from the actual data (or "—" placeholders before
+  // grounding arrives). Avoids the previous design-bundle mock strings like
+  // "28 levels · 3m ago" that lied about the real shape.
+  const bookSub = bookRows && bookRows.length > 0
+    ? `${bookRows.length} levels`
+    : 'awaiting orderbook';
+  const holdersSub = holderRows && holderRows.length > 0
+    ? `top ${holderRows.length}`
+    : 'awaiting top holders';
+  const newsSub = catalysts && catalysts.length > 0
+    ? `${catalysts.length} catalyst${catalysts.length === 1 ? '' : 's'}`
+    : 'awaiting catalysts';
+  const thesisSub = thesis
+    ? `${thesis.nodes.length} node${thesis.nodes.length === 1 ? '' : 's'}`
+    : 'awaiting thesis';
+
   return (
     <div className={`evidence-grid focus-${focusedPanel ?? 'none'}`}>
       <Panel
         title="book"
-        sub="28 levels · 3m ago"
+        sub={bookSub}
         panelKey="book"
         focused={focusedPanel === 'book'}
         errored={errorPanel === 'book'}
@@ -66,7 +83,7 @@ export function EvidenceGrid({
       </Panel>
       <Panel
         title="holders"
-        sub="top 250 · 5m ago"
+        sub={holdersSub}
         panelKey="holders"
         focused={focusedPanel === 'holders'}
         errored={errorPanel === 'holders'}
@@ -77,7 +94,7 @@ export function EvidenceGrid({
       </Panel>
       <Panel
         title="news"
-        sub="dated · 6 sources"
+        sub={newsSub}
         panelKey="news"
         focused={focusedPanel === 'news'}
         errored={errorPanel === 'news'}
@@ -93,7 +110,7 @@ export function EvidenceGrid({
       </Panel>
       <Panel
         title="thesis"
-        sub="4 nodes · 2 supports · 2 challenges"
+        sub={thesisSub}
         panelKey="thesis"
         focused={focusedPanel === 'thesis'}
         errored={errorPanel === 'thesis'}

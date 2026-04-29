@@ -392,6 +392,26 @@
   background: rgba(10, 102, 255, 0.08);
 }
 
+/* ---------- Panel placeholders (replace mock fallback rows) ---------- */
+.panel-placeholder {
+  color: var(--text-muted, #888);
+  font-size: 11px;
+  padding: 16px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* ---------- News link styling ---------- */
+.news-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.news-link:hover {
+  color: var(--accent, #0a66ff);
+  text-decoration: underline;
+}
+
 /* ---------- Chat helpers ---------- */
 .chat-empty {
   color: var(--text-muted, #888);

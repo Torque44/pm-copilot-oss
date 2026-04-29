@@ -6,70 +6,6 @@ import type { EventSummary } from '../../types';
 const CATEGORIES = ['crypto', 'sports', 'politics', 'other'] as const;
 type Category = (typeof CATEGORIES)[number];
 
-const DEFAULT_EVENTS: EventSummary[] = [
-  {
-    id: 'evt-btc100k',
-    category: 'crypto',
-    title: 'btc at $100k by eoy 2026',
-    marketCount: 1,
-    outcomes: [
-      { id: 'btc100k', name: 'YES', price: 0.62 },
-      { id: 'btc100k-no', name: 'NO', price: 0.39 },
-    ],
-  },
-  {
-    id: 'evt-ethbtc',
-    category: 'crypto',
-    title: 'eth/btc ratio < 0.04 by jul 2026',
-    marketCount: 1,
-    outcomes: [
-      { id: 'ethbtc', name: 'YES', price: 0.34 },
-      { id: 'ethbtc-no', name: 'NO', price: 0.67 },
-    ],
-  },
-  {
-    id: 'evt-sol400',
-    category: 'crypto',
-    title: 'sol > $400 in q3 2026',
-    marketCount: 1,
-    outcomes: [
-      { id: 'sol400', name: 'YES', price: 0.18 },
-      { id: 'sol400-no', name: 'NO', price: 0.83 },
-    ],
-  },
-  {
-    id: 'evt-dem2028',
-    category: 'politics',
-    title: '2028 democratic nominee',
-    marketCount: 3,
-    outcomes: [
-      { id: 'dem2028', name: 'newsom', price: 0.21 },
-      { id: 'dem-pete', name: 'buttigieg', price: 0.14 },
-      { id: 'dem-gw', name: 'whitmer', price: 0.11 },
-    ],
-  },
-  {
-    id: 'evt-fed',
-    category: 'politics',
-    title: 'next fed rate decision',
-    marketCount: 2,
-    outcomes: [
-      { id: 'fed-cut', name: '25bp cut', price: 0.71 },
-      { id: 'fed-hold', name: 'hold', price: 0.27 },
-    ],
-  },
-  {
-    id: 'evt-sb',
-    category: 'sports',
-    title: 'super bowl LX winner',
-    marketCount: 2,
-    outcomes: [
-      { id: 'sb-kc', name: 'kansas city', price: 0.22 },
-      { id: 'sb-buf', name: 'buffalo', price: 0.18 },
-    ],
-  },
-];
-
 export interface LeftRailProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -90,11 +26,7 @@ export function LeftRail({
 
   if (collapsed) return null;
 
-  // If `events` is omitted entirely, fall back to demo data (used by the
-  // design-bundle preview). When the host passes an array — even empty — we
-  // trust it and surface "no markets match" instead of demo data, so the UI
-  // doesn't lie about polymarket connectivity.
-  const source = events ?? DEFAULT_EVENTS;
+  const source = events ?? [];
   const filtered = source
     .filter((e) => e.category === cat)
     .filter((e) => !q || e.title.toLowerCase().includes(q.toLowerCase()));

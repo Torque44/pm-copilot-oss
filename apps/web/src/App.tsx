@@ -162,6 +162,17 @@ const THESIS_COMPOUND_PATTERNS = [
   /^kill\s*:\s*/i,
 ];
 
+// Phrases the thesis agent emits when it bailed (provider returned junk JSON,
+// no provider, etc). When only those placeholders are present, we hide the
+// panel rather than render them as the root claim.
+const THESIS_FAILURE_HINTS = [
+  /unstructured output/i,
+  /skipping/i,
+  /agent disabled/i,
+  /no-provider/i,
+  /agent failed/i,
+];
+
 function thesisFromSection(
   sectionClaims: { text: string; citations: string[] }[] | undefined,
 ): Thesis | undefined {
@@ -170,6 +181,7 @@ function thesisFromSection(
   const nodes: ThesisNode[] = [];
   for (const c of sectionClaims) {
     if (!c.text) continue;
+    if (THESIS_FAILURE_HINTS.some((re) => re.test(c.text))) continue;
     const rootMatch = THESIS_ROOT_PATTERNS.find((re) => re.test(c.text));
     if (rootMatch) {
       rootLabel = c.text.replace(rootMatch, '').trim();
@@ -189,8 +201,10 @@ function thesisFromSection(
     rootLabel = nodes[0]!.label;
     nodes.shift();
   }
-  if (!rootLabel && nodes.length === 0) return undefined;
-  return { rootLabel: rootLabel || 'thesis', nodes };
+  // If we only got a root with no supporting nodes, surface the placeholder
+  // so the panel renders "no thesis derived" instead of a lonely claim.
+  if (!rootLabel || nodes.length === 0) return undefined;
+  return { rootLabel, nodes };
 }
 
 // ---------- main app ----------

@@ -5,14 +5,6 @@ import type { NewsItem, KOLSentimentItem } from '../../types';
 
 type Tab = 'catalysts' | 'sentiment' | 'resolution';
 
-const DEFAULT_CATALYSTS: NewsItem[] = [
-  { id: 'c-022', title: 'btc consolidates near $96k as etf flows turn flat', src: 'reuters.com', when: '3h ago' },
-  { id: 'c-023', title: 'fed minutes show divided committee on cut timing', src: 'wsj.com', when: '6h ago' },
-  { id: 'c-024', title: 'mt gox creditor distribution paused — bitstamp ack', src: 'theblock.co', when: '14h ago' },
-  { id: 'c-025', title: 'spot etf cumulative net inflows breach $42b mark', src: 'bloomberg.com', when: '1d ago' },
-  { id: 'c-026', title: 'binance lists btc-quanto perp w/ 1d settle', src: 'binance.com', when: '2d ago' },
-];
-
 export interface NewsPanelProps {
   flashId: string | null;
   catalysts?: NewsItem[];
@@ -22,7 +14,7 @@ export interface NewsPanelProps {
 
 export function NewsPanel({ flashId, catalysts, sentiment, resolution }: NewsPanelProps) {
   const [tab, setTab] = useState<Tab>('catalysts');
-  const items = catalysts && catalysts.length > 0 ? catalysts : DEFAULT_CATALYSTS;
+  const items = catalysts ?? [];
 
   return (
     <div className="news-tabs-wrap">
@@ -56,7 +48,10 @@ export function NewsPanel({ flashId, catalysts, sentiment, resolution }: NewsPan
         </button>
       </div>
 
-      {tab === 'catalysts' && (
+      {tab === 'catalysts' && items.length === 0 && (
+        <div className="panel-placeholder mono">no catalysts surfaced</div>
+      )}
+      {tab === 'catalysts' && items.length > 0 && (
         <ul className="news-list">
           {items.map((n) => (
             <li
@@ -65,9 +60,21 @@ export function NewsPanel({ flashId, catalysts, sentiment, resolution }: NewsPan
               className={`news-row ${flashId === n.id ? 'flash' : ''}`}
             >
               <span className="cite-id mono">[{n.id}]</span>
-              <span className="news-title">{n.title}</span>
+              {n.url ? (
+                <a
+                  className="news-title news-link"
+                  href={n.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {n.title}
+                </a>
+              ) : (
+                <span className="news-title">{n.title}</span>
+              )}
               <span className="news-meta mono">
-                {n.src} · {n.when}
+                {n.src}
+                {n.when ? ` · ${n.when}` : ''}
               </span>
             </li>
           ))}
@@ -102,7 +109,11 @@ export function NewsPanel({ flashId, catalysts, sentiment, resolution }: NewsPan
         </ul>
       )}
 
-      {tab === 'resolution' && <div className="resolution-criteria">{resolution}</div>}
+      {tab === 'resolution' && (
+        <div className="resolution-criteria">
+          {resolution || <span className="mono muted">no resolution copy on this market</span>}
+        </div>
+      )}
     </div>
   );
 }

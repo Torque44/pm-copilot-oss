@@ -3,23 +3,16 @@
 import { CitationPill } from './CitationPill';
 import type { Thesis } from '../../types';
 
-const DEFAULT_THESIS: Thesis = {
-  rootLabel: 'btc reaches $100k by eoy 2026',
-  nodes: [
-    { kind: 'supports', label: 'spot etf flows positive ttm', citationId: 'c-025' },
-    { kind: 'supports', label: 'top 10 holders concentrated 47% yes', citationId: 'c-014' },
-    { kind: 'challenges', label: 'consolidation near $96k for 4w', citationId: 'c-022' },
-    { kind: 'challenges', label: 'book thin above 0.65', citationId: 'c-005' },
-  ],
-};
-
 export interface ThesisPanelProps {
   onFlash: (id: string) => void;
   thesis?: Thesis;
 }
 
 export function ThesisPanel({ onFlash, thesis }: ThesisPanelProps) {
-  const t = thesis ?? DEFAULT_THESIS;
+  if (!thesis) {
+    return <div className="panel-placeholder mono">no thesis derived</div>;
+  }
+  const t = thesis;
   return (
     <ul className="thesis-tree">
       <li className="thesis-node">

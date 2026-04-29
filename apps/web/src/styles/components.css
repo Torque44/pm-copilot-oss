@@ -392,6 +392,187 @@
   background: rgba(10, 102, 255, 0.08);
 }
 
+/* ============================================================
+   LeftRail event cards (event-centric redesign)
+   Replaces the old flat `.outcome-row` list with one card per event.
+   Binary events: title + countdown/vol meta + single price bar.
+   Multi-outcome: title + meta + top-3 outcomes (with "+N more" expander).
+   ============================================================ */
+.event-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 0 8px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: calc(100% - 16px);
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.event-card:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.event-card.selected {
+  border-color: var(--accent, #0a66ff);
+  background: rgba(10, 102, 255, 0.06);
+}
+.event-card.multi {
+  cursor: default;
+}
+.event-card.multi.selected {
+  border-color: var(--accent, #0a66ff);
+}
+
+.event-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.event-card-title {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text, #e6e6e6);
+  flex: 1;
+  /* Clamp to 2 lines so very long event names don't blow up the card height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.event-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+}
+.event-card-when {
+  color: var(--text-muted, #888);
+}
+.event-card-vol {
+  color: var(--text-muted, #666);
+}
+
+/* ---- Binary strip ---- */
+.event-strip.binary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.event-bar {
+  position: relative;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.event-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--success, #10b981);
+  border-radius: 2px;
+}
+.event-bar-fill.no {
+  background: var(--danger, #ef4444);
+}
+.event-strip-pct {
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 32px;
+  text-align: right;
+}
+.event-strip-pct.yes {
+  color: var(--success, #10b981);
+}
+
+/* ---- Multi-outcome rows ---- */
+.event-card-body.multi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.multi-row-row {
+  display: grid;
+  grid-template-columns: 1fr 60px auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.multi-row-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.multi-row-row.selected {
+  background: rgba(10, 102, 255, 0.12);
+  border-color: var(--accent, #0a66ff);
+}
+.multi-row-name {
+  font-size: 11px;
+  color: var(--text, #e6e6e6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-row-bar {
+  position: relative;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.multi-row-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent, #0a66ff);
+  border-radius: 2px;
+}
+.multi-row-pct {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  text-align: right;
+  min-width: 32px;
+}
+.multi-row-more {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #888);
+  font-size: 10px;
+  text-align: left;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.multi-row-more:hover {
+  color: var(--text, #e6e6e6);
+}
+
+/* Tighten the event list scrollbar/spacing in the rail. */
+.rail-left .event-list {
+  padding: 8px 0;
+}
+.rail-left .empty-rail {
+  padding: 16px 12px;
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  text-align: center;
+}
+
 /* ---------- Panel placeholders (replace mock fallback rows) ---------- */
 .panel-placeholder {
   color: var(--text-muted, #888);

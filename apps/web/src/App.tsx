@@ -67,6 +67,8 @@ type RawEvent = {
   category?: string;
   isMultiOutcome?: boolean;
   outcomes?: RawEventOutcome[];
+  totalVolume24hr?: number;
+  endDate?: string | null;
 };
 
 function normaliseEvents(raw: unknown): EventSummary[] {
@@ -79,20 +81,29 @@ function normaliseEvents(raw: unknown): EventSummary[] {
     if (!id || !title) return [];
     const outcomes: EventOutcome[] = (e.outcomes || []).flatMap((o) => {
       if (!o.marketId || typeof o.yes !== 'number') return [];
-      return [{
+      const out: EventOutcome = {
         id: o.marketId,
         name: e.isMultiOutcome ? (o.label || 'outcome') : 'YES',
         price: o.yes,
-      }];
+      };
+      if (typeof o.volume24hr === 'number') out.volume24hr = o.volume24hr;
+      return [out];
     });
     if (outcomes.length === 0) return [];
-    return [{
+    // Sort multi-outcome candidates highest-yes first so the "top 3" preview
+    // shows the actual leaders.
+    outcomes.sort((a, b) => b.price - a.price);
+    const summary: EventSummary = {
       id,
       title: title.toLowerCase(),
       category: typeof e.category === 'string' ? e.category : 'other',
       marketCount: outcomes.length,
       outcomes,
-    }];
+      isMultiOutcome: Boolean(e.isMultiOutcome),
+    };
+    if (typeof e.totalVolume24hr === 'number') summary.volume24hr = e.totalVolume24hr;
+    if (typeof e.endDate === 'string') summary.endDate = e.endDate;
+    return [summary];
   });
 }
 
@@ -412,6 +423,7 @@ export function App() {
         collapsed={leftCollapsed}
         events={events}
         onCategoryChange={(c) => setCategory(c)}
+        loading={eventsLoading}
       />
 
       <main className="workbench">

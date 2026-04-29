@@ -25,6 +25,8 @@ export type EventOutcome = {
   id: string;
   name: string;
   price: number;
+  /** 24h dollar volume on this specific outcome (sub-market). */
+  volume24hr?: number;
 };
 
 export type EventSummary = {
@@ -33,6 +35,12 @@ export type EventSummary = {
   category: string;
   marketCount: number;
   outcomes: EventOutcome[];
+  /** Aggregate 24h volume across all outcomes (event level). */
+  volume24hr?: number;
+  /** ISO end date — drives the countdown badge. */
+  endDate?: string | null;
+  /** True for events with multiple distinct candidates ("who wins X?"). */
+  isMultiOutcome?: boolean;
 };
 
 export type CitationKind = 'book' | 'whale' | 'news' | 'kol';

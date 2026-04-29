@@ -597,6 +597,118 @@
   text-align: center;
 }
 
+/* ---------- Claude Code inline status (in setup modal) ---------- */
+.cc-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border, #262a38);
+  border-radius: 4px;
+  margin-top: 4px;
+}
+.cc-status-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-status-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted, #6a7382);
+}
+.cc-status-dot.ok { background: var(--success, #10b981); box-shadow: 0 0 6px rgba(16, 185, 129, 0.5); }
+.cc-status-dot.err { background: var(--danger, #ef4444); box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+.cc-status-dot.pending { background: var(--text-muted, #888); animation: pulse 1.4s ease-in-out infinite; }
+.cc-status-name {
+  font-size: 12px;
+  color: var(--text, #e6e8ee);
+}
+.cc-status-meta {
+  font-size: 11px;
+}
+.cc-status-error {
+  font-size: 11px;
+  color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.06);
+  padding: 6px 10px;
+  border-radius: 3px;
+  word-break: break-word;
+}
+.cc-status-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+}
+.cc-status-cmd-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cc-status-cmd {
+  background: var(--bg, #0a0b10);
+  border: 1px solid var(--border, #262a38);
+  padding: 6px 10px;
+  border-radius: 3px;
+  color: var(--accent, #0a66ff);
+  font-size: 12px;
+}
+.cc-status-copy {
+  background: transparent;
+  border: 1px solid var(--border, #262a38);
+  color: var(--text-muted, #888);
+  font: inherit;
+  font-size: 11px;
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.cc-status-copy:hover {
+  color: var(--text, #fff);
+  border-color: var(--border-strong, #555);
+}
+.cc-status-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cc-status-recheck,
+.cc-status-continue {
+  background: var(--accent, #0a66ff);
+  border: 1px solid var(--accent, #0a66ff);
+  color: white;
+  font: inherit;
+  font-size: 12px;
+  border-radius: 3px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.cc-status-recheck:hover:not(:disabled),
+.cc-status-continue:hover {
+  background: var(--accent-hover, #0047cc);
+  border-color: var(--accent-hover, #0047cc);
+}
+.cc-status-recheck:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cc-status-altpath {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #888);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.cc-status-altpath:hover {
+  color: var(--text, #fff);
+}
+
 /* ---------- Provider connection-health row ---------- */
 .provider-health {
   display: flex;

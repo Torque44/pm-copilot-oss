@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import { KeyTester } from './KeyTester';
+import { ClaudeCodeStatus } from './ClaudeCodeStatus';
 import type { ProviderName } from '../../types';
 
 export interface ProviderPickerProps {
@@ -56,8 +57,10 @@ export function ProviderPicker({
         <button
           className={`provider-card ${selected === 'anthropic-cc' ? 'active' : ''}`}
           onClick={() => {
+            // Just mark this card as selected. The actual skip-to-home is
+            // gated by ClaudeCodeStatus once the probe is green — clicking
+            // alone no longer dismisses the modal.
             onSelect('anthropic-cc');
-            onUseClaudeCode?.();
           }}
         >
           <div className="provider-card-title">claude code (auto-detect)</div>
@@ -71,6 +74,13 @@ export function ProviderPicker({
         <KeyTester
           provider="anthropic"
           onSuccess={(info) => onConfigured?.({ provider: info.provider, key: info.key })}
+        />
+      )}
+
+      {selected === 'anthropic-cc' && onUseClaudeCode && (
+        <ClaudeCodeStatus
+          onConnected={onUseClaudeCode}
+          onSwitchToApiKey={() => onSelect('anthropic')}
         />
       )}
 

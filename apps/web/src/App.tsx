@@ -430,11 +430,19 @@ export function App() {
   // also opens it; saving from URL-mode also navigates back to home so the
   // address bar matches.
   const showSetup = setupOpen || route.name === 'setup';
-  const onSetupSave = async (info: { provider: ProviderName; key: string }) => {
+  const onSetupSave = async (info: {
+    provider: ProviderName;
+    key: string;
+    slot?: 'primary' | 'perplexity' | 'xai';
+  }) => {
+    // Prefer the explicit slot from ProviderPicker (lets users put xai in
+    // the primary slot for reasoning, distinct from xai-as-sentiment-only).
+    // Fallback heuristic for the simple flow: provider name → conventional slot.
     const slot: 'primary' | 'perplexity' | 'xai' =
-      info.provider === 'perplexity' ? 'perplexity' :
-      info.provider === 'xai' ? 'xai' :
-      'primary';
+      info.slot ??
+      (info.provider === 'perplexity' ? 'perplexity' :
+       info.provider === 'xai' ? 'xai' :
+       'primary');
     await setKey(slot, info.provider, info.key);
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('pm-copilot:setup-skipped');

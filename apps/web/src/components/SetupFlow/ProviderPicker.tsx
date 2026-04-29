@@ -1,4 +1,9 @@
-// ProviderPicker — beta supports anthropic + claude-code-auto. Other providers behind expandable.
+// ProviderPicker — pick a primary LLM (anthropic / openai / google / xai) +
+// optional secondary keys (perplexity for news, xai for sentiment).
+//
+// Each provider in the advanced list has a `slot` indicator so users know
+// where the key lands: 'primary' replaces the main reasoning provider,
+// 'perplexity' = news enhancement, 'xai-secondary' = sentiment-only.
 
 import { useState } from 'react';
 import { KeyTester } from './KeyTester';
@@ -7,15 +12,24 @@ import type { ProviderName } from '../../types';
 export interface ProviderPickerProps {
   selected: ProviderName | null;
   onSelect: (p: ProviderName) => void;
-  onConfigured?: (info: { provider: ProviderName; key: string }) => void;
+  onConfigured?: (info: { provider: ProviderName; key: string; slot?: 'primary' | 'perplexity' | 'xai' }) => void;
   onUseClaudeCode?: () => void;
 }
 
-const ADVANCED: { id: ProviderName; label: string; hint: string }[] = [
-  { id: 'openai', label: 'openai', hint: 'gpt-4 / o-series · paste key' },
-  { id: 'google', label: 'google', hint: 'gemini · paste key' },
-  { id: 'perplexity', label: 'perplexity', hint: 'sonar grounding · paste key' },
-  { id: 'xai', label: 'xai', hint: 'grok · enables sentiment tab' },
+type AdvancedRow = {
+  id: ProviderName;
+  label: string;
+  hint: string;
+  /** Where this key lands when saved. */
+  slot: 'primary' | 'perplexity' | 'xai';
+};
+
+const ADVANCED: AdvancedRow[] = [
+  { id: 'openai', label: 'openai', hint: 'gpt-5 / o-series · use as primary', slot: 'primary' },
+  { id: 'google', label: 'google', hint: 'gemini-2.5-pro · use as primary', slot: 'primary' },
+  { id: 'xai', label: 'xai (primary)', hint: 'grok-3 · use as primary, also enables sentiment', slot: 'primary' },
+  { id: 'perplexity', label: 'perplexity', hint: 'sonar · improves news (secondary slot)', slot: 'perplexity' },
+  { id: 'xai', label: 'xai (sentiment only)', hint: 'grok · sentiment tab only, primary stays as-is', slot: 'xai' },
 ];
 
 export function ProviderPicker({
@@ -25,6 +39,7 @@ export function ProviderPicker({
   onUseClaudeCode,
 }: ProviderPickerProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeAdvancedIdx, setActiveAdvancedIdx] = useState<number | null>(null);
 
   return (
     <div className="provider-picker">
@@ -68,25 +83,33 @@ export function ProviderPicker({
 
       {showAdvanced && (
         <div className="provider-advanced">
-          {ADVANCED.map((p) => (
-            <div key={p.id} className="provider-advanced-row">
-              <button
-                className={`provider-pill ${selected === p.id ? 'active' : ''}`}
-                onClick={() => onSelect(p.id)}
-              >
-                {p.label}
-              </button>
-              <span className="mono muted">{p.hint}</span>
-              {selected === p.id && (
-                <KeyTester
-                  provider={p.id}
-                  onSuccess={(info) =>
-                    onConfigured?.({ provider: info.provider, key: info.key })
-                  }
-                />
-              )}
-            </div>
-          ))}
+          {ADVANCED.map((p, idx) => {
+            const isActive = activeAdvancedIdx === idx;
+            return (
+              <div key={`${p.id}-${p.slot}`} className="provider-advanced-row">
+                <button
+                  className={`provider-pill ${isActive ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveAdvancedIdx(isActive ? null : idx);
+                    onSelect(p.id);
+                  }}
+                >
+                  {p.label}
+                </button>
+                <span className="mono muted">{p.hint}</span>
+                {isActive && (
+                  <KeyTester
+                    provider={p.id}
+                    onSuccess={(info) =>
+                      // Forward the explicit slot so xai-as-primary lands
+                      // in 'primary' while xai-secondary lands in 'xai'.
+                      onConfigured?.({ provider: info.provider, key: info.key, slot: p.slot })
+                    }
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

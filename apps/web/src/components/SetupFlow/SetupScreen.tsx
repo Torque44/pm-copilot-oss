@@ -12,7 +12,13 @@ import { ProviderPicker } from './ProviderPicker';
 import type { ProviderName } from '../../types';
 
 export interface SetupScreenProps {
-  onConfigured: (info: { provider: ProviderName; key: string }) => void;
+  onConfigured: (info: {
+    provider: ProviderName;
+    key: string;
+    /** Optional explicit slot override. When omitted App.tsx falls back to
+     *  its provider-name heuristic. */
+    slot?: 'primary' | 'perplexity' | 'xai';
+  }) => void;
   onSkip?: () => void;
 }
 

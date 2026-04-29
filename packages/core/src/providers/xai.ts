@@ -60,25 +60,15 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
       const body: Record<string, unknown> = { model, messages, temperature: 0.2 };
       if (opts.jsonOnly) body['response_format'] = { type: 'json_object' };
 
-      // xAI Live Search — Grok pulls fresh X/web/news at request time.
-      // Costs ~25 cents / 1k results so we cap maxResults conservatively.
-      // Docs: https://docs.x.ai/docs/guides/live-search
-      if (opts.liveSearch && opts.liveSearch.mode !== 'off') {
-        const sources = (opts.liveSearch.sources ?? ['x', 'web', 'news']).map((s) => ({ type: s }));
-        const sp: Record<string, unknown> = {
-          mode: opts.liveSearch.mode,
-          sources,
-          return_citations: opts.liveSearch.returnCitations ?? true,
-        };
-        if (typeof opts.liveSearch.maxResults === 'number') {
-          sp['max_search_results'] = Math.max(1, Math.min(30, opts.liveSearch.maxResults));
-        }
-        if (typeof opts.liveSearch.fromDays === 'number' && opts.liveSearch.fromDays > 0) {
-          const from = new Date(Date.now() - opts.liveSearch.fromDays * 86400_000);
-          sp['from_date'] = from.toISOString().slice(0, 10);
-        }
-        body['search_parameters'] = sp;
-      }
+      // NOTE: xAI deprecated `search_parameters` in favor of the Agent Tools
+      // API on the new `/v1/responses` endpoint. The chat/completions endpoint
+      // we use here no longer accepts the old shape (returns HTTP 410).
+      // Until we migrate to /v1/responses + `tools: [{type:"web_search"}]`,
+      // we honour `liveSearch` only as a hint — the agent gets back to its
+      // base behaviour (Grok uses training-data knowledge of X conversations
+      // and the topic). Documented gap; sentiment still produces a useful
+      // read for most markets, just not real-time-fresh.
+      void opts.liveSearch;
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);

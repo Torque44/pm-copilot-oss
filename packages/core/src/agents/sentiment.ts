@@ -36,23 +36,27 @@ import type { LLMProvider } from '../providers/types';
  */
 function systemPromptForCategory(category: string): string {
   const profile = sourceProfileFor(category);
-  return `You are a sentiment analyst for prediction-market traders. Search X (twitter) for recent posts that ACTUALLY MOVE THE NEEDLE on this market — not generic chatter.
+  return `You are a sentiment analyst for prediction-market traders. Use your knowledge of X (twitter) conversations and public statements about this topic up to your training cutoff to summarise what the relevant authoritative voices are likely saying or have said.
 
-Source priority (most important first):
+Source priority (most important first — pull from your knowledge of these accounts and outlets):
 ${profile.map((line, i) => `${i + 1}. ${line}`).join('\n')}
 
 Rules:
-- Output 3-5 short claims summarising what the cited sources are saying or doing.
-- Each claim MUST end with one or more citation tags [kol·N] referencing the tweet you used (1 = first cited, 2 = second, …).
-- For each [kol·N] you cite, populate \`tweets\` with: handle (no @), excerpt (≤240 chars, quote when possible), url, ts (ISO timestamp if known).
-- Do NOT cite random retail traders posting opinions. Pull from authoritative or substantive accounts that match the category profile above.
-- If the live search returns nothing meaningful, return empty claims + empty tweets — DO NOT fabricate.
-- Aggregate "lean" describes the consensus implied by the cited sources for the YES side of the market.
+- Output 3-5 short claims about the prevailing view among these source types.
+- Each claim MUST end with one or more citation tags [kol·N] referencing a specific account / outlet you're attributing to (1 = first attributed source, 2 = second, …).
+- For each [kol·N], populate \`tweets\` with:
+    handle  — the actual X handle (no @ prefix), e.g. "StateDept", "Reuters"
+    excerpt — a short paraphrase of what that source has been saying (≤240 chars). Quote a real public statement if you remember one verbatim; otherwise paraphrase.
+    url     — best guess at a representative post or "https://x.com/<handle>" if no specific tweet
+    ts      — leave empty string if uncertain
+- Be HONEST about uncertainty. If you don't know what a specific account has said recently, don't invent a quote — paraphrase the broader stance, OR drop that source entirely.
+- Stick to the category profile. Skip random retail accounts.
+- Aggregate "lean" describes the consensus implied by these sources for the YES side of the market.
 
 Return JSON ONLY, no prose:
 {
   "claims": [{ "text": "<claim with [kol·N]>", "citations": ["kol·1"] }],
-  "tweets": [{ "n": 1, "handle": "...", "excerpt": "...", "url": "https://x.com/...", "ts": "2026-04-29T..." }],
+  "tweets": [{ "n": 1, "handle": "...", "excerpt": "...", "url": "https://x.com/...", "ts": "" }],
   "lean": "yes" | "no" | "split" | "unclear",
   "confidence": "high" | "med" | "low"
 }`;
@@ -172,20 +176,16 @@ Surface 3-5 representative takes that capture the conversation.`;
 
   const sysPrompt = systemPromptForCategory(input.category);
 
+  // NOTE: xAI deprecated the `search_parameters` live-search shape on the
+  // /v1/chat/completions endpoint (HTTP 410: "switch to Agent Tools API").
+  // Until we migrate to /v1/responses + tools:[{type:'web_search'}], the
+  // sentiment agent runs against Grok's *training-data* knowledge of X. The
+  // system prompt acknowledges this and asks for sources Grok knows.
   const res = await provider.complete(userPrompt, {
-    tier: 'fast',
+    tier: 'reasoning',
     systemPrompt: sysPrompt,
     jsonOnly: true,
-    timeoutMs: 60_000,
-    liveSearch: {
-      mode: 'on',
-      // Politics/news markets benefit from web + news in addition to X —
-      // press releases and statements often land on government sites first.
-      sources: input.category === 'politics' ? ['x', 'news', 'web'] : ['x', 'news'],
-      fromDays: 14,
-      maxResults: 20,
-      returnCitations: true,
-    },
+    timeoutMs: 90_000,
   });
 
   let parsed: ParsedResponse | null = null;

@@ -268,6 +268,11 @@ export function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [flashId, setFlashId] = useState<string | null>(null);
+  // Setup overlay. When the user clicks "providers" in the right rail, we
+  // open this as a modal on top of the workbench (instead of routing away,
+  // which was causing the workbench to unmount and feel like a full reload).
+  // The /setup URL still works for the first-load gate.
+  const [setupOpen, setSetupOpen] = useState(false);
 
   const onFlash = useCallback((id: string) => {
     setFlashId(null);
@@ -369,40 +374,41 @@ export function App() {
     );
   }
 
-  if (route.name === 'setup') {
-    return (
-      <SetupScreen
-        onConfigured={async (info: { provider: ProviderName; key: string }) => {
-          // Pick the right slot based on the provider:
-          //  - perplexity → news enhancement slot
-          //  - xai        → sentiment slot (unlocks the sentiment tab)
-          //  - everything else (anthropic / openai / google) → primary
-          // Without this routing every saved key landed in `primary`, which
-          // is why pasting an xAI key didn't unlock `providerConfig.hasXai`.
-          const slot: 'primary' | 'perplexity' | 'xai' =
-            info.provider === 'perplexity' ? 'perplexity' :
-            info.provider === 'xai' ? 'xai' :
-            'primary';
-          await setKey(slot, info.provider, info.key);
-          if (typeof window !== 'undefined') {
-            window.localStorage.removeItem('pm-copilot:setup-skipped');
-          }
-          // After saving a non-primary slot, stay in setup so the user can
-          // also configure their primary provider; only auto-navigate home
-          // when primary is now configured.
-          if (slot === 'primary') {
-            navigate({ name: 'home' });
-          }
-        }}
-        onSkip={() => {
-          if (typeof window !== 'undefined') {
-            window.localStorage.setItem('pm-copilot:setup-skipped', '1');
-          }
-          navigate({ name: 'home' });
-        }}
-      />
-    );
-  }
+  // Setup overlay (rendered after the main return below). The /setup URL
+  // also opens it; saving from URL-mode also navigates back to home so the
+  // address bar matches.
+  const showSetup = setupOpen || route.name === 'setup';
+  const onSetupSave = async (info: { provider: ProviderName; key: string }) => {
+    const slot: 'primary' | 'perplexity' | 'xai' =
+      info.provider === 'perplexity' ? 'perplexity' :
+      info.provider === 'xai' ? 'xai' :
+      'primary';
+    await setKey(slot, info.provider, info.key);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('pm-copilot:setup-skipped');
+    }
+    // Close behavior depends on entry path:
+    //  - Adjustment (providers button → setupOpen=true): close on any save.
+    //    The user opened the modal explicitly to add ONE key, not to set up
+    //    the whole stack.
+    //  - First-time gate (route.name='setup'): close only when the primary
+    //    is configured; saving xai/perplexity alone keeps it open so they
+    //    pick a primary too.
+    if (setupOpen) {
+      setSetupOpen(false);
+      return;
+    }
+    if (slot === 'primary' && route.name === 'setup') {
+      navigate({ name: 'home' });
+    }
+  };
+  const onSetupSkip = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('pm-copilot:setup-skipped', '1');
+    }
+    setSetupOpen(false);
+    if (route.name === 'setup') navigate({ name: 'home' });
+  };
 
   // Find positions matching the current selected market (for the strip above the verdict band).
   const matchingPositions = selectedMarketId
@@ -511,7 +517,7 @@ export function App() {
         wallet={wallet}
         positions={positions}
         onWalletChange={setWallet}
-        onOpenSetup={() => navigate({ name: 'setup' })}
+        onOpenSetup={() => setSetupOpen(true)}
         providerSummary={{
           primary: providerConfig.primary,
           perplexity: providerConfig.hasPerplexity,
@@ -524,6 +530,13 @@ export function App() {
         onClose={() => setPaletteOpen(false)}
         items={paletteItems}
       />
+
+      {showSetup && (
+        <SetupScreen
+          onConfigured={onSetupSave}
+          onSkip={onSetupSkip}
+        />
+      )}
     </div>
   );
 }

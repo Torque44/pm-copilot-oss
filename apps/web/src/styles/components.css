@@ -215,6 +215,30 @@
   flex-direction: column;
   gap: 20px;
 }
+.setup-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.setup-close {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #888);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.setup-close:hover {
+  color: var(--text, #fff);
+  border-color: var(--border-strong, #555);
+}
 .setup-head {
   display: flex;
   flex-direction: column;

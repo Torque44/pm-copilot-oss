@@ -32,10 +32,23 @@ export function SetupScreen({ onConfigured, onSkip }: SetupScreenProps) {
   }, [onSkip]);
 
   return (
-    <div className="setup-screen">
-      <div className="setup-card">
+    <div className="setup-screen" onClick={onSkip}>
+      <div className="setup-card" onClick={(e) => e.stopPropagation()}>
         <header className="setup-head">
-          <h1 className="setup-title">pm copilot · setup</h1>
+          <div className="setup-head-row">
+            <h1 className="setup-title">pm copilot · setup</h1>
+            {onSkip && (
+              <button
+                type="button"
+                className="setup-close"
+                onClick={onSkip}
+                aria-label="close"
+                title="close (esc)"
+              >
+                ×
+              </button>
+            )}
+          </div>
           <p className="setup-sub mono">
             pick a provider to ground your briefs. keys live encrypted in this browser only.
           </p>

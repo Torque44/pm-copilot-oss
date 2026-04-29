@@ -1,0 +1,24 @@
+{
+  "$schema": "./mcp.config.schema.json",
+  "_comment": "Copy this file to mcp.config.json. Each entry registers a Model Context Protocol server as a data feed for pm-copilot. Built-in feeds (polymarket, kalshi-stub) load automatically; entries here add user feeds.",
+  "mcp_servers": [
+    {
+      "name": "polymarket-mcp",
+      "command": "npx",
+      "args": ["-y", "@pab1it0/polymarket-mcp"],
+      "env": {},
+      "venues": ["polymarket"],
+      "scopes": ["orderbook", "holders"],
+      "transport": "stdio"
+    },
+    {
+      "name": "x-actions",
+      "command": "npx",
+      "args": ["-y", "@xactions/mcp-server"],
+      "env": { "X_BEARER_TOKEN": "${env:X_BEARER_TOKEN}" },
+      "venues": ["polymarket", "kalshi"],
+      "scopes": ["sentiment"],
+      "transport": "stdio"
+    }
+  ]
+}

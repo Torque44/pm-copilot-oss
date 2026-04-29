@@ -1,0 +1,30 @@
+{
+  "name": "@pm-copilot/core",
+  "version": "0.1.0-beta.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./agents": "./src/agents/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./mcp": "./src/mcp/registry.ts",
+    "./feeds/polymarket": "./src/feeds/polymarket.ts",
+    "./types": "./src/types.ts",
+    "./sse": "./src/sse.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.37.0",
+    "p-limit": "^6.1.0"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.1.116",
+    "@types/node": "^22.9.0",
+    "typescript": "^5.7.0"
+  }
+}

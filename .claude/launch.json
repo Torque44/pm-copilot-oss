@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "C:\\Users\\ayush\\AppData\\Roaming\\npm\\pnpm.cmd",
+      "runtimeArgs": ["dev"],
+      "port": 5173
+    }
+  ]
+}

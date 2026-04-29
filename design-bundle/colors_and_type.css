@@ -1,0 +1,173 @@
+/* ==========================================================================
+   PM Copilot — design tokens
+   dark-mode default, not negotiable.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ---- color: surfaces ---- */
+  --bg:             #0A0B10;
+  --surface:        #12141C;
+  --panel:          #1A1D28;
+
+  /* ---- color: borders ---- */
+  --border:         #262A38;
+  --border-strong:  #3A3F52;
+
+  /* ---- color: text ---- */
+  --text:           #E6E8EE;
+  --text-muted:     #8892A6;
+
+  /* ---- color: interactive ---- */
+  --accent:         #0A66FF;  /* links, interactive */
+  --accent-hover:   #0047CC;
+  --accent-12:      rgba(10, 102, 255, 0.12);
+  --accent-20:      rgba(10, 102, 255, 0.20);
+
+  /* ---- color: citation (the signature interaction) ---- */
+  --citation:       #22D3EE;
+  --citation-12:    rgba(34, 211, 238, 0.12);
+  --citation-20:    rgba(34, 211, 238, 0.20);
+  --citation-45:    rgba(34, 211, 238, 0.45);
+
+  /* ---- color: semantic ---- */
+  --success:        #10B981;  /* YES side */
+  --success-12:     rgba(16, 185, 129, 0.12);
+  --danger:         #EF4444;  /* NO side */
+  --danger-12:      rgba(239, 68, 68, 0.12);
+  --warning:        #F59E0B;
+  --warning-12:     rgba(245, 158, 11, 0.12);
+
+  /* ---- type: families ---- */
+  --font-prose: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ---- type: scale ---- */
+  --fs-caption: 12px;
+  --fs-base:    14px;
+  --fs-lg:      16px;
+  --fs-xl:      20px;
+  --fs-price:   24px;
+  --fs-price-lg:32px;
+
+  --lh-tight:   1.2;
+  --lh-base:    1.4;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semibold:600;
+
+  /* ---- spacing scale (4 / 8 / 12 / 16 / 24, no larger) ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+
+  /* ---- shape ---- */
+  --radius: 4px;
+  --border-w: 1px;
+
+  /* ---- layout (research desk) ---- */
+  --rail-left:  320px;
+  --rail-right: 280px;
+  --header-h:   48px;
+  --panel-header-h: 32px;
+
+  /* ---- motion (only citation flash + agent pulse, mostly) ---- */
+  --t-fast: 80ms;
+  --t-med:  120ms;
+  --t-flash:800ms;
+}
+
+/* ==========================================================================
+   element defaults
+   ========================================================================== */
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-prose);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  font-weight: var(--fw-regular);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0;
+}
+
+/* lowercase by default, per voice rules */
+h1, h2, h3, h4, h5, h6, p, button, label, span, div, td, th, li, a {
+  text-transform: none;
+}
+
+h1 { font-size: var(--fs-xl);    font-weight: var(--fw-semibold); line-height: var(--lh-tight); margin: 0; }
+h2 { font-size: var(--fs-lg);    font-weight: var(--fw-semibold); line-height: var(--lh-tight); margin: 0; }
+h3 { font-size: var(--fs-base);  font-weight: var(--fw-semibold); line-height: var(--lh-tight); margin: 0; }
+p  { font-size: var(--fs-base);  line-height: var(--lh-base);     margin: 0; }
+
+small, .caption {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+
+code, .mono {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--t-fast) ease;
+}
+a:hover { color: var(--accent-hover); }
+
+button {
+  font-family: var(--font-prose);
+  font-size: var(--fs-base);
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+
+input, textarea, select {
+  font-family: var(--font-prose);
+  font-size: var(--fs-base);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  outline: none;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+}
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+/* ==========================================================================
+   citation flash — THE signature interaction
+   ========================================================================== */
+
+@keyframes citation-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); background-color: transparent; }
+  15%  { box-shadow: 0 0 0 4px var(--citation-45); background-color: var(--citation-12); }
+  40%  { box-shadow: 0 0 0 4px var(--citation-45); background-color: var(--citation-12); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); background-color: transparent; }
+}
+
+.citation-flash {
+  animation: citation-flash var(--t-flash) ease-out;
+}
+
+@keyframes agent-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1.00; }
+}
+.agent-pulse { animation: agent-pulse 1200ms ease-in-out infinite; }

@@ -1,0 +1,422 @@
+/* components.css — additions for ported components that aren't in the design-bundle styles.
+   Loaded AFTER global.css so these augment, not replace.
+   Keep classnames namespaced enough that they don't collide with global.css. */
+
+/* ---------- NewsPanel tabs ---------- */
+.news-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.news-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  margin-bottom: 8px;
+  padding: 0 0 4px;
+}
+.news-tab {
+  background: transparent;
+  border: 0;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--muted, #888);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+.news-tab.active {
+  color: var(--fg, #eee);
+  background: rgba(255, 255, 255, 0.04);
+}
+.news-tab.disabled {
+  color: rgba(255, 255, 255, 0.2);
+}
+.news-tab:hover:not(.disabled) {
+  color: var(--fg, #eee);
+}
+
+/* ---------- Sentiment list ---------- */
+.sentiment-disabled {
+  padding: 16px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+  text-align: center;
+}
+.sentiment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sentiment-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px 10px;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  align-items: baseline;
+}
+.sentiment-row.flash {
+  background: rgba(34, 211, 238, 0.12);
+}
+.sentiment-kol {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.sentiment-name {
+  font-weight: 500;
+}
+.sentiment-excerpt {
+  grid-column: 1 / -1;
+  color: var(--muted, #aaa);
+}
+.sentiment-meta {
+  color: var(--muted, #777);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* ---------- Resolution criteria block (news tab 3) ---------- */
+.resolution-criteria {
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted, #bbb);
+  white-space: pre-wrap;
+}
+
+/* ---------- Position card (RightRail) ---------- */
+.positions-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wallet-input-row {
+  display: flex;
+  margin-bottom: 4px;
+}
+.wallet-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--fg, #eee);
+  padding: 6px 8px;
+  font-size: 11px;
+  border-radius: 3px;
+}
+.wallet-input:focus {
+  outline: none;
+  border-color: var(--accent, #0a66ff);
+}
+.positions-empty {
+  padding: 8px 4px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+}
+.position-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.position-title {
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.position-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.position-outcome {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.position-meta {
+  color: var(--muted, #888);
+  font-size: 10px;
+}
+
+/* ---------- Watchlist tab (extends global watch-row) ---------- */
+.watchlist-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.watch-remove {
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+}
+.watch-remove:hover {
+  color: var(--danger, #ef4444);
+}
+
+/* ---------- Position strip (above verdict band) ---------- */
+.position-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: rgba(10, 102, 255, 0.06);
+  border-top: 1px solid rgba(10, 102, 255, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.position-strip-label {
+  color: var(--accent, #0a66ff);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.position-strip-card {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+/* ---------- Setup screen ---------- */
+.setup-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  padding: 24px;
+  overflow-y: auto;
+}
+.setup-card {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--bg, #0a0a0a);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.setup-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.setup-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.setup-sub {
+  color: var(--muted, #999);
+  font-size: 12px;
+}
+.setup-foot {
+  font-size: 10px;
+  color: var(--muted, #666);
+  text-align: center;
+  margin-top: 4px;
+}
+.setup-skip {
+  background: transparent;
+  color: var(--text-muted, #888);
+  border: 1px dashed var(--border, #333);
+  border-radius: 4px;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.setup-skip:hover {
+  color: var(--text, #fff);
+  border-color: var(--border-strong, #555);
+}
+
+/* ---------- Provider picker ---------- */
+.provider-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.provider-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.provider-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 16px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: inherit;
+  color: var(--fg, #eee);
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.provider-card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+.provider-card.active {
+  border-color: var(--accent, #0a66ff);
+  background: rgba(10, 102, 255, 0.06);
+}
+.provider-card-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+.provider-card-sub {
+  font-size: 11px;
+  color: var(--muted, #999);
+}
+.provider-advanced-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--muted, #888);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  padding: 4px 0;
+}
+.provider-advanced-toggle:hover {
+  color: var(--fg, #eee);
+}
+.provider-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+.provider-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Key tester ---------- */
+.key-tester {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.key-tester-row {
+  display: flex;
+  gap: 6px;
+}
+.key-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--fg, #eee);
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+}
+.key-input:focus {
+  outline: none;
+  border-color: var(--accent, #0a66ff);
+}
+.key-test-btn {
+  background: rgba(10, 102, 255, 0.12);
+  border: 1px solid var(--accent, #0a66ff);
+  color: var(--accent, #0a66ff);
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+.key-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.key-test-result {
+  font-size: 11px;
+  padding: 4px 0;
+}
+.key-test-result.ok {
+  color: var(--success, #10b981);
+}
+.key-test-result.err {
+  color: var(--danger, #ef4444);
+}
+
+/* ---------- Provider pill (reused in advanced section) ---------- */
+.provider-pill {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--fg, #eee);
+  padding: 4px 10px;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+.provider-pill:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.provider-pill.active {
+  border-color: var(--accent, #0a66ff);
+  color: var(--accent, #0a66ff);
+  background: rgba(10, 102, 255, 0.08);
+}
+
+/* ---------- Chat helpers ---------- */
+.chat-empty {
+  color: var(--text-muted, #888);
+  font-style: italic;
+}
+.chat-typing {
+  color: var(--text-muted, #888);
+  letter-spacing: 4px;
+}
+
+/* ---------- Palette helpers ---------- */
+.palette-empty {
+  color: var(--text-muted, #888);
+  text-align: center;
+  font-style: italic;
+}
+button.palette-item {
+  background: transparent;
+  border: none;
+  color: inherit;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.palette-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}

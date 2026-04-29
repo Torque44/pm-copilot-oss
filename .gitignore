@@ -1,0 +1,47 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build outputs
+dist/
+build/
+.next/
+.vercel/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+mcp.config.json
+
+# runtime cache
+.cache/
+*.log
+prewarm.log
+back.log
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# test artifacts
+coverage/
+playwright-report/
+test-results/
+
+# misc
+*.tgz
+.history/
+
+# superpowers brainstorming companion (per-session scratch)
+.superpowers/
+
+# tooling-specific runtime
+tsc-*.log
+install.log
+dev.log
+dev-server.log

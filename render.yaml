@@ -1,0 +1,29 @@
+# Render free-tier deploy for the API.
+# Pair with the Vercel deploy of apps/web; vercel.json rewrites /api/* here.
+#
+# Per HANDOFF.md §Task K. SSE works on Render's long-running Node web service
+# (Vercel serverless would idle out the brief stream).
+
+services:
+  - type: web
+    name: pm-copilot-server
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: corepack enable && pnpm install && pnpm -F @pm-copilot/server build
+    startCommand: pnpm -F @pm-copilot/server start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CORS_ORIGIN
+        value: https://pm-copilot.vercel.app
+      - key: NODE_ENV
+        value: production
+      # Set PROVIDER + corresponding *_API_KEY in the Render dashboard, OR
+      # leave PROVIDER unset and rely on per-request BYOK headers from web.
+      # - key: PROVIDER
+      #   value: anthropic
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false

@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    // No `rootDir` — server source pulls @pm-copilot/core via the workspace
+    // symlink and TS needs the inferred common root to span both. We run with
+    // `tsc --noEmit` for typecheck and `tsx watch` for dev; emit isn't used at
+    // runtime, so the wider rootDir is safe. (Project References are the
+    // proper long-term fix; deferred to post-beta.)
+    "declaration": false,
+    "noEmit": true,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "paths": {
+      "@pm-copilot/core": ["../../packages/core/src/index.ts"],
+      "@pm-copilot/core/*": ["../../packages/core/src/*"]
+    }
+  },
+  "include": ["src/**/*", "../../packages/core/src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

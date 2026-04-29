@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>pm copilot · research desk</title>
+  <link rel="icon" href="../assets/logo-mark.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="agents.js"></script>
+<script src="scroll-rail.js"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="LeftRail.jsx"></script>
+<script type="text/babel" src="RightRail.jsx"></script>
+<script type="text/babel" src="MarketHeader.jsx"></script>
+<script type="text/babel" src="EvidenceGrid.jsx"></script>
+<script type="text/babel" src="VerdictBand.jsx"></script>
+<script type="text/babel" src="CommandPalette.jsx"></script>
+<script type="text/babel" src="States.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+const STATES = [
+  { key: 'desk-binary', label: '01 desk · binary' },
+  { key: 'desk-multi',  label: '02 desk · multi-outcome' },
+  { key: 'empty',       label: '03 empty' },
+  { key: 'loading',     label: '04 loading' },
+  { key: 'error',       label: '05 error' },
+  { key: 'flash',       label: '06 citation flash' },
+  { key: 'compare',     label: '07 compare' },
+  { key: 'settings',    label: '08 settings' },
+  { key: 'mobile',      label: '09 mobile' },
+];
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#0A66FF",
+  "citationColor": "#22D3EE",
+  "successColor": "#10B981",
+  "dangerColor": "#EF4444",
+  "density": "regular",
+  "panelRadius": 4,
+  "fadeEdges": 12,
+  "leftRailWidth": 320,
+  "rightRailWidth": 280,
+  "showStateSwitcher": true,
+  "monoNumerics": true,
+  "agentDotsStyle": "dots"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  // apply tweaks as CSS vars on :root
+  useEffect(() => {
+    const r = document.documentElement.style;
+    r.setProperty('--accent', t.accentColor);
+    r.setProperty('--citation', t.citationColor);
+    r.setProperty('--success', t.successColor);
+    r.setProperty('--danger', t.dangerColor);
+    r.setProperty('--radius', t.panelRadius + 'px');
+    r.setProperty('--rail-left', t.leftRailWidth + 'px');
+    r.setProperty('--rail-right', t.rightRailWidth + 'px');
+    document.body.dataset.density = t.density;
+    document.body.dataset.agentStyle = t.agentDotsStyle;
+    document.body.dataset.monoNum = t.monoNumerics ? '1' : '0';
+    // fade edge — read by all .panel-body etc via fallback custom prop
+    r.setProperty('--max-fade', t.fadeEdges + 'px');
+  }, [t]);
+  const [state, setState] = useState('desk-binary');
+  const [marketId, setMarketId] = useState('btc100k');
+  const [focusedPanel, setFocusedPanel] = useState(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [flashId, setFlashId] = useState(null);
+
+  // sync state-driven config
+  const isEmpty   = state === 'empty';
+  const isLoading = state === 'loading';
+  const isError   = state === 'error';
+  const isCompare = state === 'compare';
+  const isMobile  = state === 'mobile';
+  const market    = state === 'desk-multi'
+    ? window.MARKETS.dem2028
+    : window.MARKETS.btc100k;
+
+  // open settings from switcher
+  useEffect(() => {
+    if (state === 'settings') setSettingsOpen(true);
+    else setSettingsOpen(false);
+  }, [state]);
+
+  // citation-flash demo state
+  useEffect(() => {
+    if (state !== 'flash') return;
+    let cancelled = false;
+    const cycle = ['c-014', 'c-022', 'c-005'];
+    let i = 0;
+    const tick = () => {
+      if (cancelled) return;
+      const id = cycle[i % cycle.length];
+      i++;
+      setFlashId(null);
+      requestAnimationFrame(() => {
+        if (!cancelled) {
+          setFlashId(id);
+          // scroll into view inside its panel
+          const el = document.getElementById('src-' + id);
+          if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      });
+      setTimeout(tick, 1600);
+    };
+    tick();
+    return () => { cancelled = true; };
+  }, [state]);
+
+  // keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key === 'k') { e.preventDefault(); setPaletteOpen(o => !o); }
+      else if (meta && e.key === '1') { e.preventDefault(); setFocusedPanel(p => p==='book'   ?null:'book'); }
+      else if (meta && e.key === '2') { e.preventDefault(); setFocusedPanel(p => p==='holders'?null:'holders'); }
+      else if (meta && e.key === '3') { e.preventDefault(); setFocusedPanel(p => p==='news'   ?null:'news'); }
+      else if (meta && e.key === '4') { e.preventDefault(); setFocusedPanel(p => p==='thesis' ?null:'thesis'); }
+      else if (meta && e.key === '[') { e.preventDefault(); setLeftCollapsed(c => !c); }
+      else if (meta && e.key === ']') { e.preventDefault(); setRightCollapsed(c => !c); }
+      else if (e.key === 'Escape') { setPaletteOpen(false); setSettingsOpen(false); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const onFlash = (id) => {
+    setFlashId(null);
+    requestAnimationFrame(() => {
+      setFlashId(id);
+      const el = document.getElementById('src-' + id);
+      if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  };
+
+  // 7-dot agent state machine per scene
+  const agentStates =
+    isLoading ? ['done','done','running','running','pending','pending','pending'] :
+    isError   ? ['done','done','error','done','done','done','done'] :
+    state === 'flash' ? ['done','done','done','done','done','done','done'] :
+    ['done','done','done','done','done','done','done'];
+
+  if (isMobile) {
+    return (
+      <>
+        {t.showStateSwitcher && <StateSwitcher state={state} setState={setState} />}
+        <MobileFallback />
+        <ResearchDeskTweaks t={t} setTweak={setTweak} />
+      </>
+    );
+  }
+
+  if (isCompare) {
+    const a = window.MARKETS.btc100k;
+    const b = { ...window.MARKETS.btc100k, id: 'fed25', title: 'fed cuts 25bp at next meeting', yes: 0.71, no: 0.29, vol24h: '$1.18M', resolveIn: '19d', criteria: 'resolves YES if fomc target range lower bound decreases by 25bp at the next meeting.' };
+    return (
+      <div className={`app ${leftCollapsed?'no-left':''} ${rightCollapsed?'no-right':''}`}>
+        {t.showStateSwitcher && <StateSwitcher state={state} setState={setState} />}
+        <LeftRail selectedId={marketId} onSelect={setMarketId} collapsed={leftCollapsed} />
+        <main className="workbench">
+          <CompareMode a={a} b={b} onFlash={onFlash} flashId={flashId} />
+          <Chat />
+        </main>
+        <RightRail collapsed={rightCollapsed} agentStates={agentStates} />
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+        <ResearchDeskTweaks t={t} setTweak={setTweak} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`app ${leftCollapsed?'no-left':''} ${rightCollapsed?'no-right':''} ${isEmpty?'empty':''}`}>
+      {t.showStateSwitcher && <StateSwitcher state={state} setState={setState} />}
+
+      {isLoading && <LoadingToast />}
+
+      <LeftRail
+        selectedId={isEmpty ? null : marketId}
+        onSelect={(id) => { setMarketId(id); }}
+        collapsed={leftCollapsed}
+      />
+
+      <main className="workbench">
+        {isEmpty ? (
+          <EmptyState />
+        ) : (
+          <>
+            <MarketHeader market={market} />
+            <EvidenceGrid
+              focusedPanel={focusedPanel}
+              onFocus={(k) => setFocusedPanel(p => p === k ? null : k)}
+              onFlash={onFlash}
+              flashId={flashId}
+              errorPanel={isError ? 'news' : null}
+              loading={isLoading}
+            />
+            <VerdictBand />
+            <Chat />
+          </>
+        )}
+      </main>
+
+      <RightRail collapsed={rightCollapsed} agentStates={agentStates} />
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <SettingsModal open={settingsOpen} onClose={() => { setSettingsOpen(false); setState('desk-binary'); }} />
+      <ResearchDeskTweaks t={t} setTweak={setTweak} />
+    </div>
+  );
+}
+
+function StateSwitcher({ state, setState }) {
+  return (
+    <div className="state-switcher" data-screen-label="state-switcher">
+      {STATES.map(s => (
+        <button key={s.key} className={s.key === state ? 'active' : ''} onClick={() => setState(s.key)}>
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ResearchDeskTweaks({ t, setTweak }) {
+  return (
+    <TweaksPanel title="Tweaks">
+      <TweakSection label="Palette" />
+      <TweakColor  label="Accent"   value={t.accentColor}   onChange={(v) => setTweak('accentColor', v)} />
+      <TweakColor  label="Citation" value={t.citationColor} onChange={(v) => setTweak('citationColor', v)} />
+      <TweakColor  label="YES"      value={t.successColor}  onChange={(v) => setTweak('successColor', v)} />
+      <TweakColor  label="NO"       value={t.dangerColor}   onChange={(v) => setTweak('dangerColor', v)} />
+
+      <TweakSection label="Layout" />
+      <TweakRadio  label="Density" value={t.density}
+                   options={['compact','regular','comfy']}
+                   onChange={(v) => setTweak('density', v)} />
+      <TweakSlider label="Corner radius" value={t.panelRadius} min={0} max={12} unit="px"
+                   onChange={(v) => setTweak('panelRadius', v)} />
+      <TweakSlider label="Left rail" value={t.leftRailWidth} min={240} max={400} step={4} unit="px"
+                   onChange={(v) => setTweak('leftRailWidth', v)} />
+      <TweakSlider label="Right rail" value={t.rightRailWidth} min={220} max={360} step={4} unit="px"
+                   onChange={(v) => setTweak('rightRailWidth', v)} />
+
+      <TweakSection label="Scroll edges" />
+      <TweakSlider label="Fade height" value={t.fadeEdges} min={0} max={48} unit="px"
+                   onChange={(v) => setTweak('fadeEdges', v)} />
+
+      <TweakSection label="Numerics" />
+      <TweakRadio  label="Agent indicator" value={t.agentDotsStyle}
+                   options={['dots','bars','text']}
+                   onChange={(v) => setTweak('agentDotsStyle', v)} />
+      <TweakToggle label="Tabular figures" value={t.monoNumerics}
+                   onChange={(v) => setTweak('monoNumerics', v)} />
+
+      <TweakSection label="Preview" />
+      <TweakToggle label="Show state switcher" value={t.showStateSwitcher}
+                   onChange={(v) => setTweak('showStateSwitcher', v)} />
+    </TweaksPanel>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>

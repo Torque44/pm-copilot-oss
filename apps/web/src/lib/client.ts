@@ -129,14 +129,34 @@ export async function authTest(
   }
 }
 
-/** Build the SSE URL for the brief endpoint. EventSource can't send headers,
- *  so BYOK on this endpoint will need to fall back to query params on the
- *  server side. We emit the bare URL here; the server-side fallback (?provider=
- *  &key=) is documented but not encoded yet (would leak keys in browser URL
- *  bar) — the recommended path is to set the BYOK header on a preceding
- *  /api/* call so the server can stash a short-lived session token.
+/** Build the SSE URL for the brief endpoint, attaching BYOK keys as query
+ *  params so the server's middleware can pick them up (EventSource can't
+ *  send custom headers).
+ *
+ *  Trade-off: keys appear in the URL bar + browser history + any access
+ *  logs. Acceptable for local private beta; production should swap to a
+ *  session-token handshake (see HANDOFF.md).
+ *
+ *  Async because we read from cryptoStorage. Callers that don't have a
+ *  primary key configured can still call this — they'll just get a URL
+ *  without the BYOK params, and the server falls through to env vars
+ *  (or subprocess auth for the anthropic provider).
  */
-export function buildBriefSSEUrl(marketId: string): string {
+export async function buildBriefSSEUrl(marketId: string): Promise<string> {
   const params = new URLSearchParams({ marketId });
+  try {
+    const [primary, primaryProvider, perplexity, xai] = await Promise.all([
+      getSecret(SECRET_KEY_PRIMARY),
+      getSecret(SECRET_KEY_PRIMARY_PROVIDER),
+      getSecret(SECRET_KEY_PERPLEXITY),
+      getSecret(SECRET_KEY_XAI),
+    ]);
+    if (primary) params.set('key', primary);
+    if (primaryProvider) params.set('provider', primaryProvider);
+    if (perplexity) params.set('pkey', perplexity);
+    if (xai) params.set('xkey', xai);
+  } catch {
+    /* fall through — no BYOK; server may still serve via env vars */
+  }
   return `/api/brief?${params.toString()}`;
 }

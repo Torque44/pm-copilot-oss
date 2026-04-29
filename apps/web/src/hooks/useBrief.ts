@@ -6,7 +6,7 @@
 // plus a couple of meta envelopes ('market', 'cache'). We tolerate the
 // superset and only key on `t`.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   AgentStatus,
   BookRow,
@@ -339,9 +339,25 @@ export type UseBriefResult = {
 };
 
 export function useBrief(marketId: string | null): UseBriefResult {
-  const url = marketId ? buildBriefSSEUrl(marketId) : null;
-  const { events, state, reconnect } = useSSE<BriefEventLike>(url);
+  // buildBriefSSEUrl is async (reads keys from IndexedDB). We resolve it in
+  // an effect and feed the resulting URL to useSSE. Until it resolves the
+  // url is null so useSSE stays idle — no flash-of-no-key request.
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!marketId) {
+      setUrl(null);
+      return;
+    }
+    void buildBriefSSEUrl(marketId).then((u) => {
+      if (!cancelled) setUrl(u);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [marketId]);
 
+  const { events, state, reconnect } = useSSE<BriefEventLike>(url);
   const brief = useMemo<BriefShape>(() => reduce(events), [events]);
 
   return { brief, sseState: state, reconnect };

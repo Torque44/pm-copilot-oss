@@ -1,17 +1,19 @@
-// BYOK header middleware.
+// BYOK middleware — reads provider keys from headers (preferred) or query
+// params (fallback for SSE endpoints where EventSource can't send headers).
+// Attaches to `req.byok`. Server NEVER persists, NEVER logs.
 //
-// Extracts user-supplied LLM keys from per-request headers, attaches to
-// `req.byok`. Server NEVER persists, NEVER logs. Headers are case-insensitive
-// per HTTP spec.
-//
-// Headers supported:
+// Headers (preferred — used by fetch/apiJSON):
 //   x-llm-provider          → 'anthropic' | 'openai' | 'google' | 'perplexity'
 //   x-llm-key               → primary provider key
 //   x-perplexity-key        → optional News enhancement key
-//   x-xai-key               → optional Sentiment agent key (required for sentiment)
+//   x-xai-key               → optional Sentiment agent key
 //
-// In self-host mode (env vars set), this middleware is a no-op — the
-// byokProvider() call upstream falls back to env when headers absent.
+// Query params (fallback — used by EventSource on /api/brief):
+//   ?provider=  ?key=  ?pkey=  ?xkey=
+//
+// Trade-off: query-param keys appear in the URL bar + access logs. Acceptable
+// for local private beta where the only consumer of the URL is the user's own
+// browser. For production we'd switch to a session-token handshake, see HANDOFF.md.
 
 import type { Request, Response, NextFunction } from 'express';
 import type { BYOKHeaders } from '@pm-copilot/core';
@@ -33,15 +35,19 @@ export function byokHeader(req: Request, _res: Response, next: NextFunction) {
     const v = req.headers[name.toLowerCase()];
     return typeof v === 'string' && v.length > 0 ? v : undefined;
   };
+  const q = (name: string) => {
+    const v = req.query[name];
+    return typeof v === 'string' && v.length > 0 ? v : undefined;
+  };
 
-  const primary = h('x-llm-provider');
-  const validatedPrimary = primary && VALID_PROVIDERS.has(primary) ? primary : undefined;
+  const rawPrimary = h('x-llm-provider') ?? q('provider');
+  const validatedPrimary = rawPrimary && VALID_PROVIDERS.has(rawPrimary) ? rawPrimary : undefined;
 
   req.byok = {
     primary: validatedPrimary,
-    primaryKey: h('x-llm-key'),
-    perplexityKey: h('x-perplexity-key'),
-    xaiKey: h('x-xai-key'),
+    primaryKey: h('x-llm-key') ?? q('key'),
+    perplexityKey: h('x-perplexity-key') ?? q('pkey'),
+    xaiKey: h('x-xai-key') ?? q('xkey'),
   };
 
   next();

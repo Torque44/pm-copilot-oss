@@ -13,6 +13,11 @@ export interface RightRailProps {
   wallet?: string;
   positions?: Position[];
   onWalletChange?: (wallet: string) => void;
+  /** Discovery affordance for paste-key flow — opens /setup. */
+  onOpenSetup?: () => void;
+  /** Whether the user has additional provider keys configured (drives the
+   *  small badge next to the providers button). */
+  providerSummary?: { primary: string | null; perplexity: boolean; xai: boolean };
 }
 
 export function RightRail({
@@ -23,13 +28,37 @@ export function RightRail({
   wallet = '',
   positions = [],
   onWalletChange,
+  onOpenSetup,
+  providerSummary,
 }: RightRailProps) {
   if (collapsed) return null;
+
+  const providerLine = providerSummary
+    ? [
+        providerSummary.primary || 'subprocess',
+        providerSummary.perplexity ? 'perplexity' : null,
+        providerSummary.xai ? 'xai' : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : 'subprocess';
 
   return (
     <aside className="rail-right">
       <div className="rail-section">
-        <div className="rail-section-title">agents</div>
+        <div className="rail-section-title rail-section-title-row">
+          <span>agents</span>
+          {onOpenSetup && (
+            <button
+              type="button"
+              className="rail-providers-btn mono"
+              onClick={onOpenSetup}
+              title="add or change provider keys"
+            >
+              providers
+            </button>
+          )}
+        </div>
         <AgentDots states={agentStates} />
         <div className="agent-legend mono">
           <span>
@@ -45,6 +74,7 @@ export function RightRail({
             <span className="dot error" /> error
           </span>
         </div>
+        <div className="rail-providers-summary mono">{providerLine}</div>
       </div>
 
       <div className="rail-section">

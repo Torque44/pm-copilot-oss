@@ -496,6 +496,12 @@ export function App() {
         wallet={wallet}
         positions={positions}
         onWalletChange={setWallet}
+        onOpenSetup={() => navigate({ name: 'setup' })}
+        providerSummary={{
+          primary: providerConfig.primary,
+          perplexity: providerConfig.hasPerplexity,
+          xai: providerConfig.hasXai,
+        }}
       />
 
       <CommandPalette

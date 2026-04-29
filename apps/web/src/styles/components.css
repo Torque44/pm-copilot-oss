@@ -593,7 +593,60 @@
   text-decoration: underline;
 }
 
-/* ---------- Chat helpers ---------- */
+/* ---------- Chat — visible affordance ---------- */
+/* The design-bundle's collapsed chat was a 35px transparent strip with a tiny
+   `›` glyph and a placeholder, hard to spot. This block strengthens the
+   collapsed state so users notice the chat is there, then keeps the open
+   state as a sibling layout (no animations needed). */
+.chat {
+  border-top: 1px solid var(--border-strong, #3a3f52) !important;
+  background: var(--surface, #12141c) !important;
+}
+.chat-collapsed {
+  /* Override the design-bundle's transparent + 8px-vertical pill. */
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 14px 18px !important;
+  background: rgba(10, 102, 255, 0.04) !important;
+  border: 0 !important;
+  border-left: 2px solid var(--accent, #0a66ff) !important;
+  cursor: text !important;
+  width: 100% !important;
+  text-align: left !important;
+  transition: background-color 0.12s;
+}
+.chat-collapsed:hover {
+  background: rgba(10, 102, 255, 0.08) !important;
+}
+.chat-collapsed .chat-prompt {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent, #0a66ff);
+}
+.chat-collapsed .chat-placeholder {
+  font-size: 13px !important;
+  color: var(--text, #e6e6e6) !important;
+  opacity: 0.7;
+}
+.chat-collapsed .kbd {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  margin-left: auto !important;
+}
+
+/* Open state: chat-expanded already gets layout from global.css; we just
+   tighten the visual frame so the input is obvious. */
+.chat-input {
+  font-size: 13px;
+}
+.chat-input:focus {
+  border-color: var(--accent, #0a66ff) !important;
+  outline: none;
+}
 .chat-empty {
   color: var(--text-muted, #888);
   font-style: italic;
@@ -601,6 +654,41 @@
 .chat-typing {
   color: var(--text-muted, #888);
   letter-spacing: 4px;
+}
+
+/* ---------- RightRail providers button ---------- */
+.rail-section-title-row {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rail-providers-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #888);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+}
+.rail-providers-btn:hover {
+  color: var(--text, #e6e6e6);
+  border-color: var(--accent, #0a66ff);
+  background: rgba(10, 102, 255, 0.06);
+}
+.rail-providers-summary {
+  font-size: 9px;
+  color: var(--text-muted, #888);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
 }
 
 /* ---------- Palette helpers ---------- */

@@ -68,8 +68,10 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
         </div>
       ) : (
         <button className="chat-collapsed" onClick={() => setOpen(true)}>
-          <span className="chat-prompt mono">›</span>
-          <span className="chat-placeholder">ask about this market…</span>
+          <span className="chat-prompt mono">ask</span>
+          <span className="chat-placeholder">
+            ask about book depth, holders, catalysts, or thesis…
+          </span>
           <span className="kbd mono">⌘L</span>
         </button>
       )}

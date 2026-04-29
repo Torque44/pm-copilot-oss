@@ -65,8 +65,15 @@ function scoreTweet(t: StubTweet, queryTokens: Set<string>): number {
 }
 
 /**
- * Return the top N tweets matched by simple keyword overlap with the market
- * title. Returns an empty array if nothing scores > 0; the sentiment agent
+ * Return the top N tweets matched by keyword overlap with the market title.
+ *
+ * The threshold is intentionally strict: requires ≥2 token hits, OR exactly 1
+ * token where that token is a topic-specific tag the tweet declared in its
+ * `topics` field (e.g. "btc", "polymarket"). Loose 1-token matches against
+ * generic words like "market" or "trade" are dropped — that's how the Iran
+ * peace-deal market was getting BTC tweets surfaced as "sentiment".
+ *
+ * Returns an empty array when nothing crosses the bar; the sentiment agent
  * handles the empty case gracefully.
  */
 export function topTweetsForMarket(marketTitle: string, n = 10): StubTweet[] {
@@ -75,9 +82,17 @@ export function topTweetsForMarket(marketTitle: string, n = 10): StubTweet[] {
   const queryTokens = tokenize(marketTitle);
   if (queryTokens.size === 0) return [];
 
-  return all
-    .map((t) => ({ t, score: scoreTweet(t, queryTokens) }))
-    .filter((x) => x.score > 0)
+  const scored = all.map((t) => {
+    const score = scoreTweet(t, queryTokens);
+    // Strong-match bonus: count token hits against the tweet's declared
+    // topics (these are intentional tags — "btc", "fed", "polymarket").
+    // A single tag hit is more meaningful than a single word hit.
+    const tagHits = (t.topics || []).filter((tag) => queryTokens.has(tag.toLowerCase())).length;
+    return { t, score, tagHits };
+  });
+
+  return scored
+    .filter((x) => x.score >= 2 || x.tagHits >= 1)
     .sort((a, b) => b.score - a.score)
     .slice(0, n)
     .map((x) => x.t);

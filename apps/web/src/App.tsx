@@ -123,6 +123,20 @@ function agentStatesFromBrief(agents: ReturnType<typeof useBrief>['brief']['agen
   ];
 }
 
+function agentDetailsFromBrief(
+  details: ReturnType<typeof useBrief>['brief']['agentDetails'],
+): Array<{ error?: string; elapsedMs?: number } | undefined> {
+  return [
+    details.market,
+    details.holders,
+    details.news,
+    details.thesis,
+    details.sentiment,
+    details.synthesis,
+    details.ask,
+  ];
+}
+
 // ---------- citation → panel data ----------
 // useBrief reduces every agent's citations into one Citation[] union. The
 // panels want kind-specific lists. Project them.
@@ -172,14 +186,21 @@ function baseRateFromComparables(hits: ComparableHit[]): { yesCount: number; res
 function kolCitationsToItems(cits: Citation[]): KOLSentimentItem[] {
   const list = cits.filter((c) => c.kind === 'kol');
   if (list.length === 0) return [];
-  return list.map((c) => {
-    const handle = (c.label || '').replace(/^@/, '');
+  return list.map((c): KOLSentimentItem => {
+    // The sentiment agent stashes {handle, text, url, createdAt} in payload.
+    // The label is just "@handle" for compactness — pull the actual tweet
+    // text from payload so the panel doesn't echo the handle as the excerpt.
+    const payload = (c as Citation & { payload?: unknown }).payload as
+      | { handle?: string; text?: string; createdAt?: string }
+      | undefined;
+    const labelHandle = (c.label || '').replace(/^@/, '');
+    const handle = (payload?.handle || labelHandle || '').replace(/^@/, '');
     return {
       id: c.id,
       kol: handle || 'kol',
       handle,
-      excerpt: c.label || '',
-      when: '',
+      excerpt: typeof payload?.text === 'string' && payload.text ? payload.text : '',
+      when: typeof payload?.createdAt === 'string' ? payload.createdAt : '',
       relevance: 0,
       url: c.url || '',
     };
@@ -547,6 +568,7 @@ export function App() {
       <RightRail
         collapsed={rightCollapsed}
         agentStates={agentStatesFromBrief(brief.agents)}
+        agentDetails={agentDetailsFromBrief(brief.agentDetails)}
         watchlist={watchlist.list}
         onWatchlistRemove={watchlist.remove}
         wallet={wallet}

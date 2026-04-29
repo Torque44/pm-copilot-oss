@@ -87,25 +87,42 @@ export function NewsPanel({ flashId, catalysts, sentiment, resolution }: NewsPan
         </div>
       )}
 
-      {tab === 'sentiment' && sentiment !== null && (
+      {tab === 'sentiment' && sentiment !== null && sentiment.length === 0 && (
+        <div className="panel-placeholder mono">no sentiment surfaced for this market</div>
+      )}
+      {tab === 'sentiment' && sentiment !== null && sentiment.length > 0 && (
         <ul className="sentiment-list">
-          {sentiment.map((s) => (
-            <li
-              key={s.id}
-              id={`src-${s.id}`}
-              className={`sentiment-row ${flashId === s.id ? 'flash' : ''}`}
-            >
-              <span className="cite-id mono">[kol·{s.id.replace(/^c-?/, '')}]</span>
-              <span className="sentiment-kol">
-                <span className="sentiment-name">{s.kol}</span>
-                <span className="mono muted">@{s.handle}</span>
-              </span>
-              <span className="sentiment-excerpt">{s.excerpt}</span>
-              <span className="sentiment-meta mono">
-                {s.when} · rel {s.relevance.toFixed(2)}
-              </span>
-            </li>
-          ))}
+          {sentiment.map((s) => {
+            const handle = s.handle?.replace(/^@/, '') || '';
+            const tweetUrl = s.url || (handle ? `https://x.com/${handle}` : '');
+            return (
+              <li
+                key={s.id}
+                id={`src-${s.id}`}
+                className={`sentiment-row ${flashId === s.id ? 'flash' : ''}`}
+              >
+                <span className="cite-id mono">[{s.id}]</span>
+                {handle && (
+                  tweetUrl ? (
+                    <a
+                      className="sentiment-handle mono news-link"
+                      href={tweetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      @{handle}
+                    </a>
+                  ) : (
+                    <span className="sentiment-handle mono">@{handle}</span>
+                  )
+                )}
+                {s.excerpt
+                  ? <span className="sentiment-excerpt">{s.excerpt}</span>
+                  : <span className="sentiment-excerpt mono muted">(no excerpt)</span>}
+                {s.when && <span className="sentiment-meta mono">{s.when}</span>}
+              </li>
+            );
+          })}
         </ul>
       )}
 

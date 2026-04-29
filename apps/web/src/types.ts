@@ -195,6 +195,14 @@ export type BriefAgents = {
   ask: AgentStatus;
 };
 
+/** Detail captured per agent for tooltip surfacing — error text + elapsed ms.
+ *  Same key set as BriefAgents; missing entries mean the agent never reported. */
+export type BriefAgentDetail = {
+  error?: string;
+  elapsedMs?: number;
+};
+export type BriefAgentDetails = Partial<Record<keyof BriefAgents, BriefAgentDetail>>;
+
 /** Reduced shape of the live brief stream consumed by UI panels. */
 export type BriefShape = {
   market: Market | null;
@@ -203,6 +211,8 @@ export type BriefShape = {
    *  MarketMeta before grounding. */
   rawMarket: unknown;
   agents: BriefAgents;
+  /** Per-agent error/elapsed detail for tooltip surfacing. */
+  agentDetails: BriefAgentDetails;
   sections: BriefShapeSection[];
   citations: Citation[];
   /** Book panel rows derived from the supervisor's `agent:data` grounding. */

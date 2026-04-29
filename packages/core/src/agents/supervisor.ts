@@ -114,6 +114,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   // simultaneous, and the slow specialists (web-search news) don't gate it.
   const sentimentInput: SentimentInput = {
     marketTitle: market.title,
+    category: market.category,
     yesPrice: typeof market.yes === 'number' ? market.yes : null,
     noPrice: typeof market.no === 'number' ? market.no : null,
     endDate: typeof market.endDate === 'string' ? market.endDate : null,

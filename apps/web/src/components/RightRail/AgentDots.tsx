@@ -2,7 +2,7 @@
 // each agent does. Order matches the supervisor's emit topology:
 //   market · holders · news · thesis · sentiment · synthesis · ask
 
-import type { AgentStatus } from '../../types';
+import type { AgentStatus, BriefAgentDetail } from '../../types';
 
 type AgentMeta = {
   key: string;
@@ -67,23 +67,39 @@ const STATUS_COPY: Record<AgentStatus, string> = {
 
 export interface AgentDotsProps {
   states: AgentStatus[];
+  /** Optional per-slot details (error text + elapsedMs). Index aligned with
+   *  AGENTS order. Surfaced inside the hover tooltip. */
+  details?: Array<BriefAgentDetail | undefined>;
 }
 
-export function AgentDots({ states }: AgentDotsProps) {
+function fmtElapsed(ms: number | undefined): string {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function AgentDots({ states, details }: AgentDotsProps) {
   return (
     <div className="agent-dots">
       <span className="agent-label mono">agents</span>
       {AGENTS.map((a, i) => {
         const status: AgentStatus = states[i] ?? 'pending';
+        const detail = details?.[i];
+        const elapsed = fmtElapsed(detail?.elapsedMs);
         return (
           <span key={a.key} className="agent-dot-wrap">
             <span className={`dot ${status}`} />
             <span className="agent-dot-tooltip" role="tooltip">
               <span className="agent-dot-tooltip-head">
                 <span className="agent-dot-tooltip-name">{a.label}</span>
-                <span className={`agent-dot-tooltip-status ${status}`}>{STATUS_COPY[status]}</span>
+                <span className={`agent-dot-tooltip-status ${status}`}>
+                  {STATUS_COPY[status]}{elapsed ? ` · ${elapsed}` : ''}
+                </span>
               </span>
               <span className="agent-dot-tooltip-body">{a.does}</span>
+              {status === 'error' && detail?.error && (
+                <span className="agent-dot-tooltip-error mono">{detail.error.slice(0, 200)}</span>
+              )}
               <span className="agent-dot-tooltip-meta mono">{a.source}</span>
             </span>
           </span>

@@ -12,6 +12,7 @@ import type {
   BookRow,
   BriefShape,
   BriefAgents,
+  BriefAgentDetails,
   BriefShapeSection,
   BriefClaim,
   Citation,
@@ -43,8 +44,8 @@ type BriefEventLike =
   | { t: 'market'; market: unknown }
   | { t: 'cache'; source?: string; ageMs?: number }
   | { t: 'agent:start'; agent: ServerAgentId }
-  | { t: 'agent:done'; agent: ServerAgentId; output?: { claims?: unknown[]; citations?: unknown[] } }
-  | { t: 'agent:error'; agent: ServerAgentId; error?: string }
+  | { t: 'agent:done'; agent: ServerAgentId; elapsedMs?: number; output?: { claims?: unknown[]; citations?: unknown[] } }
+  | { t: 'agent:error'; agent: ServerAgentId; elapsedMs?: number; error?: string }
   | { t: 'agent:data'; agent: ServerAgentId; grounding?: unknown }
   | { t: 'brief:section'; name: string; claims?: unknown[] }
   | { t: 'brief:complete'; brief?: { citations?: unknown[] } }
@@ -232,6 +233,7 @@ function reduce(events: BriefEventLike[]): BriefShape {
   let market: Market | null = null;
   let rawMarket: unknown = null;
   const agents: BriefAgents = { ...INITIAL_AGENTS };
+  const agentDetails: BriefAgentDetails = {};
   const sectionMap = new Map<string, BriefShapeSection>();
   const citationMap = new Map<string, Citation>();
   const errors: string[] = [];
@@ -290,11 +292,24 @@ function reduce(events: BriefEventLike[]): BriefShape {
         const claims: BriefClaim[] = Array.isArray(claimsRaw) ? claimsRaw.filter(isClaim) : [];
         upsertSection(ev.agent, claims);
         addCitations(ev.output?.citations);
+        if (ev.agent in agents && typeof ev.elapsedMs === 'number') {
+          const k = ev.agent as keyof BriefAgents;
+          const prev = agentDetails[k] ?? {};
+          agentDetails[k] = { ...prev, elapsedMs: ev.elapsedMs };
+        }
         break;
       }
       case 'agent:error':
         setAgent(ev.agent, 'error');
         if (typeof ev.error === 'string' && ev.error) errors.push(`${ev.agent}: ${ev.error}`);
+        if (ev.agent in agents) {
+          const k = ev.agent as keyof BriefAgents;
+          const prev = agentDetails[k] ?? {};
+          const detail: { error?: string; elapsedMs?: number } = { ...prev };
+          if (typeof ev.error === 'string') detail.error = ev.error;
+          if (typeof ev.elapsedMs === 'number') detail.elapsedMs = ev.elapsedMs;
+          agentDetails[k] = detail;
+        }
         break;
       case 'agent:data': {
         const g = ev.grounding as { kind?: string } | undefined;
@@ -333,6 +348,7 @@ function reduce(events: BriefEventLike[]): BriefShape {
     market,
     rawMarket,
     agents,
+    agentDetails,
     sections: Array.from(sectionMap.values()),
     citations: Array.from(citationMap.values()),
     bookRows,

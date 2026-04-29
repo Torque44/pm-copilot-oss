@@ -19,29 +19,88 @@ import type {
 } from './types';
 import type { LLMProvider } from '../providers/types';
 
-const SYS = `You are a prediction-market sentiment analyst. Search X (twitter) for recent posts about the market and summarise the prevailing trader take.
+/**
+ * Build a category-aware system prompt for the sentiment agent. Different
+ * market kinds want very different signal sources:
+ *
+ *   - politics  → official accounts (gov't depts, foreign ministries),
+ *                  established news outlets, regional press, expert analysts
+ *   - crypto    → on-chain analysts, prediction-market-active KOLs, exchanges,
+ *                  protocol founders
+ *   - sports    → team accounts, beat reporters, ESPN/insider accounts
+ *   - other     → broad mix; let the model pick
+ *
+ * The whole point: when a trader opens "US-Iran peace deal", we should NOT
+ * surface random PM-trader chat — we should surface @StateDept, @khamenei_ir,
+ * @AP, @Reuters, regional analysts, etc.
+ */
+function systemPromptForCategory(category: string): string {
+  const profile = sourceProfileFor(category);
+  return `You are a sentiment analyst for prediction-market traders. Search X (twitter) for recent posts that ACTUALLY MOVE THE NEEDLE on this market — not generic chatter.
+
+Source priority (most important first):
+${profile.map((line, i) => `${i + 1}. ${line}`).join('\n')}
 
 Rules:
-- Output 3-5 short claims about how prediction-market-savvy traders are
-  positioning or talking about this contract.
-- Each claim MUST end with one or more citation tags [kol·N] referencing
-  the tweet you used (1 = first cited tweet, 2 = second, …).
-- For each [kol·N] you reference, populate \`tweets\` with: handle (no @),
-  one-sentence excerpt (≤200 chars), url, ts (ISO timestamp if known).
-- Do not invent tweets. If the live search returned nothing useful, return
-  empty claims + empty tweets — do not hallucinate.
-- Aggregate "lean" describes the consensus among the cited posts.
+- Output 3-5 short claims summarising what the cited sources are saying or doing.
+- Each claim MUST end with one or more citation tags [kol·N] referencing the tweet you used (1 = first cited, 2 = second, …).
+- For each [kol·N] you cite, populate \`tweets\` with: handle (no @), excerpt (≤240 chars, quote when possible), url, ts (ISO timestamp if known).
+- Do NOT cite random retail traders posting opinions. Pull from authoritative or substantive accounts that match the category profile above.
+- If the live search returns nothing meaningful, return empty claims + empty tweets — DO NOT fabricate.
+- Aggregate "lean" describes the consensus implied by the cited sources for the YES side of the market.
 
 Return JSON ONLY, no prose:
 {
   "claims": [{ "text": "<claim with [kol·N]>", "citations": ["kol·1"] }],
-  "tweets": [{ "n": 1, "handle": "0xayushya", "excerpt": "...", "url": "https://x.com/...", "ts": "2026-04-29T..." }],
+  "tweets": [{ "n": 1, "handle": "...", "excerpt": "...", "url": "https://x.com/...", "ts": "2026-04-29T..." }],
   "lean": "yes" | "no" | "split" | "unclear",
   "confidence": "high" | "med" | "low"
 }`;
+}
+
+function sourceProfileFor(category: string): string[] {
+  const c = (category || '').toLowerCase();
+  if (c === 'politics') {
+    return [
+      'Official government accounts of the parties involved (e.g. @StateDept, @WhiteHouse, foreign-ministry handles, @POTUS, @VP, relevant cabinet members)',
+      'Established news outlets covering the topic (@Reuters, @AP, @nytimes, @washingtonpost, @WSJ, regional papers)',
+      'Topic-specialist reporters and named foreign-policy analysts with domain expertise',
+      'Think-tank and policy-shop accounts (Brookings, CFR, Atlantic Council, Carnegie, RAND)',
+      'Skip retail political opinion accounts and partisan commentators unless they break news',
+    ];
+  }
+  if (c === 'crypto') {
+    return [
+      'On-chain analysts and data accounts (@glassnode, @santimentfeed, @WuBlockchain, @CryptoQuant_QC)',
+      'Prediction-market-active traders who post positions and theses (@theo4_tweets, @0xPolymarket, @mlmkts)',
+      'Project founders / core contributors of the asset in question',
+      'Exchange announcements and listing news (@binance, @coinbase, @krakenfx)',
+      'Established crypto news (@TheBlock__, @CoinDesk, @decryptmedia)',
+    ];
+  }
+  if (c === 'sports') {
+    return [
+      'Team and league official accounts',
+      'Beat reporters covering the team / event',
+      'Insiders for the relevant league (@AdamSchefter, @ShamsCharania, @MarinaganasNFL, @Ken_Rosenthal)',
+      'Stats accounts (@ESPNStats, @NBAStatsInfo, sport-specific data shops)',
+      'Skip prediction-market-trader chatter; sports markets move on injury news + insider scoops',
+    ];
+  }
+  // 'other' or unknown — broad guidance.
+  return [
+    'Authoritative or domain-expert accounts most likely to break news on this topic',
+    'Established news outlets covering the topic',
+    'Substantive analysts with track records, not retail speculation',
+    'Skip random retail commentary — surface accounts that actually move information',
+  ];
+}
 
 export type SentimentInput = {
   marketTitle: string;
+  /** Drives the source-profile prompt: politics/crypto/sports/other route
+   *  to different authoritative-account lists. */
+  category: string;
   yesPrice: number | null;
   noPrice: number | null;
   endDate: string | null;
@@ -111,16 +170,20 @@ Search X for recent (last 14 days) posts that:
 
 Surface 3-5 representative takes that capture the conversation.`;
 
+  const sysPrompt = systemPromptForCategory(input.category);
+
   const res = await provider.complete(userPrompt, {
     tier: 'fast',
-    systemPrompt: SYS,
+    systemPrompt: sysPrompt,
     jsonOnly: true,
     timeoutMs: 60_000,
     liveSearch: {
       mode: 'on',
-      sources: ['x'],
+      // Politics/news markets benefit from web + news in addition to X —
+      // press releases and statements often land on government sites first.
+      sources: input.category === 'politics' ? ['x', 'news', 'web'] : ['x', 'news'],
       fromDays: 14,
-      maxResults: 15,
+      maxResults: 20,
       returnCitations: true,
     },
   });

@@ -3,11 +3,13 @@
 import { AgentDots } from './AgentDots';
 import { WatchlistTab } from './WatchlistTab';
 import { PositionsTab } from './PositionsTab';
-import type { AgentStatus, Position, WatchItem } from '../../types';
+import type { AgentStatus, BriefAgentDetail, Position, WatchItem } from '../../types';
 
 export interface RightRailProps {
   collapsed: boolean;
   agentStates: AgentStatus[];
+  /** Per-slot detail (elapsed + error) aligned with agentStates index. */
+  agentDetails?: Array<BriefAgentDetail | undefined>;
   watchlist?: WatchItem[];
   onWatchlistRemove?: (marketId: string) => void;
   wallet?: string;
@@ -23,6 +25,7 @@ export interface RightRailProps {
 export function RightRail({
   collapsed,
   agentStates,
+  agentDetails,
   watchlist = [],
   onWatchlistRemove,
   wallet = '',
@@ -59,7 +62,7 @@ export function RightRail({
             </button>
           )}
         </div>
-        <AgentDots states={agentStates} />
+        <AgentDots states={agentStates} {...(agentDetails ? { details: agentDetails } : {})} />
         <div className="agent-legend mono">
           <span>
             <span className="dot pending" /> pending

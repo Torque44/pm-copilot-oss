@@ -1,7 +1,12 @@
-// AgentDots — 7-dot agent status row with hover tooltips that explain what
-// each agent does. Order matches the supervisor's emit topology:
+// AgentDots — 7-dot agent status row + a single shared hover overlay.
+// Order matches the supervisor's emit topology:
 //   market · holders · news · thesis · sentiment · synthesis · ask
+//
+// The overlay is portaled to document.body so it isn't clipped by the
+// right rail's `overflow-y: auto` scrolling context.
 
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { AgentStatus, BriefAgentDetail } from '../../types';
 
 type AgentMeta = {
@@ -79,41 +84,82 @@ function fmtElapsed(ms: number | undefined): string {
 }
 
 export function AgentDots({ states, details }: AgentDotsProps) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+
+  // Recompute anchor when hover starts (and on resize while open) so the
+  // overlay tracks the dot row even if the rail scrolls.
+  useEffect(() => {
+    if (!hovered) return;
+    const computeAnchor = () => {
+      const el = rowRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setAnchor({
+        top: Math.round(r.bottom + 10),
+        right: Math.max(8, Math.round(window.innerWidth - r.right)),
+      });
+    };
+    computeAnchor();
+    window.addEventListener('resize', computeAnchor);
+    window.addEventListener('scroll', computeAnchor, true);
+    return () => {
+      window.removeEventListener('resize', computeAnchor);
+      window.removeEventListener('scroll', computeAnchor, true);
+    };
+  }, [hovered]);
+
+  const overlay =
+    hovered && anchor && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            className="agents-overlay"
+            style={{ top: anchor.top, right: anchor.right }}
+            role="tooltip"
+            aria-label="agent pipeline"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+          >
+            <div className="agents-overlay-head mono">agent pipeline</div>
+            <ul className="agents-overlay-list">
+              {AGENTS.map((a, i) => {
+                const status: AgentStatus = states[i] ?? 'pending';
+                const detail = details?.[i];
+                const elapsed = fmtElapsed(detail?.elapsedMs);
+                return (
+                  <li key={a.key} className={`agents-overlay-row status-${status}`}>
+                    <span className={`dot ${status}`} />
+                    <span className="agents-overlay-name">{a.label}</span>
+                    <span className={`agents-overlay-status mono ${status}`}>
+                      {STATUS_COPY[status]}{elapsed ? ` · ${elapsed}` : ''}
+                    </span>
+                    <span className="agents-overlay-body">{a.does}</span>
+                    {status === 'error' && detail?.error && (
+                      <span className="agents-overlay-error mono">{detail.error.slice(0, 220)}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div className="agent-dots">
+    <div
+      className="agent-dots"
+      ref={rowRef}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <span className="agent-label mono">agents</span>
       {AGENTS.map((a, i) => {
         const status: AgentStatus = states[i] ?? 'pending';
         return <span key={a.key} className={`dot ${status}`} aria-label={`${a.label} · ${status}`} />;
       })}
-
-      {/* Single shared overlay — surfaces on hover of any dot or the row.
-          Lists all 7 agents with status + description in one panel rather
-          than per-dot popovers. Positioned below the dot row, anchored to
-          the right rail edge so it doesn't clip past the viewport. */}
-      <div className="agents-overlay" role="tooltip" aria-label="agent pipeline">
-        <div className="agents-overlay-head mono">agent pipeline</div>
-        <ul className="agents-overlay-list">
-          {AGENTS.map((a, i) => {
-            const status: AgentStatus = states[i] ?? 'pending';
-            const detail = details?.[i];
-            const elapsed = fmtElapsed(detail?.elapsedMs);
-            return (
-              <li key={a.key} className={`agents-overlay-row status-${status}`}>
-                <span className={`dot ${status}`} />
-                <span className="agents-overlay-name">{a.label}</span>
-                <span className={`agents-overlay-status mono ${status}`}>
-                  {STATUS_COPY[status]}{elapsed ? ` · ${elapsed}` : ''}
-                </span>
-                <span className="agents-overlay-body">{a.does}</span>
-                {status === 'error' && detail?.error && (
-                  <span className="agents-overlay-error mono">{detail.error.slice(0, 220)}</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      {overlay}
     </div>
   );
 }

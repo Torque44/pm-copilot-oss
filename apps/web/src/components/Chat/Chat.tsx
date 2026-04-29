@@ -1,6 +1,8 @@
-// Chat — sticky bottom chat. Collapsed pill -> expanded input + history.
+// Chat — single persistent input bar at the bottom of the workbench.
+// History (if any) renders ABOVE the input; the input itself is always
+// visible and always interactive. No collapsed/expanded states.
 
-import { useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import type { ChatMessage } from '../../types';
 
 export interface ChatProps {
@@ -10,9 +12,15 @@ export interface ChatProps {
 }
 
 export function Chat({ messages, onSend, busy = false }: ChatProps) {
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const history = messages ?? [];
+  const historyRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll history to the bottom when new messages or progress streams in.
+  useEffect(() => {
+    const el = historyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [history.length, busy]);
 
   const send = () => {
     const v = text.trim();
@@ -28,53 +36,44 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
     }
   };
 
+  const showHistory = history.length > 0 || busy;
+
   return (
-    <div className={`chat ${open ? 'open' : ''}`}>
-      {open ? (
-        <div className="chat-expanded">
-          <div className="chat-history">
-            {history.length === 0 && (
-              <div className="chat-msg ai chat-empty">
-                ask about book depth, holders concentration, or recent catalysts.
-              </div>
-            )}
-            {history.map((m, i) => (
-              <div key={i} className={`chat-msg ${m.role}`}>
-                {m.content}
-                {m.citations?.map((c, j) => (
-                  <span key={j} className="cite-pill mono">
-                    [{c}]
-                  </span>
-                ))}
-              </div>
-            ))}
-            {busy && <div className="chat-msg ai chat-typing">…</div>}
-          </div>
-          <div className="chat-input-row">
-            <input
-              className="chat-input"
-              placeholder={busy ? 'thinking…' : 'ask about this market…'}
-              autoFocus
-              value={text}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
-              onKeyDown={onKey}
-              onBlur={() => {
-                if (!text) setOpen(false);
-              }}
-              disabled={busy}
-            />
-            <span className="kbd mono">enter</span>
-          </div>
+    <div className="chat">
+      {showHistory && (
+        <div className="chat-history" ref={historyRef}>
+          {history.map((m, i) => (
+            <div key={i} className={`chat-msg ${m.role}`}>
+              {m.content}
+              {m.citations?.map((c, j) => (
+                <span key={j} className="cite-pill mono">
+                  [{c}]
+                </span>
+              ))}
+            </div>
+          ))}
+          {busy && <div className="chat-msg ai chat-typing">…</div>}
         </div>
-      ) : (
-        <button className="chat-collapsed" onClick={() => setOpen(true)}>
-          <span className="chat-prompt mono">ask</span>
-          <span className="chat-placeholder">
-            ask about book depth, holders, catalysts, or thesis…
-          </span>
-          <span className="kbd mono">⌘L</span>
-        </button>
       )}
+      <div className="chat-input-row">
+        <input
+          className="chat-input"
+          placeholder={busy ? 'thinking…' : 'ask about this market…'}
+          value={text}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
+          onKeyDown={onKey}
+          disabled={busy}
+        />
+        <button
+          type="button"
+          className="chat-send"
+          onClick={send}
+          disabled={busy || !text.trim()}
+          aria-label="send"
+        >
+          ↵
+        </button>
+      </div>
     </div>
   );
 }

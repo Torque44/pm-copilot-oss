@@ -593,67 +593,100 @@
   text-decoration: underline;
 }
 
-/* ---------- Chat — visible affordance ---------- */
-/* The design-bundle's collapsed chat was a 35px transparent strip with a tiny
-   `›` glyph and a placeholder, hard to spot. This block strengthens the
-   collapsed state so users notice the chat is there, then keeps the open
-   state as a sibling layout (no animations needed). */
+/* ---------- Chat — single persistent input bar (no collapsed state) ---------- */
+/* The bar is always visible at the bottom of the workbench. When history is
+   non-empty (or the agent is busy) a scrollable transcript renders above
+   the input; when empty, only the input shows. The input itself never
+   changes shape — same UI clicked or unclicked. */
 .chat {
-  border-top: 1px solid var(--border-strong, #3a3f52) !important;
+  border-top: 1px solid var(--border, #262a38) !important;
   background: var(--surface, #12141c) !important;
-}
-.chat-collapsed {
-  /* Override the design-bundle's transparent + 8px-vertical pill. */
+  padding: 12px 16px !important;
   display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-  padding: 14px 18px !important;
-  background: rgba(10, 102, 255, 0.04) !important;
-  border: 0 !important;
-  border-left: 2px solid var(--accent, #0a66ff) !important;
-  cursor: text !important;
-  width: 100% !important;
-  text-align: left !important;
-  transition: background-color 0.12s;
+  flex-direction: column !important;
+  gap: 10px;
+  flex-shrink: 0;
 }
-.chat-collapsed:hover {
-  background: rgba(10, 102, 255, 0.08) !important;
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
-.chat-collapsed .chat-prompt {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--accent, #0a66ff);
-}
-.chat-collapsed .chat-placeholder {
-  font-size: 13px !important;
-  color: var(--text, #e6e6e6) !important;
-  opacity: 0.7;
-}
-.chat-collapsed .kbd {
-  background: rgba(255, 255, 255, 0.06);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  color: var(--text-muted, #888);
-  margin-left: auto !important;
-}
-
-/* Open state: chat-expanded already gets layout from global.css; we just
-   tighten the visual frame so the input is obvious. */
-.chat-input {
+.chat-msg {
   font-size: 13px;
+  line-height: 1.5;
+  color: var(--text, #e6e8ee);
 }
-.chat-input:focus {
-  border-color: var(--accent, #0a66ff) !important;
-  outline: none;
-}
-.chat-empty {
+.chat-msg.user {
   color: var(--text-muted, #888);
-  font-style: italic;
+}
+.chat-msg.user::before {
+  content: '› ';
+  color: var(--accent, #0a66ff);
+  font-family: var(--font-mono, ui-monospace);
 }
 .chat-typing {
   color: var(--text-muted, #888);
   letter-spacing: 4px;
+}
+
+/* The single input row — designed to feel like the Claude Code prompt bar:
+   one rounded rectangle, full-width, with a small send affordance on the right. */
+.chat-input-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg, #0a0b10);
+  border: 1px solid var(--border, #262a38);
+  border-radius: 8px;
+  padding: 0 12px;
+  transition: border-color 0.12s;
+}
+.chat-input-row:focus-within {
+  border-color: var(--accent, #0a66ff);
+}
+.chat-input {
+  flex: 1 !important;
+  background: transparent !important;
+  border: 0 !important;
+  outline: none !important;
+  padding: 12px 0 !important;
+  color: var(--text, #e6e8ee) !important;
+  font-family: var(--font-prose, system-ui) !important;
+  font-size: 14px !important;
+}
+.chat-input::placeholder {
+  color: var(--text-muted, #6a7382);
+}
+.chat-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.chat-send {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted, #888);
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, ui-monospace);
+}
+.chat-send:hover:not(:disabled) {
+  color: var(--accent, #0a66ff);
+  border-color: var(--accent, #0a66ff);
+  background: rgba(10, 102, 255, 0.06);
+}
+.chat-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ---------- RightRail providers button ---------- */

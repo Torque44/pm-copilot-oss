@@ -373,11 +373,26 @@ export function App() {
     return (
       <SetupScreen
         onConfigured={async (info: { provider: ProviderName; key: string }) => {
-          await setKey('primary', info.provider, info.key);
+          // Pick the right slot based on the provider:
+          //  - perplexity → news enhancement slot
+          //  - xai        → sentiment slot (unlocks the sentiment tab)
+          //  - everything else (anthropic / openai / google) → primary
+          // Without this routing every saved key landed in `primary`, which
+          // is why pasting an xAI key didn't unlock `providerConfig.hasXai`.
+          const slot: 'primary' | 'perplexity' | 'xai' =
+            info.provider === 'perplexity' ? 'perplexity' :
+            info.provider === 'xai' ? 'xai' :
+            'primary';
+          await setKey(slot, info.provider, info.key);
           if (typeof window !== 'undefined') {
             window.localStorage.removeItem('pm-copilot:setup-skipped');
           }
-          navigate({ name: 'home' });
+          // After saving a non-primary slot, stay in setup so the user can
+          // also configure their primary provider; only auto-navigate home
+          // when primary is now configured.
+          if (slot === 'primary') {
+            navigate({ name: 'home' });
+          }
         }}
         onSkip={() => {
           if (typeof window !== 'undefined') {

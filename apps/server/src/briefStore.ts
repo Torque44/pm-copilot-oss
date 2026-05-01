@@ -21,7 +21,12 @@ type BriefRecord = {
   complete: boolean;
 };
 
-const TTL_MS = 10 * 60 * 1000;
+// 1 hour TTL — this used to be 10 min, which made the cache useless for an
+// active research session: any iteration cycle longer than 10 min between
+// reloads paid the full agent re-run cost. The brief itself is grounded in
+// orderbook + holders that change continuously, but the LLM synthesis on
+// top is the slow / expensive part — it's fine to reuse for an hour.
+const TTL_MS = 60 * 60 * 1000;
 const store = new Map<string, BriefRecord>();
 
 let rehydrated = false;
@@ -51,13 +56,17 @@ registerProducer(() => {
 });
 
 export function startRecording(marketId: string): (ev: BriefEnvelope) => void {
+  // Record into a LOCAL buffer, not the global store. This protects any
+  // previously-cached complete brief from being clobbered by a fresh run
+  // that gets interrupted (browser tab closed, synthesis errored, etc).
+  // The global store only swaps to this run on `brief:complete`.
   const rec: BriefRecord = { marketId, events: [], savedAt: Date.now(), complete: false };
-  store.set(marketId, rec);
   return (ev: BriefEnvelope) => {
     rec.events.push(ev);
     rec.savedAt = Date.now();
     if ((ev as AgentEvent).t === 'brief:complete') {
       rec.complete = true;
+      store.set(marketId, rec);
       markDirty();
     }
     // Broadcast to anyone listening on /api/event-stream?marketId=<id>

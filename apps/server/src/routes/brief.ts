@@ -86,10 +86,12 @@ export async function briefHandler(req: Request, res: Response) {
   const sse = openSse(res);
 
   // Fast path: if we already have a recent, complete brief for this marketId,
-  // replay the event log.
+  // replay the event log instead of re-running the agent pipeline.
   if (marketId && !force) {
     const cachedBrief = getCached(marketId);
     if (cachedBrief) {
+      const ageS = Math.round((Date.now() - cachedBrief.savedAt) / 1000);
+      console.info(`[brief] cache HIT ${marketId} (age ${ageS}s, ${cachedBrief.events.length} events)`);
       sse.send({ t: 'cache', source: 'memory', ageMs: Date.now() - cachedBrief.savedAt });
       for (const ev of cachedBrief.events) {
         sse.send(ev);
@@ -98,6 +100,9 @@ export async function briefHandler(req: Request, res: Response) {
       sse.close();
       return;
     }
+    console.info(`[brief] cache MISS ${marketId} — running fresh`);
+  } else if (force) {
+    console.info(`[brief] cache BYPASSED ${marketId} (force=1)`);
   }
 
   let market: MarketMeta | null = null;

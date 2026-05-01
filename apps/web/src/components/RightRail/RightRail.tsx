@@ -1,11 +1,13 @@
-// RightRail — context rail (280px). agents + watchlist + positions.
+// RightRail — context rail (280px). agents + watchlist + recents + positions.
 
-import { AgentDots } from './AgentDots';
+import { AgentList } from './AgentList';
 import { WatchlistTab } from './WatchlistTab';
 import { PositionsTab } from './PositionsTab';
 import { ProviderHealth } from './ProviderHealth';
 import type { ProviderHealthResponse } from '../../hooks/useProviderHealth';
 import type { AgentStatus, BriefAgentDetail, Position, WatchItem } from '../../types';
+
+type RecentItem = { marketId: string; title: string; yes: number | null };
 
 export interface RightRailProps {
   collapsed: boolean;
@@ -14,6 +16,9 @@ export interface RightRailProps {
   agentDetails?: Array<BriefAgentDetail | undefined>;
   watchlist?: WatchItem[];
   onWatchlistRemove?: (marketId: string) => void;
+  /** Recently-viewed markets — clicking one navigates back to it. */
+  recents?: RecentItem[];
+  onRecentSelect?: (marketId: string) => void;
   wallet?: string;
   positions?: Position[];
   onWalletChange?: (wallet: string) => void;
@@ -39,6 +44,8 @@ export function RightRail({
   agentDetails,
   watchlist = [],
   onWatchlistRemove,
+  recents = [],
+  onRecentSelect,
   wallet = '',
   positions = [],
   onWalletChange,
@@ -63,6 +70,9 @@ export function RightRail({
       <div className="rail-section">
         <div className="rail-section-title rail-section-title-row">
           <span>agents</span>
+          <span className="rail-section-count mono">
+            {agentStates.filter((s) => s === 'done').length}/{agentStates.length} done
+          </span>
           {onOpenSetup && (
             <button
               type="button"
@@ -74,21 +84,7 @@ export function RightRail({
             </button>
           )}
         </div>
-        <AgentDots states={agentStates} {...(agentDetails ? { details: agentDetails } : {})} />
-        <div className="agent-legend mono">
-          <span>
-            <span className="dot pending" /> pending
-          </span>
-          <span>
-            <span className="dot running" /> running
-          </span>
-          <span>
-            <span className="dot done" /> done
-          </span>
-          <span>
-            <span className="dot error" /> error
-          </span>
-        </div>
+        <AgentList states={agentStates} {...(agentDetails ? { details: agentDetails } : {})} />
         <div className="rail-providers-summary mono">{providerLine}</div>
         {providerHealth && (
           <ProviderHealth
@@ -104,6 +100,30 @@ export function RightRail({
       <div className="rail-section">
         <div className="rail-section-title">watchlist</div>
         <WatchlistTab items={watchlist} onRemove={onWatchlistRemove ?? (() => {})} />
+      </div>
+
+      <div className="rail-section">
+        <div className="rail-section-title">recently viewed</div>
+        {recents.length === 0 ? (
+          <div className="positions-empty mono">no markets opened yet.</div>
+        ) : (
+          <div className="recents-list">
+            {recents.slice(0, 6).map((r) => (
+              <button
+                key={r.marketId}
+                type="button"
+                className="recent-row"
+                onClick={() => onRecentSelect?.(r.marketId)}
+                title={r.title}
+              >
+                <span className="recent-title">{r.title}</span>
+                {r.yes != null && (
+                  <span className="recent-price mono">{r.yes.toFixed(2)}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="rail-section">

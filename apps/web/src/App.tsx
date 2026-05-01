@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LeftRail } from './components/LeftRail/LeftRail';
 import { MarketHeader } from './components/MarketHeader/MarketHeader';
 import { EvidenceGrid } from './components/EvidenceGrid/EvidenceGrid';
+import { ResizeHandle } from './components/EvidenceGrid/ResizeHandle';
 import type { PanelKey } from './components/EvidenceGrid/Panel';
 import { VerdictBand } from './components/VerdictBand/VerdictBand';
 import { Chat } from './components/Chat/Chat';
@@ -31,6 +32,7 @@ import { useProviderHealth } from './hooks/useProviderHealth';
 import { useWatchlist } from './hooks/useWatchlist';
 import { usePositions } from './hooks/usePositions';
 import { useRecentlyViewed } from './hooks/useRecentlyViewed';
+import { useFetchedEvent } from './hooks/useFetchedEvent';
 import { useAsk } from './hooks/useAsk';
 import { useRoute } from './lib/routing';
 import { flashCitation } from './lib/citationFlash';
@@ -67,6 +69,7 @@ type RawEvent = {
   eventId?: string;
   title?: string;
   category?: string;
+  tagSlugs?: string[];
   isMultiOutcome?: boolean;
   outcomes?: RawEventOutcome[];
   totalVolume24hr?: number;
@@ -105,13 +108,18 @@ function normaliseEvents(raw: unknown): EventSummary[] {
     };
     if (typeof e.totalVolume24hr === 'number') summary.volume24hr = e.totalVolume24hr;
     if (typeof e.endDate === 'string') summary.endDate = e.endDate;
+    if (Array.isArray(e.tagSlugs)) {
+      const slugs = e.tagSlugs.filter((x): x is string => typeof x === 'string');
+      if (slugs.length > 0) summary.tagSlugs = slugs;
+    }
     return [summary];
   });
 }
 
 // ---------- agent status mapping ----------
-// AgentDots renders 7 dots in a fixed order matching the supervisor topology:
-// market · holders · news · thesis · sentiment · synthesis · ask.
+// AgentList renders one row per agent in a fixed order matching the
+// supervisor topology: market · holders · news · thesis · sentiment ·
+// synthesis · ask.
 function agentStatesFromBrief(agents: ReturnType<typeof useBrief>['brief']['agents']): AgentStatus[] {
   return [
     agents.market,
@@ -208,7 +216,7 @@ function kolCitationsToItems(cits: Citation[]): KOLSentimentItem[] {
   });
 }
 
-// Render thesis section claims into the ThesisPanel's tree shape.
+// Render thesis section claims into the research panel's tree shape.
 // The agent emits claims with shapes that vary by provider:
 //   - `top: <root>` / `Top claim: <root>` / `Conclusion: <root>`
 //   - `<sub-claim> (p=0.62)` (probability optional)
@@ -274,10 +282,15 @@ function thesisFromSection(
 // ---------- main app ----------
 
 export function App() {
-  const { config: providerConfig, loading: providerLoading, setKey } = useProvider();
+  const { config: providerConfig, loading: providerLoading, setKey, clearKey } = useProvider();
   const providerHealthHook = useProviderHealth();
   const { route, navigate } = useRoute();
-  const [category, setCategory] = useState<string>('crypto');
+  // Default tab matches LeftRail's initial active tab so the first fetch
+  // returns events the LeftRail filter will actually accept. Bug history:
+  // LeftRail defaulted to 'politics' but App.tsx fetched 'crypto', so the
+  // initial render said "no politics markets match" until the user clicked
+  // a tab.
+  const [category, setCategory] = useState<string>('politics');
 
   const { events: rawEvents, loading: eventsLoading } = useEventsList({
     category,
@@ -290,6 +303,25 @@ export function App() {
   const selectedMarketId = route.name === 'market' ? route.marketId : null;
 
   const { brief, sseState } = useBrief(selectedMarketId);
+
+  // For multi-outcome events, find the parent event so the market panel
+  // can offer outcome-switching tabs. We look in two places:
+  //   1) the currently-loaded events list (free, in-memory)
+  //   2) /api/event?id=<eventId> using the eventId on the loaded brief
+  //      (handles cases where the parent isn't in the current category tab —
+  //      e.g. user navigated via /m/:id or recently-viewed)
+  const parentEventLocal = useMemo(() => {
+    if (!selectedMarketId) return null;
+    return events.find((e) => e.outcomes.some((o) => o.id === selectedMarketId)) ?? null;
+  }, [events, selectedMarketId]);
+  const briefEventId = useMemo(() => {
+    const raw = brief.rawMarket;
+    if (!raw || typeof raw !== 'object') return null;
+    const eid = (raw as { eventId?: unknown }).eventId;
+    return typeof eid === 'string' ? eid : null;
+  }, [brief.rawMarket]);
+  const fetchedParentEvent = useFetchedEvent(briefEventId, parentEventLocal !== null);
+  const parentEvent: EventSummary | null = parentEventLocal ?? fetchedParentEvent;
 
   const watchlist = useWatchlist();
 
@@ -322,6 +354,23 @@ export function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [flashId, setFlashId] = useState<string | null>(null);
+  // Resizable evidence-grid height. Persisted in localStorage so the user
+  // doesn't have to re-drag every session. null = follow CSS default.
+  const [evidenceGridHeight, setEvidenceGridHeight] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem('pm-copilot:grid-height');
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
+  const persistGridHeight = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (evidenceGridHeight == null) {
+      window.localStorage.removeItem('pm-copilot:grid-height');
+    } else {
+      window.localStorage.setItem('pm-copilot:grid-height', String(evidenceGridHeight));
+    }
+  }, [evidenceGridHeight]);
   // Setup overlay. When the user clicks "providers" in the right rail, we
   // open this as a modal on top of the workbench (instead of routing away,
   // which was causing the workbench to unmount and feel like a full reload).
@@ -357,10 +406,8 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((o) => !o); return; }
-      if (meta && e.key === '1') { e.preventDefault(); setFocusedPanel((p) => p === 'book' ? null : 'book'); return; }
-      if (meta && e.key === '2') { e.preventDefault(); setFocusedPanel((p) => p === 'holders' ? null : 'holders'); return; }
-      if (meta && e.key === '3') { e.preventDefault(); setFocusedPanel((p) => p === 'news' ? null : 'news'); return; }
-      if (meta && e.key === '4') { e.preventDefault(); setFocusedPanel((p) => p === 'thesis' ? null : 'thesis'); return; }
+      if (meta && e.key === '1') { e.preventDefault(); setFocusedPanel((p) => p === 'market' ? null : 'market'); return; }
+      if (meta && e.key === '2') { e.preventDefault(); setFocusedPanel((p) => p === 'research' ? null : 'research'); return; }
       if (meta && e.key === '[') { e.preventDefault(); setLeftCollapsed((c) => !c); return; }
       if (meta && e.key === ']') { e.preventDefault(); setRightCollapsed((c) => !c); return; }
       if (meta && e.key.toLowerCase() === 'b' && selectedMarketId && brief.market) {
@@ -395,10 +442,8 @@ export function App() {
 
   const paletteItems = useMemo(
     () => [
-      { id: 'focus-book', label: 'focus book panel', kbd: '⌘1', run: () => setFocusedPanel((p) => p === 'book' ? null : 'book') },
-      { id: 'focus-holders', label: 'focus holders panel', kbd: '⌘2', run: () => setFocusedPanel((p) => p === 'holders' ? null : 'holders') },
-      { id: 'focus-news', label: 'focus news panel', kbd: '⌘3', run: () => setFocusedPanel((p) => p === 'news' ? null : 'news') },
-      { id: 'focus-thesis', label: 'focus thesis panel', kbd: '⌘4', run: () => setFocusedPanel((p) => p === 'thesis' ? null : 'thesis') },
+      { id: 'focus-market', label: 'focus market panel (book + holders)', kbd: '⌘1', run: () => setFocusedPanel((p) => p === 'market' ? null : 'market') },
+      { id: 'focus-research', label: 'focus research panel (news + sentiment + thesis + comparables)', kbd: '⌘2', run: () => setFocusedPanel((p) => p === 'research' ? null : 'research') },
       { id: 'toggle-left', label: 'toggle left rail', kbd: '⌘[', run: () => setLeftCollapsed((c) => !c) },
       { id: 'toggle-right', label: 'toggle right rail', kbd: '⌘]', run: () => setRightCollapsed((c) => !c) },
       { id: 'go-home', label: 'go home (clear selection)', run: () => navigate({ name: 'home' }) },
@@ -477,7 +522,7 @@ export function App() {
     ? positions.filter((p) => p.market === selectedMarketId || p.conditionId === selectedMarketId)
     : [];
 
-  const errorPanel: PanelKey | null = brief.errors.length > 0 && !market ? 'news' : null;
+  const errorPanel: PanelKey | null = brief.errors.length > 0 && !market ? 'research' : null;
   const isLoading = sseState !== 'idle' && sseState !== 'closed' && !brief.complete && Boolean(selectedMarketId);
   const isEmpty = !selectedMarketId;
 
@@ -497,6 +542,11 @@ export function App() {
   const comparablesForPanel = comparablesFromCitations(brief.citations);
   const baseRateForPanel = baseRateFromComparables(comparablesForPanel);
   const resolutionText = market?.criteria || '';
+
+  // For multi-outcome events, find the parent event in the events list (purely
+  // derived — useMemo only because it's an O(N*M) scan and we don't want to
+  // re-run on unrelated re-renders).
+  const showOutcomeTabs = !!parentEvent && parentEvent.isMultiOutcome === true && parentEvent.outcomes.length > 1;
 
   return (
     <div className={`app ${leftCollapsed ? 'no-left' : ''} ${rightCollapsed ? 'no-right' : ''} ${isEmpty ? 'empty' : ''}`}>
@@ -560,6 +610,22 @@ export function App() {
               {...(thesisForPanel ? { thesis: thesisForPanel } : {})}
               {...(comparablesForPanel.length ? { comparables: comparablesForPanel } : {})}
               {...(baseRateForPanel ? { baseRate: baseRateForPanel } : {})}
+              {...(showOutcomeTabs && parentEvent
+                ? {
+                    outcomes: parentEvent.outcomes,
+                    selectedOutcomeId: selectedMarketId,
+                    onOutcomeSelect: (id: string) =>
+                      navigate({ name: 'market', marketId: id }),
+                  }
+                : {})}
+              {...(evidenceGridHeight != null ? { heightPx: evidenceGridHeight } : {})}
+            />
+            <ResizeHandle
+              currentHeight={evidenceGridHeight ?? 520}
+              min={200}
+              max={Math.max(400, typeof window !== 'undefined' ? window.innerHeight - 240 : 800)}
+              onResize={(h) => setEvidenceGridHeight(h)}
+              onResizeEnd={persistGridHeight}
             />
             <PositionStrip matches={matchingPositions} />
             <VerdictBand
@@ -581,6 +647,8 @@ export function App() {
         agentDetails={agentDetailsFromBrief(brief.agentDetails)}
         watchlist={watchlist.list}
         onWatchlistRemove={watchlist.remove}
+        recents={recents.list.map((r) => ({ marketId: r.marketId, title: r.title, yes: r.yes }))}
+        onRecentSelect={(marketId) => navigate({ name: 'market', marketId })}
         wallet={wallet}
         positions={positions}
         onWalletChange={setWallet}
@@ -609,6 +677,17 @@ export function App() {
         <SetupScreen
           onConfigured={onSetupSave}
           onSkip={onSetupSkip}
+          configured={{
+            primary: providerConfig.primary,
+            perplexity: providerConfig.hasPerplexity,
+            xai: providerConfig.hasXai,
+          }}
+          claudeCodeReachable={
+            providerHealthHook.health?.checks?.['claude-code']?.ok ?? undefined
+          }
+          onRemove={(slot) => {
+            void clearKey(slot);
+          }}
         />
       )}
     </div>

@@ -1,15 +1,12 @@
-// SetupScreen — full-screen overlay shown when no provider is configured.
-//
-// Two paths:
-//   1. Paste a provider API key (Anthropic/OpenAI/Gemini/Perplexity/xAI). Tested
-//      via /api/auth/test before saving to IndexedDB AES-GCM.
-//   2. "Use local Claude Code" — user already has the Claude Code CLI
-//      authenticated; the server falls back to subprocess auth. This sets
-//      a localStorage flag so the gate stops redirecting.
+// SetupScreen — full-screen overlay (or drop-in modal) for managing
+// provider keys. Always shows every provider as a tile so users can add or
+// switch keys directly without digging through an advanced drawer.
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ProviderPicker } from './ProviderPicker';
 import type { ProviderName } from '../../types';
+
+type Slot = 'primary' | 'perplexity' | 'xai';
 
 export interface SetupScreenProps {
   onConfigured: (info: {
@@ -17,15 +14,31 @@ export interface SetupScreenProps {
     key: string;
     /** Optional explicit slot override. When omitted App.tsx falls back to
      *  its provider-name heuristic. */
-    slot?: 'primary' | 'perplexity' | 'xai';
+    slot?: Slot;
   }) => void;
   onSkip?: () => void;
+  /** Currently-configured providers, drives the "✓ connected" tile state. */
+  configured: {
+    primary: ProviderName | null;
+    perplexity: boolean;
+    xai: boolean;
+  };
+  /** Live claude code reachability — when false the claude-code tile shows
+   *  ⚠ unreachable instead of ✓ connected. */
+  claudeCodeReachable?: boolean;
+  /** Remove a configured key. Called when the user clicks "remove" on a
+   *  connected tile. */
+  onRemove?: (slot: Slot) => void;
 }
 
-export function SetupScreen({ onConfigured, onSkip }: SetupScreenProps) {
-  const [selected, setSelected] = useState<ProviderName | null>(null);
-
-  // Esc → skip (treat as "use local Claude Code" path).
+export function SetupScreen({
+  onConfigured,
+  onSkip,
+  configured,
+  claudeCodeReachable,
+  onRemove,
+}: SetupScreenProps) {
+  // Esc → close (treat as "use local Claude Code" path when nothing's set).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -37,9 +50,12 @@ export function SetupScreen({ onConfigured, onSkip }: SetupScreenProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [onSkip]);
 
+  const anyConfigured =
+    !!configured.primary || configured.perplexity || configured.xai;
+
   return (
     <div className="setup-screen" onClick={onSkip}>
-      <div className="setup-card" onClick={(e) => e.stopPropagation()}>
+      <div className="setup-card setup-card-wide" onClick={(e) => e.stopPropagation()}>
         <header className="setup-head">
           <div className="setup-head-row">
             <h1 className="setup-title">pm copilot · setup</h1>
@@ -56,17 +72,20 @@ export function SetupScreen({ onConfigured, onSkip }: SetupScreenProps) {
             )}
           </div>
           <p className="setup-sub mono">
-            pick a provider to ground your briefs. keys live encrypted in this browser only.
+            {anyConfigured
+              ? 'add another provider, swap keys, or remove what you don’t use. keys are encrypted in this browser only.'
+              : 'pick a provider to ground your briefs. keys live encrypted in this browser only.'}
           </p>
         </header>
         <ProviderPicker
-          selected={selected}
-          onSelect={setSelected}
+          configured={configured}
+          {...(claudeCodeReachable !== undefined ? { claudeCodeReachable } : {})}
           onConfigured={onConfigured}
           onUseClaudeCode={onSkip}
+          {...(onRemove ? { onRemove } : {})}
         />
         <footer className="setup-foot mono">
-          esc to skip · pick "claude code" if your CLI is already authed · keys never leave this browser
+          esc to close · keys never leave this browser
         </footer>
       </div>
     </div>

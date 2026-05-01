@@ -1,6 +1,10 @@
 // MarketHeader — sticky market header. title + YES/NO + days + 24h vol + venue chip.
+//
+// The resolution criteria expander used to live here too, but the news
+// panel already has a dedicated "resolution" tab — duplicating the same
+// copy at the top wastes vertical space. Header now stays compact; users
+// hit ⌘3 → resolution tab when they want the fine print.
 
-import { useState } from 'react';
 import type { Market } from '../../types';
 
 export interface MarketHeaderProps {
@@ -8,8 +12,6 @@ export interface MarketHeaderProps {
 }
 
 export function MarketHeader({ market }: MarketHeaderProps) {
-  const [expanded, setExpanded] = useState(false);
-
   return (
     <div className="market-header">
       <div className="mh-row">
@@ -40,14 +42,6 @@ export function MarketHeader({ market }: MarketHeaderProps) {
           </div>
         </div>
       </div>
-      <button className="mh-criteria" onClick={() => setExpanded(!expanded)}>
-        <span className="mono caret">{expanded ? '▾' : '▸'}</span>
-        <span className="mh-criteria-label">resolution criteria</span>
-        {!expanded && (
-          <span className="mh-criteria-preview">{market.criteria.slice(0, 80)}…</span>
-        )}
-      </button>
-      {expanded && <div className="mh-criteria-full">{market.criteria}</div>}
       {market.multi && market.outcomes && (
         <div className="mh-multi">
           {market.outcomes.map((o, i) => (

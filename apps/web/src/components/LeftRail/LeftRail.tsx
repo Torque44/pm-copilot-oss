@@ -12,8 +12,25 @@ import { useMemo, useState, type ChangeEvent } from 'react';
 import type { EventOutcome, EventSummary } from '../../types';
 import { formatRelativeDuration } from '../../lib/format';
 
-const CATEGORIES = ['crypto', 'sports', 'politics', 'other'] as const;
-type Category = (typeof CATEGORIES)[number];
+// The tab list. Each tab has a `slug` we send to /api/events as the
+// category param, and a display label. The first four are the canonical
+// gamma tag_slug values (also map 1:1 to the agent pipeline's Category
+// enum). The rest are popular Polymarket tag slugs surveyed from active
+// events — adding a tab here just means "show events whose tags include
+// this slug."
+const CATEGORIES = [
+  { slug: 'politics', label: 'politics' },
+  { slug: 'crypto', label: 'crypto' },
+  { slug: 'sports', label: 'sports' },
+  { slug: 'geopolitics', label: 'geopolitics' },
+  { slug: 'tech', label: 'tech' },
+  { slug: 'iran', label: 'iran' },
+  { slug: 'middle-east', label: 'middle east' },
+  { slug: 'elections', label: 'elections' },
+  { slug: 'pop-culture', label: 'pop culture' },
+  { slug: 'economy', label: 'economy' },
+] as const;
+type Category = (typeof CATEGORIES)[number]['slug'];
 
 const TOP_CANDIDATES_COLLAPSED = 3;
 
@@ -177,18 +194,25 @@ export function LeftRail({
   onCategoryChange,
   loading = false,
 }: LeftRailProps) {
-  const [cat, setCat] = useState<Category>('crypto');
+  const [cat, setCat] = useState<Category>('politics');
   const [q, setQ] = useState('');
 
   const source = events ?? [];
 
-  // Filter pipeline: category match → search substring on title or any
-  // outcome label. We sort by 24h volume desc so the heaviest contracts
-  // surface first regardless of upstream order.
+  // Filter pipeline:
+  //   1. tag/category match — for the four canonical buckets we match on
+  //      `e.category` (the bucket the agent pipeline assigned). For any
+  //      other tab we match on `tagSlugs` (Polymarket's actual taxonomy).
+  //   2. text search on title or any outcome label.
+  //   3. sort by 24h volume desc.
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
+    const isCanonical = cat === 'politics' || cat === 'crypto' || cat === 'sports';
     return source
-      .filter((e) => e.category === cat)
+      .filter((e) => {
+        if (isCanonical) return e.category === cat;
+        return Array.isArray(e.tagSlugs) && e.tagSlugs.includes(cat);
+      })
       .filter((e) => {
         if (!ql) return true;
         if (e.title.includes(ql)) return true;
@@ -220,11 +244,11 @@ export function LeftRail({
         <div className="cat-tabs">
           {CATEGORIES.map((c) => (
             <button
-              key={c}
-              className={`cat-tab ${c === cat ? 'active' : ''}`}
-              onClick={() => handleCat(c)}
+              key={c.slug}
+              className={`cat-tab ${c.slug === cat ? 'active' : ''}`}
+              onClick={() => handleCat(c.slug)}
             >
-              {c}
+              {c.label}
             </button>
           ))}
         </div>

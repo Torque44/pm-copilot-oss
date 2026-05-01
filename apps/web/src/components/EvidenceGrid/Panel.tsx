@@ -2,13 +2,20 @@
 
 import type { ReactNode } from 'react';
 
-export type PanelKey = 'book' | 'holders' | 'news' | 'thesis';
+/**
+ * Two top-level panels now: 'market' (book + holders tabs) and 'research'
+ * (catalysts + sentiment + thesis + comparables + resolution tabs). Internal
+ * tab state is owned by the panel components themselves.
+ *
+ * Legacy keys ('book' | 'holders' | 'news' | 'thesis') are still accepted
+ * for backwards compatibility — see App.tsx where they remap to the new
+ * top-level keys.
+ */
+export type PanelKey = 'market' | 'research';
 
 const PANEL_KBD: Record<PanelKey, string> = {
-  book: '⌘1',
-  holders: '⌘2',
-  news: '⌘3',
-  thesis: '⌘4',
+  market: '⌘1',
+  research: '⌘2',
 };
 
 export interface PanelProps {

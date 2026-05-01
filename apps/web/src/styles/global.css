@@ -69,10 +69,19 @@ body, html { height: 100%; overflow: hidden; }
   font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
   padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px;
 }
-.cat-tabs { display: flex; gap: 4px; }
+.cat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .cat-tab {
-  flex: 1; padding: 4px 0; background: transparent; color: var(--text-muted);
-  border: 1px solid var(--border); border-radius: 3px;
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  white-space: nowrap;
   font-family: var(--font-prose); font-size: 11px; cursor: pointer;
 }
 .cat-tab:hover { color: var(--text); }
@@ -101,32 +110,137 @@ body, html { height: 100%; overflow: hidden; }
   text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
 }
-.agent-dots {
-  display: flex; align-items: center; gap: 6px; padding: 8px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
-}
-.agent-label { color: var(--text-muted); font-size: 10px; margin-right: 6px; }
+/* Status dots — used by the vertical AgentList rows (and by NewsPanel/etc). */
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.pending { background: var(--border-strong); }
 .dot.running { background: var(--accent); animation: agent-pulse 1200ms ease-in-out infinite; }
 .dot.done    { background: var(--success); }
 .dot.error   { background: var(--warning); }
-.agent-legend {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px;
-  font-size: 10px; color: var(--text-muted); padding: 0 4px;
+.rail-section-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
 }
-.agent-legend span { display: flex; align-items: center; gap: 6px; }
-.watch-row, .recent-row {
+/* Vertical agent list — one row per agent, dot · name · status. */
+.agent-list { list-style: none; margin: 0; padding: 0; }
+.agent-list-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.agent-list-row:hover { background: rgba(255,255,255,0.02); }
+.agent-list-name { color: var(--text); line-height: 1.2; }
+.agent-list-status { font-size: 10px; letter-spacing: 0.04em; }
+.agent-list-status.pending { color: var(--text-muted); }
+.agent-list-status.running { color: var(--accent); }
+.agent-list-status.done    { color: var(--success); }
+.agent-list-status.error   { color: var(--warning); }
+.watch-row {
   padding: 6px 8px; border-radius: 3px; cursor: pointer;
   display: flex; flex-direction: column; gap: 2px;
 }
-.watch-row:hover, .recent-row:hover { background: rgba(255,255,255,0.02); }
+.watch-row:hover { background: rgba(255,255,255,0.02); }
 .watch-name { font-size: 12px; color: var(--text); line-height: 1.3; }
 .watch-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-muted); }
 .delta.up { color: var(--success); }
 .delta.down { color: var(--danger); }
-.recent-row { font-size: 12px; color: var(--text-muted); padding: 4px 8px; }
-.recent-row:hover { color: var(--text); }
+.recents-list { display: flex; flex-direction: column; gap: 1px; }
+.recent-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.recent-row:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+.recent-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.recent-price {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Multi-outcome list inside the market panel — clickable candidate rows. */
+.outcomes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-y: auto;
+}
+.outcome-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px 48px auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.outcome-card:hover { border-color: var(--border-strong); background: rgba(255,255,255,0.02); }
+.outcome-card.selected {
+  border-color: var(--accent);
+  background: rgba(10, 102, 255, 0.06);
+  cursor: default;
+}
+.outcome-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.outcome-card-bar {
+  position: relative;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.outcome-card-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--success);
+}
+.outcome-card-pct {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+}
+.outcome-card-badge {
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
 
 /* ============== market header ============== */
 .market-header {
@@ -188,18 +302,58 @@ body, html { height: 100%; overflow: hidden; }
 .multi-more:hover { color: var(--text); border-color: var(--border-strong); }
 
 /* ============== evidence grid ============== */
+/* Two top-level boxes side-by-side: market (book + holders tabs) and
+ * research (news + sentiment + thesis + comparables + resolution tabs).
+ * Was a 2x2 grid before — collapsed to 1x2 when thesis moved into the
+ * research panel and book/holders merged into the market panel. */
 .evidence-grid {
-  flex: 1;
+  /* Caps the panels at ~55% of the viewport so the chat (below the verdict
+   * band) gets real estate to breathe. Without this, flex:1 lets the panels
+   * grow to fill the workbench and the chat collapses to a tiny strip at
+   * the bottom. Each panel still scrolls internally for long lists. */
+  flex: 0 1 auto;
+  height: min(55vh, 620px);
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 1fr;
   gap: 8px; padding: 8px;
   min-height: 0;
 }
-.evidence-grid.focus-book    { grid-template-columns: 1fr 0; grid-template-rows: 1fr 0; }
-.evidence-grid.focus-holders { grid-template-columns: 0 1fr; grid-template-rows: 1fr 0; }
-.evidence-grid.focus-news    { grid-template-columns: 1fr 0; grid-template-rows: 0 1fr; }
-.evidence-grid.focus-thesis  { grid-template-columns: 0 1fr; grid-template-rows: 0 1fr; }
+.evidence-grid.focus-market   { grid-template-columns: 1fr 0; }
+.evidence-grid.focus-research { grid-template-columns: 0 1fr; }
+
+/* Drag handle between the evidence grid and the chat. The whole bar is
+ * the hit target so the user can grab it anywhere; the inner grip is a
+ * thin pill that lights up on hover/active. */
+.row-resize-handle {
+  height: 8px;
+  flex: 0 0 auto;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  user-select: none;
+}
+.row-resize-grip {
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 120ms ease, width 120ms ease;
+}
+.row-resize-handle:hover .row-resize-grip,
+body.is-resizing-row .row-resize-grip {
+  background: var(--accent);
+  width: 80px;
+}
+/* While a drag is in progress, freeze the entire app cursor + disable
+ * text selection so the drag doesn't pick up text on the way. */
+body.is-resizing-row {
+  cursor: ns-resize !important;
+  user-select: none;
+}
+body.is-resizing-row * { cursor: ns-resize !important; }
 
 .panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
@@ -262,6 +416,11 @@ tr.flash, li.flash { animation: citation-flash 800ms ease-out; }
 .news-row .cite-id { color: var(--citation); font-size: 11px; }
 .news-title { color: var(--text); line-height: 1.4; }
 .news-meta { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.news-unverified {
+  color: var(--warn, #d97706);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
 
 /* thesis tree */
 .thesis-tree { list-style: none; margin: 0; padding: 12px; font-size: 12px; }
@@ -353,39 +512,6 @@ tr.flash, li.flash { animation: citation-flash 800ms ease-out; }
   padding: 6px 14px; font-size: 10px; color: var(--text-muted);
   border-top: 1px solid var(--border); background: var(--surface);
 }
-
-/* settings */
-.settings-modal {
-  width: 640px; max-width: 92vw; background: var(--panel);
-  border: 1px solid var(--border-strong); border-radius: 4px; overflow: hidden;
-}
-.settings-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
-}
-.settings-title { font-size: 14px; font-weight: 600; }
-.settings-close {
-  background: transparent; border: 1px solid var(--border); border-radius: 3px;
-  color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; padding: 2px 8px; cursor: pointer;
-}
-.settings-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.settings-section:last-child { border-bottom: 0; }
-.settings-label {
-  font-size: 10px; color: var(--text-muted); text-transform: uppercase;
-  letter-spacing: 0.05em; margin-bottom: 8px;
-}
-.settings-providers { display: flex; gap: 6px; flex-wrap: wrap; }
-.provider-pill {
-  background: transparent; border: 1px solid var(--border); border-radius: 3px;
-  padding: 4px 12px; color: var(--text-muted); font-family: var(--font-prose); font-size: 12px;
-  cursor: pointer;
-}
-.provider-pill:hover { color: var(--text); }
-.provider-pill.active { color: #fff; background: var(--accent); border-color: var(--accent); }
-.settings-table { margin-top: 4px; }
-.settings-table .yes  { color: var(--success); }
-.settings-table .warn { color: var(--warning); }
-.settings-table .muted { color: var(--text-muted); }
 
 /* loading toast */
 .loading-toast {

@@ -1,14 +1,17 @@
-// EvidenceGrid — 2x2 panels: book / holders / news / thesis.
-// Each panel is a focus target for ⌘1-4. Clicking a citation pill flashes the matching source row.
+// EvidenceGrid — 1x2 panels: market (book + holders) | research (catalysts +
+// sentiment + thesis + comparables + resolution).
+//
+// Was a 2x2 grid. The user asked for the two structural-data sections to
+// share a box (book + holders, internal tabs) and for thesis to live inside
+// the news panel — so the grid collapses to two boxes total.
 
 import { Panel, type PanelKey } from './Panel';
-import { BookPanel } from './BookPanel';
-import { HoldersPanel } from './HoldersPanel';
+import { MarketPanel } from './MarketPanel';
 import { NewsPanel } from './NewsPanel';
-import { ThesisPanel } from './ThesisPanel';
 import type {
   BookRow,
   ComparableHit,
+  EventOutcome,
   HolderRow,
   KOLSentimentItem,
   NewsItem,
@@ -30,6 +33,15 @@ export interface EvidenceGridProps {
   thesis?: Thesis;
   comparables?: ComparableHit[];
   baseRate?: { yesCount: number; resolvedCount: number; totalCount: number } | null;
+  /** Sibling outcomes for multi-outcome events. When supplied (length > 1)
+   *  the market panel renders an "outcomes" tab listing all candidates with
+   *  prices; clicking a candidate navigates to that outcome's market. */
+  outcomes?: EventOutcome[];
+  selectedOutcomeId?: string | null;
+  onOutcomeSelect?: (marketId: string) => void;
+  /** When set, overrides the default min(55vh, 620px) cap so the user can
+   *  drag-resize the panels block taller or shorter. */
+  heightPx?: number;
 }
 
 export function EvidenceGrid({
@@ -47,89 +59,84 @@ export function EvidenceGrid({
   thesis,
   comparables,
   baseRate,
+  outcomes,
+  selectedOutcomeId,
+  onOutcomeSelect,
+  heightPx,
 }: EvidenceGridProps) {
   // Per-panel loading: keep the skeleton up only until that panel's data
-  // (or fallback) is available. Once grounding arrives for one agent, that
-  // panel switches out of skeleton even if the rest of the brief is still
-  // streaming.
-  const bookLoading = loading && (!bookRows || bookRows.length === 0);
-  const holdersLoading = loading && (!holderRows || holderRows.length === 0);
-  const newsLoading = loading && (!catalysts || catalysts.length === 0);
-  // Thesis loading flips off when we have either real thesis OR comparables —
-  // even a thin market should surface the comparables tab as soon as Gamma
-  // returns base-rate data, so the panel never sits empty for long.
-  const thesisLoading = loading && !thesis && (!comparables || comparables.length === 0);
+  // (or fallback) is available.
+  const marketLoading =
+    loading &&
+    (!bookRows || bookRows.length === 0) &&
+    (!holderRows || holderRows.length === 0);
+  // Research panel flips out of skeleton as soon as ANY of its sub-feeds
+  // (news / sentiment / thesis / comparables) returns data, so the user
+  // gets something visible quickly instead of waiting for the slowest.
+  const researchLoading =
+    loading &&
+    (!catalysts || catalysts.length === 0) &&
+    (!sentiment || sentiment.length === 0) &&
+    !thesis &&
+    (!comparables || comparables.length === 0);
 
-  // Subheaders derived from the actual data (or "—" placeholders before
-  // grounding arrives). Avoids the previous design-bundle mock strings like
-  // "28 levels · 3m ago" that lied about the real shape.
-  const bookSub = bookRows && bookRows.length > 0
-    ? `${bookRows.length} levels`
-    : 'awaiting orderbook';
-  const holdersSub = holderRows && holderRows.length > 0
-    ? `top ${holderRows.length}`
-    : 'awaiting top holders';
-  const newsSub = catalysts && catalysts.length > 0
-    ? `${catalysts.length} catalyst${catalysts.length === 1 ? '' : 's'}`
-    : 'awaiting catalysts';
-  const thesisSub = thesis
-    ? `${thesis.nodes.length} node${thesis.nodes.length === 1 ? '' : 's'}`
-    : (comparables && comparables.length > 0)
-      ? `${comparables.length} comparable${comparables.length === 1 ? '' : 's'}`
-      : 'awaiting thesis';
+  const marketSub = (() => {
+    const parts: string[] = [];
+    if (bookRows?.length) parts.push(`${bookRows.length} levels`);
+    if (holderRows?.length) parts.push(`top ${holderRows.length}`);
+    return parts.length ? parts.join(' · ') : 'awaiting data';
+  })();
+
+  const researchSub = (() => {
+    const parts: string[] = [];
+    if (catalysts?.length) parts.push(`${catalysts.length} news`);
+    if (sentiment?.length) parts.push(`${sentiment.length} kol`);
+    if (thesis) parts.push(`${thesis.nodes.length} thesis nodes`);
+    if (comparables?.length) parts.push(`${comparables.length} comp`);
+    return parts.length ? parts.join(' · ') : 'awaiting research';
+  })();
+
+  const style = heightPx != null ? { height: `${heightPx}px` } : undefined;
 
   return (
-    <div className={`evidence-grid focus-${focusedPanel ?? 'none'}`}>
+    <div
+      className={`evidence-grid focus-${focusedPanel ?? 'none'}`}
+      style={style}
+    >
       <Panel
-        title="book"
-        sub={bookSub}
-        panelKey="book"
-        focused={focusedPanel === 'book'}
-        errored={errorPanel === 'book'}
-        loading={bookLoading}
+        title="market"
+        sub={marketSub}
+        panelKey="market"
+        focused={focusedPanel === 'market'}
+        errored={errorPanel === 'market'}
+        loading={marketLoading}
         onFocus={onFocus}
       >
-        <BookPanel flashId={flashId} rows={bookRows} />
+        <MarketPanel
+          flashId={flashId}
+          {...(bookRows ? { bookRows } : {})}
+          {...(holderRows ? { holderRows } : {})}
+          {...(outcomes && outcomes.length > 1 ? { outcomes } : {})}
+          {...(selectedOutcomeId ? { selectedOutcomeId } : {})}
+          {...(onOutcomeSelect ? { onOutcomeSelect } : {})}
+        />
       </Panel>
       <Panel
-        title="holders"
-        sub={holdersSub}
-        panelKey="holders"
-        focused={focusedPanel === 'holders'}
-        errored={errorPanel === 'holders'}
-        loading={holdersLoading}
-        onFocus={onFocus}
-      >
-        <HoldersPanel flashId={flashId} rows={holderRows} />
-      </Panel>
-      <Panel
-        title="news"
-        sub={newsSub}
-        panelKey="news"
-        focused={focusedPanel === 'news'}
-        errored={errorPanel === 'news'}
-        loading={newsLoading}
+        title="research"
+        sub={researchSub}
+        panelKey="research"
+        focused={focusedPanel === 'research'}
+        errored={errorPanel === 'research'}
+        loading={researchLoading}
         onFocus={onFocus}
       >
         <NewsPanel
           flashId={flashId}
-          catalysts={catalysts}
+          onFlash={onFlash}
+          {...(catalysts ? { catalysts } : {})}
           sentiment={sentiment}
           resolution={resolution}
-        />
-      </Panel>
-      <Panel
-        title="thesis"
-        sub={thesisSub}
-        panelKey="thesis"
-        focused={focusedPanel === 'thesis'}
-        errored={errorPanel === 'thesis'}
-        loading={thesisLoading}
-        onFocus={onFocus}
-      >
-        <ThesisPanel
-          onFlash={onFlash}
-          thesis={thesis}
+          {...(thesis ? { thesis } : {})}
           {...(comparables && comparables.length > 0 ? { comparables } : {})}
           {...(baseRate ? { baseRate } : {})}
         />

@@ -11,10 +11,12 @@
 }
 .news-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
   margin-bottom: 8px;
   padding: 0 0 4px;
+  flex: 0 0 auto;
 }
 .news-tab {
   background: transparent;
@@ -213,6 +215,72 @@
   padding: 32px;
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+.setup-card-wide { width: min(820px, 100%); }
+.provider-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.provider-tile {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.provider-tile:hover { border-color: rgba(255, 255, 255, 0.18); }
+.provider-tile.connected {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.04);
+}
+.provider-tile.expanded { border-color: var(--accent, #0a66ff); background: rgba(10, 102, 255, 0.05); }
+.provider-tile-head {
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: inherit;
+}
+.provider-tile.connected .provider-tile-head { cursor: default; }
+.provider-tile-row { display: flex; align-items: center; gap: 8px; }
+.provider-tile-label { font-size: 13px; font-weight: 500; color: var(--text, #eee); }
+.provider-tile-badge {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.provider-tile-badge.ok { color: #22c55e; background: rgba(34, 197, 94, 0.12); }
+.provider-tile-badge.err { color: #f59e0b; background: rgba(245, 158, 11, 0.12); }
+.provider-tile-hint { font-size: 11px; color: var(--text-muted, #999); }
+.provider-tile-remove {
+  align-self: flex-start;
+  margin: 0 14px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-muted, #999);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.provider-tile-remove:hover { color: #ef4444; border-color: rgba(239, 68, 68, 0.5); }
+.provider-tile-body {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 4px;
+  padding-top: 12px;
+  flex-direction: column;
   gap: 20px;
 }
 .setup-head-row {
@@ -283,68 +351,6 @@
   flex-direction: column;
   gap: 12px;
 }
-.provider-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.provider-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  padding: 16px;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font: inherit;
-  color: var(--fg, #eee);
-  transition: border-color 100ms ease, background 100ms ease;
-}
-.provider-card:hover {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.04);
-}
-.provider-card.active {
-  border-color: var(--accent, #0a66ff);
-  background: rgba(10, 102, 255, 0.06);
-}
-.provider-card-title {
-  font-size: 13px;
-  font-weight: 500;
-}
-.provider-card-sub {
-  font-size: 11px;
-  color: var(--muted, #999);
-}
-.provider-advanced-toggle {
-  background: transparent;
-  border: 0;
-  color: var(--muted, #888);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  padding: 4px 0;
-}
-.provider-advanced-toggle:hover {
-  color: var(--fg, #eee);
-}
-.provider-advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-left: 12px;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-}
-.provider-advanced-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 /* ---------- Key tester ---------- */
 .key-tester {
   display: flex;
@@ -393,27 +399,6 @@
 }
 .key-test-result.err {
   color: var(--danger, #ef4444);
-}
-
-/* ---------- Provider pill (reused in advanced section) ---------- */
-.provider-pill {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--fg, #eee);
-  padding: 4px 10px;
-  border-radius: 3px;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  text-transform: lowercase;
-}
-.provider-pill:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-}
-.provider-pill.active {
-  border-color: var(--accent, #0a66ff);
-  color: var(--accent, #0a66ff);
-  background: rgba(10, 102, 255, 0.08);
 }
 
 /* ============================================================
@@ -769,98 +754,6 @@
   cursor: not-allowed;
 }
 
-/* ---------- AgentDots single shared overlay ----------
-   One unified panel that lists ALL seven agents at once on hover. Portaled
-   to document.body and positioned via JS-computed `top` + `right` so the
-   right-rail's `overflow-y: auto` doesn't clip it. Width/edge guards keep
-   it in-viewport on narrow screens. */
-.agents-overlay {
-  position: fixed;
-  z-index: 1000;
-  width: 320px;
-  max-width: calc(100vw - 24px);
-  padding: 12px 14px;
-  background: var(--bg, #0a0b10);
-  border: 1px solid var(--border-strong, #3a3f52);
-  border-radius: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.agents-overlay::before {
-  content: '';
-  position: absolute;
-  top: -5px;
-  right: 16px;
-  width: 8px;
-  height: 8px;
-  background: var(--bg, #0a0b10);
-  border-top: 1px solid var(--border-strong, #3a3f52);
-  border-left: 1px solid var(--border-strong, #3a3f52);
-  transform: rotate(45deg);
-}
-.agents-overlay-head {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted, #888);
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border, #262a38);
-}
-.agents-overlay-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.agents-overlay-row {
-  display: grid;
-  grid-template-columns: 10px 1fr auto;
-  grid-template-areas:
-    "dot name status"
-    ".   body body"
-    ".   err  err";
-  column-gap: 8px;
-  row-gap: 2px;
-  font-size: 11px;
-  line-height: 1.4;
-}
-.agents-overlay-row > .dot { grid-area: dot; align-self: center; }
-.agents-overlay-name {
-  grid-area: name;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text, #e6e8ee);
-  text-transform: lowercase;
-}
-.agents-overlay-status {
-  grid-area: status;
-  font-size: 10px;
-  color: var(--text-muted, #888);
-  white-space: nowrap;
-}
-.agents-overlay-status.running { color: var(--accent, #0a66ff); }
-.agents-overlay-status.done    { color: var(--success, #10b981); }
-.agents-overlay-status.error   { color: var(--danger, #ef4444); }
-.agents-overlay-body {
-  grid-area: body;
-  color: var(--text-muted, #aab1c0);
-  font-size: 11px;
-}
-.agents-overlay-error {
-  grid-area: err;
-  font-size: 10px;
-  color: var(--danger, #ef4444);
-  background: rgba(239, 68, 68, 0.06);
-  padding: 3px 6px;
-  border-radius: 3px;
-  word-break: break-word;
-  margin-top: 2px;
-}
-
 /* ---------- Comparables (resolved markets as base-rate anchor) ---------- */
 .thesis-tabs-wrap {
   display: flex;
@@ -941,23 +834,35 @@
 .chat {
   border-top: 1px solid var(--border, #262a38) !important;
   background: var(--surface, #12141c) !important;
-  padding: 12px 16px !important;
+  padding: 14px 16px 16px !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 10px;
-  flex-shrink: 0;
+  /* Take all the vertical space the evidence grid + verdict band give
+   * back. Inside this container, history grows to fill and scrolls;
+   * input has a fixed height pinned at the bottom (natural flex flow,
+   * no justify-content trickery — that produced the giant empty-gap bug
+   * because it stacks every child at the bottom regardless of intent). */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .chat-history {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 160px;
+  gap: 10px;
+  /* History grows to fill whatever space the input doesn't claim. With
+   * `flex: 1 1 auto; min-height: 0` we get proper scrolling behaviour:
+   * old messages stay scrolled out of view, new ones autoscroll into
+   * view via the useEffect in Chat.tsx. No max-height — the chat
+   * container itself is already capped by its parent. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
 .chat-msg {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--text, #e6e8ee);
 }
 .chat-msg.user {
@@ -983,6 +888,16 @@
   border: 1px solid var(--border, #262a38);
   border-radius: 8px;
   padding: 0 12px;
+  /* Keep the input row at its natural height. */
+  flex: 0 0 auto;
+  /* Push to the bottom of the .chat column container in BOTH states:
+   *   - empty (only the input is rendered): margin-top: auto eats all the
+   *     leftover space above it so the input sits at the bottom
+   *   - with history: chat-history's flex:1 already fills the space, and
+   *     margin-top: auto is a no-op (no leftover space to absorb)
+   * This is the standard chat pattern — input docked at bottom, history
+   * scrolls above. */
+  margin-top: auto;
   transition: border-color 0.12s;
 }
 .chat-input-row:focus-within {

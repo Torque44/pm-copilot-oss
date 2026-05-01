@@ -21,6 +21,7 @@ import {
   getMarketByIdHandler,
   getMarketsListHandler,
   getEventsListHandler,
+  getEventByIdHandler,
 } from './routes/markets.js';
 import { eventsHandler } from './routes/events.js';
 import { loadSnapshot, installShutdownHooks, flush } from './persist.js';
@@ -65,6 +66,7 @@ async function main() {
   app.get('/api/brief', briefHandler);
   app.post('/api/ask', askHandler);
   app.get('/api/events', getEventsListHandler);
+  app.get('/api/event', getEventByIdHandler);
   app.get('/api/event-stream', eventsHandler);
 
   // ---- Admin: force flush + clear caches ----

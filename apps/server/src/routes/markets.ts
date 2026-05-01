@@ -8,10 +8,12 @@
 import type { Request, Response } from 'express';
 import {
   listEventsByTag,
+  listEventsByTagSlug,
   listEventsAll,
   pickBestSubMarket,
   gammaToMarketMeta,
   gammaToEventMeta,
+  getEvent,
   type GammaEvent,
 } from '@pm-copilot/core/feeds/polymarket';
 import { cached } from '../cache.js';
@@ -20,20 +22,44 @@ import type { MarketMeta, EventMeta, Category } from '@pm-copilot/core';
 const TTL_MS = 5 * 60 * 1000;
 
 /**
- * Legacy "primary" categories Polymarket exposes via `tag_slug`. The 'other'
- * bucket is a fallback that pulls top-volume events with no tag filter.
+ * The four canonical categories the agent pipeline keys off of. Beyond
+ * these, the API accepts any Polymarket tag slug (iran, ai, geopolitics,
+ * middle-east, tech, …) and passes it through to gamma. Everything that
+ * isn't one of the four canonical buckets is grouped under 'other' for
+ * agent-routing purposes (the source-curation registry has its own
+ * sub-classification logic).
  */
-type ApiCategory = Exclude<Category, 'other'> | 'other';
+const CANONICAL_CATEGORIES = new Set<Category>(['sports', 'crypto', 'politics', 'other']);
+
+/** Accept any string tag — the agent layer only needs to know one of four
+ *  canonical buckets, but the UI can offer fine-grained tabs. */
+type ApiCategory = string;
+
+function categoryBucket(tag: string): Category {
+  if (CANONICAL_CATEGORIES.has(tag as Category)) return tag as Category;
+  return 'other';
+}
 
 function parseCategory(raw: unknown, fallback: ApiCategory = 'sports'): ApiCategory {
-  const v = String(raw ?? '');
-  if (v === 'sports' || v === 'crypto' || v === 'politics' || v === 'other') return v;
-  return fallback;
+  const v = String(raw ?? '').trim();
+  if (!v) return fallback;
+  // Sanity: tag slugs are lowercase letters/digits/hyphens. Reject anything
+  // weird so we never paste arbitrary user input into a URL.
+  if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(v)) return fallback;
+  return v;
 }
 
 async function fetchEventsForCategory(category: ApiCategory, limit: number): Promise<GammaEvent[]> {
   if (category === 'other') return listEventsAll(limit);
-  return listEventsByTag(category, limit);
+  if (CANONICAL_CATEGORIES.has(category as Category)) {
+    // Type narrowing: PolyTag union. listEventsByTag is the legacy strict
+    // version; behaviour is identical, but it shares cache keys with the
+    // existing brief route.
+    if (category === 'sports' || category === 'crypto' || category === 'politics') {
+      return listEventsByTag(category, limit);
+    }
+  }
+  return listEventsByTagSlug(category, limit);
 }
 
 async function topMarketForTag(tag: 'sports' | 'crypto'): Promise<MarketMeta | null> {
@@ -83,6 +109,29 @@ export async function getMarketByIdHandler(req: Request, res: Response) {
   }
 }
 
+// GET /api/event?id=<eventId>
+// Returns the parent event (with all sibling outcomes) for a Polymarket
+// event id. Used by the workbench to populate the "outcomes" tab in the
+// market panel even when the user's currently-loaded category tab in the
+// LeftRail doesn't contain the parent event — e.g. they navigated to the
+// market via /m/:id directly or via recently-viewed.
+export async function getEventByIdHandler(req: Request, res: Response) {
+  try {
+    const id = String(req.query.id ?? '');
+    if (!id) return res.status(400).json({ error: 'missing id' });
+    const ev = await cached(`event:${id}`, TTL_MS, () => getEvent(id));
+    if (!ev) return res.status(404).json({ error: 'event not found' });
+    // Pick a sensible category bucket — the agent pipeline only cares about
+    // the four canonical buckets, but the UI doesn't care about category at
+    // all when reading the outcomes list, so 'other' is safe.
+    const meta = gammaToEventMeta(ev, 'other');
+    if (!meta) return res.status(404).json({ error: 'event has no usable outcomes' });
+    res.json(meta);
+  } catch (err: unknown) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+}
+
 // GET /api/markets-list?category=sports|crypto|politics|other&limit=8&mode=contested|all
 // Returns a ranked list of binary markets in the given category.
 //
@@ -106,12 +155,13 @@ async function listMarketsForCategory(
       : Math.min(100, Math.max(40, limit * 2));
     const events = await fetchEventsForCategory(category, candidatePool);
 
+    const bucket = categoryBucket(category);
     const all: MarketMeta[] = [];
     for (const ev of events) {
       const m = pickBestSubMarket(ev);
       if (!m) continue;
       if (!m.clobTokenIds) continue;
-      const meta = gammaToMarketMeta(ev, m, category);
+      const meta = gammaToMarketMeta(ev, m, bucket);
       if (!meta.tokenIdYes || !meta.tokenIdNo) continue;
       all.push(meta);
     }
@@ -165,9 +215,10 @@ async function listEventsForCategory(
       : Math.min(100, Math.max(40, limit * 2));
     const events = await fetchEventsForCategory(category, candidatePool);
 
+    const bucket = categoryBucket(category);
     const all: EventMeta[] = [];
     for (const ev of events) {
-      const meta = gammaToEventMeta(ev, category);
+      const meta = gammaToEventMeta(ev, bucket);
       if (!meta) continue;
       all.push(meta);
     }

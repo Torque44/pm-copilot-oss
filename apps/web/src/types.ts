@@ -33,6 +33,10 @@ export type EventSummary = {
   id: string;
   title: string;
   category: string;
+  /** Polymarket tag slugs attached to this event (iran, ai, geopolitics,
+   *  middle-east, …). Drives the fine-grained tab filter beyond the four
+   *  canonical categories. */
+  tagSlugs?: string[];
   marketCount: number;
   outcomes: EventOutcome[];
   /** Aggregate 24h volume across all outcomes (event level). */
@@ -112,6 +116,9 @@ export type NewsItem = {
   src: string;
   when: string;
   url?: string;
+  /** True when the source isn't on the curated allowlist for this market —
+   *  shown but flagged so the trader can apply their own discount. */
+  unverified?: boolean;
 };
 
 export type BookRow = {

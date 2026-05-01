@@ -27,9 +27,9 @@ import { formatRelativeDuration, fmtMoney } from '../lib/format';
 
 // Keys we track for agent status. The supervisor today emits market/holders/
 // news/comparables/thesis/synthesis (+ sentiment when xAI configured), plus
-// ask on demand from /api/ask. The 7-dot AgentDots surfaces 7 of these in a
-// fixed order; comparables is intentionally NOT in the dot row — it's a
-// fast HTTP fan-out whose result lands as a tab on the Thesis panel.
+// ask on demand from /api/ask. The right-rail AgentList surfaces 7 of these
+// in a fixed order; comparables is intentionally NOT in the list — it's a
+// fast HTTP fan-out whose result lands as a tab in the research panel.
 type ServerAgentId =
   | 'market'
   | 'holders'
@@ -93,7 +93,7 @@ function isCitation(x: unknown): x is Citation {
   const o = x as { id?: unknown; kind?: unknown };
   if (typeof o.id !== 'string') return false;
   const k = o.kind;
-  return k === 'book' || k === 'whale' || k === 'news' || k === 'kol';
+  return k === 'book' || k === 'whale' || k === 'news' || k === 'kol' || k === 'comp';
 }
 
 function asMarket(x: unknown): Market | null {
@@ -159,6 +159,7 @@ type RawNewsItem = {
   publishedAt?: string;
   when?: string;
   url?: string;
+  unverified?: boolean;
 };
 type RawNewsGrounding = { kind?: string; items?: RawNewsItem[] };
 
@@ -225,6 +226,7 @@ function newsGroundingToItems(g: RawNewsGrounding): NewsItem[] {
       when: (typeof n.publishedAt === 'string' && n.publishedAt) || (typeof n.when === 'string' && n.when) || '',
     };
     if (typeof n.url === 'string') item.url = n.url;
+    if (n.unverified === true) item.unverified = true;
     return [item];
   });
 }
@@ -261,15 +263,32 @@ function reduce(events: BriefEventLike[]): BriefShape {
     if (!Array.isArray(raw)) return;
     for (const c of raw) {
       if (isCitation(c)) {
-        if (!citationMap.has(c.id)) citationMap.set(c.id, c);
+        // Preserve the payload — comparables panel + sentiment popovers need
+        // the structured fields (eventId/title/outcome/handle/excerpt/etc).
+        // The narrow Citation type drops payload, so we re-attach via a
+        // permissive cast.
+        const withPayload = c as Citation & { payload?: unknown };
+        if (!citationMap.has(c.id)) citationMap.set(c.id, withPayload);
       } else if (c && typeof c === 'object') {
-        const o = c as { id?: unknown; kind?: unknown; label?: unknown; url?: unknown };
+        const o = c as {
+          id?: unknown;
+          kind?: unknown;
+          label?: unknown;
+          url?: unknown;
+          payload?: unknown;
+        };
         if (typeof o.id === 'string') {
           const kind: CitationKind =
-            o.kind === 'whale' || o.kind === 'news' || o.kind === 'kol' ? o.kind : 'book';
-          const cit: Citation = { id: o.id, kind };
+            o.kind === 'whale' ||
+            o.kind === 'news' ||
+            o.kind === 'kol' ||
+            o.kind === 'comp'
+              ? o.kind
+              : 'book';
+          const cit: Citation & { payload?: unknown } = { id: o.id, kind };
           if (typeof o.label === 'string') cit.label = o.label;
           if (typeof o.url === 'string') cit.url = o.url;
+          if (o.payload !== undefined) cit.payload = o.payload;
           if (!citationMap.has(cit.id)) citationMap.set(cit.id, cit);
         }
       }

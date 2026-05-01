@@ -9,6 +9,12 @@
 import { feed as feedFor } from '../mcp/registry';
 import { getProvider } from '../providers/index';
 import { extractJson, type LLMProvider } from '../providers/types';
+import {
+  classifyMarket,
+  isAllowlisted,
+  isDenylisted,
+  profileFor,
+} from '../sources/registry';
 import type {
   AgentContext,
   AgentResult,
@@ -19,9 +25,17 @@ import type {
   SectionOut,
 } from './types';
 
-const SYS = `You are a research analyst building a fast briefing for a prediction-market trader. The trader needs context: what's the question really about, what's happened recently, and what's coming up that could move the market.
+function buildSystemPrompt(allowedDomains: string[], hint: string): string {
+  return `You are a research analyst building a fast briefing for a prediction-market trader. The trader needs context: what's the question really about, what's happened recently, and what's coming up that could move the market.
 
-Use web search aggressively. Cast a wide net:
+Source rules — follow STRICTLY:
+- ONLY cite items from these vetted domains: ${allowedDomains.slice(0, 30).join(', ')}${allowedDomains.length > 30 ? `, ${allowedDomains.length - 30} more` : ''}.
+- NEVER cite Wikipedia, Wikipedia mirrors, Reddit, Substack, Medium, Forbes contributor pieces, Yahoo aggregator pages, or any user-editable source.
+- ${hint}
+- If web search returns content from a non-vetted source, drop it from the response. Do not paraphrase from it.
+- If the topic is too niche for any vetted source, fall back to your training-data knowledge marked from:"training", relevance:"low" — but DO NOT invent URLs or sources.
+
+Use web search aggressively across the vetted domains. Cast a wide net:
 
 - Recent news (last 30 days) about the entities/event in the title
 - Scheduled events that could drive resolution (votes, releases, summits, games, earnings, court dates)
@@ -53,6 +67,7 @@ Rules:
 - claims[] target 3–4 entries. Each must cite [news·N] referencing items[N-1].
 - Do not fabricate URLs. If unsure, leave url:"".
 - Be neutral; let the trader form their own view.`;
+}
 
 type NewsResp = {
   items?: NewsItem[];
@@ -118,6 +133,13 @@ export async function runNewsAgent(
   const newsProvider = provider ?? getProvider();
   const allowedTools = newsProvider.capabilities.webSearch ? ['WebSearch'] : [];
 
+  // Route by market sub-category to the curated source profile so the model
+  // only cites trader-grade outlets (no Wikipedia / Reddit / open posting
+  // platforms — see sources/registry).
+  const sub = classifyMarket(market.category ?? '', market.title);
+  const profile = profileFor(sub);
+  const systemPrompt = buildSystemPrompt(profile.domains, profile.hint);
+
   const prompt = `Market title: "${market.title}"
 Resolves by: ${market.endDate ?? 'unknown'}
 Current YES price: ${market.yes != null ? (market.yes * 100).toFixed(1) + '¢' : 'n/a'}
@@ -130,7 +152,7 @@ specified in the system prompt.`;
 
   const res = await newsProvider.complete(prompt, {
     tier: 'fast',
-    systemPrompt: SYS,
+    systemPrompt,
     allowedTools,
     jsonOnly: true,
     // News with WebSearch can take >60s — give it room.
@@ -138,7 +160,24 @@ specified in the system prompt.`;
   });
 
   const parsed = res.ok ? extractJson<NewsResp>(res.text) : null;
-  const items: NewsItem[] = Array.isArray(parsed?.items) ? parsed!.items.slice(0, 8) : [];
+  const rawItems: NewsItem[] = Array.isArray(parsed?.items) ? parsed!.items : [];
+  // Source filtering:
+  //   - drop denylisted domains silently (Wikipedia / Reddit / Substack / Medium / Forbes / Yahoo)
+  //   - flag items that survive the denylist but aren't on the curated allowlist
+  //     for this sub-category as `unverified` so the UI can mark them
+  //   - training-data items (no URL) pass through with no filtering — the
+  //     prompt already tells the model to mark them low-relevance
+  const items: NewsItem[] = rawItems
+    .filter(it => {
+      if (it.from === 'training' || !it.url) return true;
+      return !isDenylisted(it.url);
+    })
+    .map(it => {
+      if (it.from === 'training' || !it.url) return it;
+      const verified = isAllowlisted(sub, it.url);
+      return verified ? it : { ...it, unverified: true };
+    })
+    .slice(0, 8);
   const rawClaims: Claim[] = Array.isArray(parsed?.claims) ? parsed!.claims : [];
   const background = typeof parsed?.background === 'string' ? parsed!.background : '';
 

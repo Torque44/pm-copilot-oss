@@ -90,6 +90,10 @@ export type EventMeta = {
   description?: string | null;
   endDate: string | null;
   category: Category;
+  /** All polymarket tag slugs attached to this event (e.g.
+   *  ['politics', 'iran', 'middle-east', 'geopolitics']). Used by the UI
+   *  for fine-grained filter tabs beyond the four-bucket Category. */
+  tagSlugs?: string[];
   venue: Venue;
   isMultiOutcome: boolean;    // true if outcomes.length > 1 with distinct labels
   outcomes: Outcome[];        // all sub-markets/outcomes under this event
@@ -140,6 +144,11 @@ export type NewsItem = {
   /** Provenance — 'web' if found via search; 'training' when the model
    *  filled in from its own knowledge because search was thin. */
   from?: 'web' | 'training';
+  /** True when the source domain isn't on the curated allowlist for this
+   *  market's sub-category. Item is shown but flagged in the UI so the
+   *  trader can apply their own discount. Denylist hits are dropped, not
+   *  flagged — this only fires for "we couldn't verify, but it's not banned". */
+  unverified?: boolean;
 };
 
 export type NewsGrounding = {

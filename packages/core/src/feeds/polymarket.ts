@@ -66,7 +66,10 @@ export type GammaEvent = {
   tags?: { id: number; label: string; slug: string }[];
 };
 
-// Tag slugs we treat as first-class categories. 'other' is a fallback (no tag).
+// Tag slugs we treat as first-class categories ('sports' | 'crypto' |
+// 'politics'). The agent typing depends on these as the canonical four
+// buckets. Beyond these, listEventsByTag accepts ANY tag slug Polymarket
+// publishes (iran, ai, geopolitics, etc) — see listEventsByTagSlug.
 export type PolyTag = 'sports' | 'crypto' | 'politics';
 
 // --- public API ---
@@ -79,10 +82,49 @@ export async function listEventsByTag(
   return get<GammaEvent[]>(url);
 }
 
+/** Same as listEventsByTag but accepts any Polymarket tag slug (iran, ai,
+ *  geopolitics, middle-east, etc). Used by the UI's tag-tab navigation
+ *  which surfaces Polymarket's full tag taxonomy. */
+export async function listEventsByTagSlug(
+  tagSlug: string,
+  limit = 20,
+): Promise<GammaEvent[]> {
+  const safe = encodeURIComponent(tagSlug);
+  const url = `${GAMMA}/events?active=true&closed=false&tag_slug=${safe}&order=volume24hr&ascending=false&limit=${limit}`;
+  return get<GammaEvent[]>(url);
+}
+
 /** Top events across the platform (no tag filter). Used for the "Other" tab. */
 export async function listEventsAll(limit = 20): Promise<GammaEvent[]> {
   const url = `${GAMMA}/events?active=true&closed=false&order=volume24hr&ascending=false&limit=${limit}`;
   return get<GammaEvent[]>(url);
+}
+
+/** Wide net for the comparables agent: pulls BOTH currently-active markets
+ *  and recently-resolved markets in the same tag, merged + deduped by id.
+ *  Resolved markets are critical — they're the only ones that contribute to
+ *  a base rate. The default Gamma list endpoint filters them out, so we
+ *  issue a second `closed=true` query and stitch the results. */
+export async function listEventsBroad(
+  tagSlug: PolyTag | null,
+  limit = 200,
+): Promise<GammaEvent[]> {
+  const tagPart = tagSlug ? `&tag_slug=${tagSlug}` : '';
+  const half = Math.max(50, Math.floor(limit / 2));
+  const activeUrl = `${GAMMA}/events?active=true&closed=false${tagPart}&order=volume24hr&ascending=false&limit=${half}`;
+  const closedUrl = `${GAMMA}/events?closed=true${tagPart}&order=endDate&ascending=false&limit=${half}`;
+  const [active, closed] = await Promise.all([
+    get<GammaEvent[]>(activeUrl).catch(() => [] as GammaEvent[]),
+    get<GammaEvent[]>(closedUrl).catch(() => [] as GammaEvent[]),
+  ]);
+  const seen = new Set<string>();
+  const merged: GammaEvent[] = [];
+  for (const ev of [...active, ...closed]) {
+    if (!ev?.id || seen.has(ev.id)) continue;
+    seen.add(ev.id);
+    merged.push(ev);
+  }
+  return merged;
 }
 
 export async function getEvent(id: string): Promise<GammaEvent> {
@@ -253,12 +295,19 @@ export function gammaToEventMeta(
   const resolutionSource = ev.resolutionSource ?? null;
   const resolutionWording = ev.description ?? null;
 
+  // Pull every tag slug Polymarket attached so the UI can offer fine-grained
+  // filter tabs (iran, geopolitics, ai, etc) beyond the four-bucket Category.
+  const tagSlugs = (ev.tags ?? [])
+    .map((t) => t?.slug)
+    .filter((s): s is string => typeof s === 'string' && s.length > 0);
+
   return {
     eventId: ev.id,
     title: ev.title,
     description: ev.description ?? null,
     endDate: ev.endDate ?? null,
     category,
+    ...(tagSlugs.length > 0 ? { tagSlugs } : {}),
     venue: 'polymarket',
     isMultiOutcome,
     outcomes,

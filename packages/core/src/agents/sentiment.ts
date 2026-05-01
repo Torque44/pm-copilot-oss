@@ -18,39 +18,39 @@ import type {
   SectionOut,
 } from './types';
 import type { LLMProvider } from '../providers/types';
+import {
+  classifyMarket,
+  isAllowlistedHandle,
+  profileFor,
+  type MarketSubcategory,
+} from '../sources/registry';
 
 /**
- * Build a category-aware system prompt for the sentiment agent. Different
- * market kinds want very different signal sources:
- *
- *   - politics  → official accounts (gov't depts, foreign ministries),
- *                  established news outlets, regional press, expert analysts
- *   - crypto    → on-chain analysts, prediction-market-active KOLs, exchanges,
- *                  protocol founders
- *   - sports    → team accounts, beat reporters, ESPN/insider accounts
- *   - other     → broad mix; let the model pick
- *
- * The whole point: when a trader opens "US-Iran peace deal", we should NOT
- * surface random PM-trader chat — we should surface @StateDept, @khamenei_ir,
- * @AP, @Reuters, regional analysts, etc.
+ * Build a category-aware system prompt for the sentiment agent. The handle
+ * allowlist comes from sources/registry — same source-of-truth as the news
+ * agent, so the trader sees the same vetted voices on both panels. Posts
+ * from off-list handles are filtered out by post-process.
  */
-function systemPromptForCategory(category: string): string {
-  const profile = sourceProfileFor(category);
-  return `You are a sentiment analyst for prediction-market traders. Use your knowledge of X (twitter) conversations and public statements about this topic up to your training cutoff to summarise what the relevant authoritative voices are likely saying or have said.
+function systemPromptForSub(sub: MarketSubcategory, marketTitle: string): string {
+  const profile = profileFor(sub);
+  const allowed = profile.handles.slice(0, 24).join(', ');
+  return `You are a sentiment analyst for prediction-market traders. Summarise what authoritative X voices have been saying about "${marketTitle}" using your knowledge of public statements up to your training cutoff.
 
-Source priority (most important first — pull from your knowledge of these accounts and outlets):
-${profile.map((line, i) => `${i + 1}. ${line}`).join('\n')}
+Source rules — STRICT:
+- ONLY cite from these vetted handles: ${allowed}.
+- ${profile.hint}
+- If you don't know a real public statement from one of those accounts on this exact topic, drop the source — DO NOT invent quotes.
+- NEVER cite anonymous retail accounts, "alpha" group accounts, pump/shill accounts, or unidentifiable handles.
+- It's fine to return fewer than 5 claims if the vetted set yields less.
 
 Rules:
 - Output 3-5 short claims about the prevailing view among these source types.
-- Each claim MUST end with one or more citation tags [kol·N] referencing a specific account / outlet you're attributing to (1 = first attributed source, 2 = second, …).
+- Each claim MUST end with one or more citation tags [kol·N] referencing a specific account you're attributing to (1 = first attributed source, 2 = second, …).
 - For each [kol·N], populate \`tweets\` with:
-    handle  — the actual X handle (no @ prefix), e.g. "StateDept", "Reuters"
-    excerpt — a short paraphrase of what that source has been saying (≤240 chars). Quote a real public statement if you remember one verbatim; otherwise paraphrase.
+    handle  — the actual X handle (no @ prefix), must be from the vetted list above
+    excerpt — a short paraphrase of what that source has been saying (≤240 chars). Quote verbatim if you remember; otherwise paraphrase honestly.
     url     — best guess at a representative post or "https://x.com/<handle>" if no specific tweet
     ts      — leave empty string if uncertain
-- Be HONEST about uncertainty. If you don't know what a specific account has said recently, don't invent a quote — paraphrase the broader stance, OR drop that source entirely.
-- Stick to the category profile. Skip random retail accounts.
 - Aggregate "lean" describes the consensus implied by these sources for the YES side of the market.
 
 Return JSON ONLY, no prose:
@@ -60,44 +60,6 @@ Return JSON ONLY, no prose:
   "lean": "yes" | "no" | "split" | "unclear",
   "confidence": "high" | "med" | "low"
 }`;
-}
-
-function sourceProfileFor(category: string): string[] {
-  const c = (category || '').toLowerCase();
-  if (c === 'politics') {
-    return [
-      'Official government accounts of the parties involved (e.g. @StateDept, @WhiteHouse, foreign-ministry handles, @POTUS, @VP, relevant cabinet members)',
-      'Established news outlets covering the topic (@Reuters, @AP, @nytimes, @washingtonpost, @WSJ, regional papers)',
-      'Topic-specialist reporters and named foreign-policy analysts with domain expertise',
-      'Think-tank and policy-shop accounts (Brookings, CFR, Atlantic Council, Carnegie, RAND)',
-      'Skip retail political opinion accounts and partisan commentators unless they break news',
-    ];
-  }
-  if (c === 'crypto') {
-    return [
-      'On-chain analysts and data accounts (@glassnode, @santimentfeed, @WuBlockchain, @CryptoQuant_QC)',
-      'Prediction-market-active traders who post positions and theses (@theo4_tweets, @0xPolymarket, @mlmkts)',
-      'Project founders / core contributors of the asset in question',
-      'Exchange announcements and listing news (@binance, @coinbase, @krakenfx)',
-      'Established crypto news (@TheBlock__, @CoinDesk, @decryptmedia)',
-    ];
-  }
-  if (c === 'sports') {
-    return [
-      'Team and league official accounts',
-      'Beat reporters covering the team / event',
-      'Insiders for the relevant league (@AdamSchefter, @ShamsCharania, @MarinaganasNFL, @Ken_Rosenthal)',
-      'Stats accounts (@ESPNStats, @NBAStatsInfo, sport-specific data shops)',
-      'Skip prediction-market-trader chatter; sports markets move on injury news + insider scoops',
-    ];
-  }
-  // 'other' or unknown — broad guidance.
-  return [
-    'Authoritative or domain-expert accounts most likely to break news on this topic',
-    'Established news outlets covering the topic',
-    'Substantive analysts with track records, not retail speculation',
-    'Skip random retail commentary — surface accounts that actually move information',
-  ];
 }
 
 export type SentimentInput = {
@@ -174,7 +136,8 @@ Search X for recent (last 14 days) posts that:
 
 Surface 3-5 representative takes that capture the conversation.`;
 
-  const sysPrompt = systemPromptForCategory(input.category);
+  const sub = classifyMarket(input.category, input.marketTitle);
+  const sysPrompt = systemPromptForSub(sub, input.marketTitle);
 
   // NOTE: xAI deprecated the `search_parameters` live-search shape on the
   // /v1/chat/completions endpoint (HTTP 410: "switch to Agent Tools API").
@@ -200,16 +163,19 @@ Surface 3-5 representative takes that capture the conversation.`;
 
   // Build citation list from the model's reported tweets. Each entry maps
   // n → kol·N so the [kol·N] tags inside claims resolve to real tweet URLs.
+  // Off-allowlist handles are dropped silently — this enforces the same
+  // curated voice list the prompt asked for.
   const citations: Citation[] = [];
   const tweetsRaw = Array.isArray(parsed?.tweets) ? parsed!.tweets : [];
   for (const t of tweetsRaw) {
     if (typeof t.n !== 'number' || !t.url) continue;
-    const id = `kol·${t.n}`;
     const handle = (t.handle || '').replace(/^@/, '').trim();
+    if (!handle || !isAllowlistedHandle(sub, handle)) continue;
+    const id = `kol·${t.n}`;
     const cit: Citation = {
       id,
       kind: 'kol',
-      label: handle ? `@${handle}` : id,
+      label: `@${handle}`,
       payload: {
         handle,
         text: t.excerpt || '',

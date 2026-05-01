@@ -21,7 +21,7 @@ import type {
   Claim,
   SectionOut,
 } from './types';
-import { listEventsByTag, listEventsAll, type GammaEvent, type PolyTag } from '../feeds/polymarket';
+import { listEventsBroad, type GammaEvent, type PolyTag } from '../feeds/polymarket';
 
 const POLY_TAGS: readonly PolyTag[] = ['crypto', 'sports', 'politics'];
 
@@ -35,7 +35,56 @@ const STOP_WORDS = new Set([
   'reach', 'reaches', 'hit', 'hits', 'win', 'wins', 'won', 'lose', 'loses',
   'lost', 'cross', 'crosses', 'beat', 'beats', 'above', 'below', 'over',
   'under', 'than', 'more', 'less',
+  // boilerplate that bloated false-positives previously
+  'permanent', 'temporary', 'official', 'announced', 'declared', 'signed',
 ]);
+
+/** Synonym clusters — tokens in the same cluster expand to each other so
+ *  e.g. an "Iran peace deal" market matches an "Israel-Hamas ceasefire"
+ *  candidate via the {peace, ceasefire, truce, treaty, agreement, accord}
+ *  cluster. Conservative — only synonym when the words are nearly drop-in
+ *  replacements in a Polymarket title. */
+const SYNONYMS: Record<string, string[]> = {
+  peace: ['ceasefire', 'truce', 'treaty', 'agreement', 'accord', 'armistice'],
+  ceasefire: ['peace', 'truce', 'agreement', 'accord', 'armistice'],
+  truce: ['peace', 'ceasefire', 'agreement'],
+  treaty: ['peace', 'agreement', 'accord', 'pact'],
+  agreement: ['peace', 'ceasefire', 'treaty', 'accord', 'deal', 'pact'],
+  accord: ['peace', 'agreement', 'treaty', 'deal'],
+  pact: ['treaty', 'agreement', 'accord'],
+  deal: ['agreement', 'accord', 'pact'],
+  war: ['conflict', 'invasion', 'military', 'attack'],
+  conflict: ['war', 'attack'],
+  invasion: ['war', 'attack', 'military'],
+  attack: ['war', 'invasion', 'strike'],
+  strike: ['attack', 'military'],
+  nuclear: ['enrichment', 'weapons', 'bomb', 'icbm'],
+  enrichment: ['nuclear'],
+  election: ['vote', 'ballot', 'primary'],
+  vote: ['election', 'ballot'],
+  ballot: ['election', 'vote'],
+  fed: ['fomc', 'powell', 'rate', 'rates'],
+  fomc: ['fed', 'powell', 'rate', 'rates'],
+  rate: ['rates', 'fed', 'fomc', 'cut', 'hike'],
+  rates: ['rate', 'fed', 'fomc'],
+  cut: ['rate', 'rates', 'cuts'],
+  hike: ['rate', 'rates', 'hikes'],
+  recession: ['downturn', 'contraction'],
+  // sports
+  champion: ['championship', 'title', 'champ'],
+  championship: ['champion', 'title', 'champ', 'final', 'finals'],
+  final: ['finals', 'championship'],
+  finals: ['final', 'championship'],
+  // crypto
+  etf: ['fund'],
+  fund: ['etf'],
+  approval: ['approve', 'approved'],
+};
+
+function expand(tok: string): string[] {
+  const extra = SYNONYMS[tok];
+  return extra ? [tok, ...extra] : [tok];
+}
 
 function tokenize(s: string): string[] {
   return s
@@ -43,6 +92,32 @@ function tokenize(s: string): string[] {
     .replace(/[^a-z0-9$]+/g, ' ')
     .split(/\s+/)
     .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
+}
+
+/** Tokenize WITH synonym expansion — used for the candidate side so we can
+ *  match e.g. "ceasefire" against a query containing "peace". */
+function tokenizeExpanded(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of tokenize(s)) {
+    for (const e of expand(t)) out.add(e);
+  }
+  return out;
+}
+
+/** Rare-word weighting: a hit on "iran" is worth more than a hit on "deal".
+ *  We don't have a corpus to compute IDF, so we use a static rare-word
+ *  bonus for proper-noun-shaped tokens (capitalized in original or 4+
+ *  characters that aren't on the high-frequency boilerplate list). */
+const COMMON_WORDS = new Set([
+  'deal', 'date', 'year', 'years', 'month', 'months', 'day', 'days',
+  'end', 'time', 'period', 'event', 'announce', 'announcement', 'public',
+  'major', 'new', 'old', 'high', 'low', 'big', 'small', 'good', 'bad',
+]);
+
+function tokenWeight(tok: string): number {
+  if (COMMON_WORDS.has(tok)) return 0.5;
+  if (tok.length >= 5) return 1.5; // longer tokens skew rarer
+  return 1.0;
 }
 
 export type ComparableHit = {
@@ -75,33 +150,76 @@ export async function runComparablesAgent(
   input: ComparablesInput,
 ): Promise<AgentResult> {
   const started = Date.now();
-  const tokens = new Set(tokenize(input.marketTitle));
-  if (tokens.size === 0) {
+  const queryTokens = tokenize(input.marketTitle);
+  if (queryTokens.length === 0) {
     return emptyResult(started, 'no useful keywords in market title');
   }
 
-  // Pull a wide candidate pool for the same category. We accept resolved
-  // markets here (closed=true also surfaces them via Gamma's order param).
+  // Pull a wide candidate pool — BOTH active and resolved markets in the
+  // same tag, since resolved comparables are what anchor the base rate.
+  // The default Gamma list endpoints filter resolved out — we use
+  // listEventsBroad which stitches active + closed.
   let candidates: GammaEvent[] = [];
+  const tag = (POLY_TAGS as readonly string[]).includes(input.category)
+    ? (input.category as PolyTag)
+    : null;
   try {
-    if ((POLY_TAGS as readonly string[]).includes(input.category)) {
-      candidates = await listEventsByTag(input.category as PolyTag, 100);
-    } else {
-      candidates = await listEventsAll(100);
-    }
+    candidates = await listEventsBroad(tag, 500);
   } catch (err) {
     return emptyResult(started, `gamma fetch failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // Score each candidate by keyword overlap with the title.
+  // Score each candidate by weighted overlap. Query tokens carry per-token
+  // weights (rare proper-noun-shaped tokens count more); we expand the
+  // candidate side with synonyms so e.g. "peace" in the query matches
+  // "ceasefire" in the candidate.
+  const queryTitleLower = input.marketTitle.toLowerCase();
   const scored: ComparableHit[] = [];
   for (const ev of candidates) {
-    const evTokens = new Set(tokenize(ev.title || ''));
+    const titleLower = (ev.title || '').toLowerCase();
+    if (!titleLower) continue;
+    if (titleLower === queryTitleLower) continue;          // skip exact self
+    const evTokens = tokenizeExpanded(ev.title || '');
     let score = 0;
-    for (const t of tokens) if (evTokens.has(t)) score += 1;
-    if (score === 0) continue;
-    // Skip the current market itself (same title).
-    if ((ev.title || '').toLowerCase() === input.marketTitle.toLowerCase()) continue;
+    let hits = 0;
+    for (const t of queryTokens) {
+      if (evTokens.has(t)) {
+        score += tokenWeight(t);
+        hits += 1;
+        continue;
+      }
+      // Allow the query side to expand too: a query containing "peace"
+      // should hit a candidate containing "ceasefire".
+      const expanded = expand(t);
+      let synHit = false;
+      for (let i = 1; i < expanded.length; i += 1) {
+        if (evTokens.has(expanded[i]!)) {
+          score += tokenWeight(t) * 0.7;                   // synonym hit slightly discounted
+          hits += 1;
+          synHit = true;
+          break;
+        }
+      }
+      if (synHit) continue;
+      // Stemming fallback — for query tokens 4+ chars, look for a candidate
+      // token that contains the query as a prefix (catches iran→iranian,
+      // ukraine→ukrainian, china→chinese, israel→israeli, etc).
+      if (t.length >= 4) {
+        for (const e of evTokens) {
+          if (e.length > t.length && e.startsWith(t)) {
+            score += tokenWeight(t) * 0.85;                // prefix hit slightly discounted
+            hits += 1;
+            break;
+          }
+          if (t.length > e.length && t.startsWith(e) && e.length >= 4) {
+            score += tokenWeight(t) * 0.85;
+            hits += 1;
+            break;
+          }
+        }
+      }
+    }
+    if (hits === 0) continue;
 
     const outcome = inferOutcome(ev);
     scored.push({

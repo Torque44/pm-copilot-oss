@@ -354,7 +354,7 @@ export function LandingFlow({
           <footer className="land-foot mono">
             <div>© 2026 pm copilot. <b>not financial advice.</b></div>
             <div>built in mono</div>
-            <div className="right">read-only. MIT. open source.</div>
+            <div className="right">open source</div>
           </footer>
         </main>
       </div>

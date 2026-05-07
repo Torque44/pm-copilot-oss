@@ -83,7 +83,7 @@ const FALLBACK_TICKER: TickerItem[] = [
 // outcome-label rules, etc.) so users with stale cache from a previous
 // release pick up the new behaviour on next load instead of seeing
 // cached "0.10 with no label" or "péter magyar 1.00" rows for 5 mins.
-const TICKER_CACHE_KEY = 'pm-copilot:ticker-cache:v3';
+const TICKER_CACHE_KEY = 'pm-copilot:ticker-cache:v4';
 const TICKER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Categories we sample for the ticker. Mixed so the strip doesn't feel like
@@ -249,14 +249,25 @@ export function LandingFlow({
           // before moving to the second-place market, the strip always
           // surfaces the most-traded event from each vertical, even when
           // one category dominates by volume.
+          //
+          // Dedupe by lowercased title: Polymarket events are routinely
+          // tagged in multiple categories (the US/Iran peace deal sits in
+          // both politics AND geopolitics, for example), so without this
+          // the same market shows up twice in adjacent positions, and
+          // the 3x track render makes the duplication especially visible
+          // at category seams.
           const items: TickerItem[] = [];
+          const seenTitles = new Set<string>();
           const maxLen = Math.max(...collected.map((l) => l.length), 0);
           for (let i = 0; i < maxLen && items.length < 16; i++) {
             for (const list of collected) {
               const ev = list[i];
-              if (!ev) continue;
+              if (!ev || !ev.title) continue;
+              const titleKey = ev.title.trim().toLowerCase();
+              if (seenTitles.has(titleKey)) continue;
               const item = eventToTickerItem(ev);
               if (!item) continue;
+              seenTitles.add(titleKey);
               items.push(item);
               if (items.length >= 16) break;
             }

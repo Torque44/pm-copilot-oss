@@ -1,29 +1,70 @@
-# Render free-tier deploy for the API.
-# Pair with the Vercel deploy of apps/web; vercel.json rewrites /api/* here.
+# Render.com deploy config — single same-origin web service.
 #
-# Per HANDOFF.md §Task K. SSE works on Render's long-running Node web service
-# (Vercel serverless would idle out the brief stream).
+# What this gives you:
+#   - One free Node web service that runs both the api AND serves the
+#     React bundle from the same origin (no CORS, no two-service split)
+#   - Auto-deploys every time `main` is pushed
+#   - Persistent disk for the agent cache so restarts rehydrate instantly
+#
+# How to use it:
+#   1. Sign up at https://render.com and connect your GitHub
+#   2. New + → Blueprint → pick this repo → Apply
+#   3. Render reads this file, builds the workspace, and gives you a URL
+#
+# Notes:
+#   - BYOK is the default — users paste their own provider keys in the
+#     setup tile, encrypted in their browser. The server never sees a key
+#     unless one is set in the env vars below.
+#   - The free tier spins down after 15 min idle. First request after a
+#     spin-down takes ~20-30 seconds. Upgrade to Starter ($7/mo) to keep
+#     the service warm.
 
 services:
   - type: web
-    name: pm-copilot-server
-    env: node
+    name: pm-copilot
+    runtime: node
     plan: free
-    rootDir: .
-    buildCommand: corepack enable && pnpm install && pnpm -F @pm-copilot/server build
+    region: oregon
+    branch: main
+    # pnpm 9 isn't pre-installed on Render's Node images — corepack handles
+    # the bootstrap and uses the version pinned in package.json's
+    # `packageManager` field.
+    # `pnpm -r build` builds the web bundle (vite) and typechecks the
+    # server. The server runs via tsx in production — fast cold start, no
+    # separate emit step needed, and no module-resolution drift between
+    # the workspace symlink and an emitted dist tree.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm -r build
+    # The Express server resolves apps/web/dist at startup and serves it
+    # from the same origin. PORT is injected by Render.
     startCommand: pnpm -F @pm-copilot/server start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      - key: PORT
-        value: 10000
-      - key: CORS_ORIGIN
-        value: https://pm-copilot.vercel.app
       - key: NODE_ENV
         value: production
-      # Set PROVIDER + corresponding *_API_KEY in the Render dashboard, OR
-      # leave PROVIDER unset and rely on per-request BYOK headers from web.
-      # - key: PROVIDER
-      #   value: anthropic
+      # Same-origin in production so the public deploy URL works without
+      # any configuration. Override only if you split web + api hosts.
+      - key: CORS_ORIGIN
+        value: "*"
+      # Cache directory must live on the persistent disk so restarts
+      # rehydrate the brief snapshots instead of cold-starting every time.
+      - key: CACHE_DIR
+        value: /var/data/cache
+      # Cache TTLs (default-overrides). 1h is comfortable for binary briefs
+      # since prices move but evidence rarely flips within an hour.
+      - key: BRIEF_CACHE_TTL_MS
+        value: "3600000"
+      # Optional: bake provider keys here for self-host single-tenant.
+      # Leave blank to force BYOK (users paste keys into the browser tile).
       # - key: ANTHROPIC_API_KEY
       #   sync: false
+      # - key: OPENAI_API_KEY
+      #   sync: false
+      # - key: PERPLEXITY_API_KEY
+      #   sync: false
+      # - key: XAI_API_KEY
+      #   sync: false
+    disk:
+      name: cache
+      mountPath: /var/data
+      sizeGB: 1

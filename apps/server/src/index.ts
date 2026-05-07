@@ -8,6 +8,9 @@
 
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { byokHeader } from './middleware/byokHeader.js';
 import { positionsHandler } from './routes/positions.js';
 import { profileHandler } from './routes/profile.js';
@@ -36,10 +39,29 @@ import { hydrate as hydrateBriefs, invalidateBrief } from './briefStore.js';
 const _rawPort = Number(process.env['SERVER_PORT'] || process.env['PORT'] || 8787);
 const PORT = _rawPort === 5173 ? 8787 : _rawPort;
 const CORS_ORIGIN = process.env['CORS_ORIGIN'] || 'http://localhost:5173';
+const NODE_ENV = process.env['NODE_ENV'] || 'development';
+const IS_PROD = NODE_ENV === 'production';
+
+// In production we serve the web bundle from the same origin so the browser
+// hits /api on its own host and CORS is a no-op. The server resolves the
+// web/dist path relative to its own dist/ directory:
+//   apps/server/dist/index.js  →  ../../web/dist
+// `existsSync` guards the case where someone runs `node dist/index.js`
+// without having built the web app first (e.g. an api-only deploy).
+const WEB_DIST = (() => {
+  if (!IS_PROD) return null;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidate = path.resolve(here, '../../web/dist');
+  return existsSync(candidate) ? candidate : null;
+})();
 
 async function main() {
   const app = express();
 
+  // CORS: in dev the web app runs on a different port (5173) and needs
+  // explicit origin allowance. In production the web app is served from
+  // the same origin as the api, so we still allow the same-host request.
+  // CORS_ORIGIN can be set to a public URL for split-host deployments.
   app.use(cors({ origin: CORS_ORIGIN, credentials: false }));
   app.use(express.json({ limit: '1mb' }));
   app.use(byokHeader);
@@ -82,6 +104,35 @@ async function main() {
     await flush();
     res.json({ ok: true });
   });
+
+  // ---- Static web bundle (production only) ----
+  // When a `web/dist` build is present, serve it from the same origin so
+  // /api/* and / share a host. Cache-busting is handled by Vite's content-
+  // hashed filenames; index.html itself is never cached so deploys roll
+  // out cleanly. The SPA fallback below catches any non-API path and
+  // returns index.html so React Router routes (/m/:id, /setup, etc.) work
+  // on direct page loads + hard refreshes.
+  if (WEB_DIST) {
+    app.use(
+      express.static(WEB_DIST, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          } else {
+            // Hashed assets (Vite produces /assets/<name>-<hash>.<ext>)
+            // are safe to cache aggressively.
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      }),
+    );
+    app.get(/^\/(?!api\/).*/, (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.join(WEB_DIST, 'index.html'));
+    });
+    console.info(`[pm-copilot] serving web bundle from ${WEB_DIST}`);
+  }
 
   // ---- 404 ----
   app.use((_req, res) => {

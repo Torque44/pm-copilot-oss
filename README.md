@@ -70,6 +70,32 @@ provider key in. The agent can talk to the running server at
 <http://localhost:8787> (`/api/health/providers`, `/api/events`,
 `/api/brief?marketId=…`, `/api/ask`). All endpoints return JSON or SSE.
 
+## Deploy (Render, free tier)
+
+The repo ships a `render.yaml` blueprint that runs the api and serves the
+React bundle from one Node service — same origin, no CORS, no two-host
+split. End-to-end:
+
+1. Sign up at <https://render.com> and connect your GitHub account.
+2. **New +** → **Blueprint** → pick this repo → **Apply**.
+3. Render reads `render.yaml`, builds the workspace, and gives you a
+   public URL like `https://pm-copilot.onrender.com`.
+
+That's it. The free tier spins down after 15 minutes idle; the first
+request after a spin-down takes ~20–30 seconds while the service warms.
+Upgrade to Starter ($7/mo) to keep it warm.
+
+By default the deploy is BYOK — users paste their own provider keys in
+the browser setup tile and they live encrypted in IndexedDB. To run as a
+single-tenant self-host with shared keys, uncomment the relevant
+`*_API_KEY` env vars in `render.yaml` (or set them in the Render
+dashboard so they're not committed).
+
+**Other platforms.** The same shape works on Fly.io, Railway, or a plain
+VPS — anywhere Node 20+ runs and `PORT` + `CACHE_DIR` env vars are
+respected. The build is `pnpm install && pnpm -r build`; the start is
+`pnpm -F @pm-copilot/server start`.
+
 ## What works today
 
 - **Multi-agent supervisor** — market / holders / news / thesis / comparables /

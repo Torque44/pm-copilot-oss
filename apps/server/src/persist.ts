@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const CACHE_DIR = join(__dirname, '..', '.cache');
+// CACHE_DIR is honored from env so hosted deployments (Render, Fly, etc.)
+// can point this at a persistent disk like /var/data/cache. Falls back to
+// the per-checkout .cache/ for local dev.
+const CACHE_DIR = process.env['CACHE_DIR'] || join(__dirname, '..', '.cache');
 const SNAPSHOT_PATH = join(CACHE_DIR, 'snapshot.json');
 
 type Snapshot = {

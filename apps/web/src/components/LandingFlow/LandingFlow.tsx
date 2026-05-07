@@ -46,16 +46,41 @@ export interface LandingFlowProps {
   onHandoffComplete: () => void;
 }
 
-const TICKER_ITEMS = [
-  { name: 'btc $100k eoy', price: '0.62', delta: '+0.04', dir: 'up' },
-  { name: 'fed cuts in june', price: '0.31', delta: '-0.05', dir: 'down' },
-  { name: 'spot eth etf h1', price: '0.81', delta: '+0.02', dir: 'up' },
-  { name: 'recession by q4', price: '0.18', delta: '-0.01', dir: 'down' },
-  { name: 'gpt-5 by dec', price: '0.44', delta: '+0.03', dir: 'up' },
-  { name: 'iran deal by aug', price: '0.36', delta: '-0.05', dir: 'down' },
-  { name: 'taiwan crisis 2026', price: '0.12', delta: '+0.01', dir: 'up' },
-  { name: 'sora public release', price: '0.58', delta: '+0.07', dir: 'up' },
+// Stub ticker — only used until the live /api/events fetches return.
+// Once real markets land we render those instead.
+type TickerItem = { name: string; price: string; vol: string; dir: 'up' | 'down' | 'flat' };
+
+const STUB_TICKER: TickerItem[] = [
+  { name: 'loading polymarket…', price: '—', vol: '', dir: 'flat' },
 ];
+
+// Categories we sample for the ticker. Mixed so the strip doesn't feel like
+// a single-vertical scroll — politics + crypto + sports + geopolitics is
+// roughly the live diversity on the actual desk.
+const TICKER_CATEGORIES = ['politics', 'crypto', 'sports', 'geopolitics'] as const;
+
+// Trim long titles down for the ticker; shows the first ~36 chars and adds
+// an ellipsis if it cut. Keeps the strip visually consistent.
+function shortTitle(s: string): string {
+  const t = s.trim().toLowerCase();
+  return t.length > 36 ? t.slice(0, 35) + '…' : t;
+}
+
+function fmtVol(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v) || v <= 0) return '';
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}m`;
+  if (v >= 1_000) return `$${Math.round(v / 1_000)}k`;
+  return `$${Math.round(v)}`;
+}
+
+// Light type for the /api/events response shape we actually consume here.
+type ApiEventsResponse = {
+  events?: Array<{
+    title?: string;
+    volume24hr?: number;
+    outcomes?: Array<{ label?: string; yes?: number; volume24hr?: number }>;
+  }>;
+};
 
 const AGENTS: Array<[string, string, string, string]> = [
   ['01', 'book.agent', '[book-1a]', 'polymarket CLOB. mid, spread, depth at ±5¢, slippage for $10k/$50k/$100k.'],
@@ -80,6 +105,57 @@ export function LandingFlow({
   const [connectError, setConnectError] = useState<string | null>(null);
   const [handle, setHandle] = useState('');
   const handleInputRef = useRef<HTMLInputElement | null>(null);
+  const [tickerItems, setTickerItems] = useState<TickerItem[]>(STUB_TICKER);
+
+  // Fetch trending Polymarket markets for the ticker. We hit /api/events
+  // (the same endpoint the LeftRail uses) for a few categories in parallel,
+  // pick the highest-volume event from each, and render the top outcome.
+  // Cached server-side so this is cheap. Fails silently — if the network
+  // is dead we keep the "loading…" stub which is still readable.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const fetches = TICKER_CATEGORIES.map(async (cat) => {
+          const r = await fetch(`/api/events?category=${cat}&limit=8&mode=contested`);
+          if (!r.ok) return [];
+          const j = (await r.json()) as ApiEventsResponse;
+          return Array.isArray(j.events) ? j.events : [];
+        });
+        const lists = await Promise.all(fetches);
+        if (cancelled) return;
+
+        const items: TickerItem[] = [];
+        // Round-robin across categories so the ticker doesn't show six
+        // crypto markets in a row even if crypto has the highest volumes.
+        const maxLen = Math.max(...lists.map((l) => l.length), 0);
+        for (let i = 0; i < maxLen && items.length < 16; i++) {
+          for (const list of lists) {
+            const ev = list[i];
+            if (!ev || !ev.title) continue;
+            const top = ev.outcomes?.find((o) => typeof o.yes === 'number');
+            if (!top || typeof top.yes !== 'number') continue;
+            const price = top.yes.toFixed(2);
+            const vol = fmtVol(ev.volume24hr ?? top.volume24hr);
+            // Heuristic dir: > 0.55 trending YES, < 0.45 trending NO,
+            // middle = flat. Not a real delta but adds visual variety
+            // matching the original ticker's column shape. Real delta
+            // would need price-history per market — too expensive for
+            // a marketing strip.
+            const dir: 'up' | 'down' | 'flat' =
+              top.yes >= 0.55 ? 'up' : top.yes <= 0.45 ? 'down' : 'flat';
+            items.push({ name: shortTitle(ev.title), price, vol, dir });
+            if (items.length >= 16) break;
+          }
+        }
+        if (items.length > 0) setTickerItems(items);
+      } catch {
+        // network/json failure — keep the stub; the rest of the page
+        // is unaffected, no toast needed.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Handoff loader sequence — five "priming" lines that cycle, then call
   // back so the parent unmounts this whole component and renders the desk.
@@ -208,14 +284,15 @@ export function LandingFlow({
         </span>
       </div>
 
-      {/* ticker tape — rolling horizontally */}
+      {/* ticker tape — rolling horizontally. Markets are real, pulled
+          from /api/events for politics+crypto+sports+geopolitics. */}
       <div className="lf-ticker">
         <div className="lf-ticker-track">
-          {[...TICKER_ITEMS, ...TICKER_ITEMS].map((it, i) => (
+          {[...tickerItems, ...tickerItems].map((it, i) => (
             <span key={i} className="lf-ticker-item mono">
               <span className="name">{it.name}</span>
-              <span className="price">{it.price}</span>
-              <span className={`delta ${it.dir}`}>{it.delta}</span>
+              <span className={`price ${it.dir}`}>{it.price}</span>
+              {it.vol && <span className="vol">{it.vol}</span>}
               <span className="sep-pipe">|</span>
             </span>
           ))}

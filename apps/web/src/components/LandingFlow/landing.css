@@ -82,8 +82,13 @@
 .lf-ticker-item { display: inline-flex; gap: 8px; align-items: baseline; }
 .lf-ticker-item .name { color: var(--text-muted); }
 .lf-ticker-item .price { color: var(--text); font-feature-settings: 'tnum' 1; }
-.lf-ticker-item .delta.up { color: var(--success); }
-.lf-ticker-item .delta.down { color: var(--danger); }
+/* color by direction so the strip visually groups: cyan-leaning YES,
+ * red-leaning NO, neutral middle. uses YES/NO semantics not up/down so
+ * "up" reads as "YES is winning" not "price went up". */
+.lf-ticker-item .price.up { color: var(--success); }
+.lf-ticker-item .price.down { color: var(--danger); }
+.lf-ticker-item .price.flat { color: var(--text); }
+.lf-ticker-item .vol { color: var(--text-muted); font-feature-settings: 'tnum' 1; font-size: 10px; }
 .lf-ticker-item .sep-pipe { color: var(--border-strong); }
 @keyframes lf-tick { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 

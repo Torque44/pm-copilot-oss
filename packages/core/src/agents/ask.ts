@@ -333,6 +333,63 @@ function orderOf(c: Claim): number {
   return SECTION_ORDER.indexOf(canon);
 }
 
+/** Salvage sectioned claims directly from raw model text when JSON
+ *  parsing failed. The model usually still wrote the `**Section:**`
+ *  blocks correctly even when the surrounding JSON is malformed
+ *  (trailing comma, unclosed brace, extra prose around the JSON, etc.).
+ *  Pulling them out by regex lets the user see the structured answer
+ *  instead of a "malformed JSON" dead-end.
+ *
+ *  We split the text on `**Label:**` markers and capture each block's
+ *  body until the next marker. Citations are scraped from `[id]`
+ *  patterns inside the body and validated against the upstream registry.
+ *  Bare punctuation, JSON syntax fragments, and quote characters are
+ *  cleaned up so the body reads as prose.
+ */
+function salvageSectionedClaims(
+  raw: string,
+  registry: Map<string, Citation>,
+): Claim[] {
+  if (!raw) return [];
+  // Strip code fences if the model wrapped the response in ```...```.
+  const fenced = raw.match(/```(?:json|markdown)?\s*([\s\S]*?)\s*```/i);
+  const text = (fenced && fenced[1]) ? fenced[1] : raw;
+  // Find every `**Label:**` marker and the body that follows up to the
+  // next marker (or end of text). The leading group captures the label
+  // (e.g. "Numbers", "Thesis (YES)"), the trailing group captures the
+  // body. The look-ahead `(?=\*\*[^*]+:\*\*|$)` stops the body at the
+  // next section marker without consuming it.
+  const blockRx = /\*\*([^*\n]{1,40}?):\*\*\s*([\s\S]*?)(?=\n?\*\*[^*\n]{1,40}?:\*\*|\s*$)/g;
+  const claims: Claim[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = blockRx.exec(text)) !== null) {
+    const label = m[1]!.trim();
+    const canon = canonicalSection(label);
+    if (!canon) continue;
+    let body = m[2]!.trim();
+    // Strip trailing JSON syntax garbage that often leaks in when JSON
+    // parsing failed: stray quotes, commas, brackets, braces.
+    body = body
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .replace(/[,;}\]]+$/g, '')
+      .trim();
+    if (!body) continue;
+    // Cap length per section; the SYS prompt's per-section budget is 60
+    // words, so 600 chars is a generous cap that prevents one runaway
+    // block from eating the screen.
+    if (body.length > 600) body = body.slice(0, 600).trim() + '…';
+    const citations: string[] = [];
+    const citeRx = /\[([a-z0-9][a-z0-9\-·]*?)\]/gi;
+    let cm: RegExpExecArray | null;
+    while ((cm = citeRx.exec(body)) !== null) {
+      const cid = canonPillId(cm[1]!);
+      if (registry.has(cid) && !citations.includes(cid)) citations.push(cid);
+    }
+    claims.push({ text: `${sectionLabel(canon)} ${body}`, citations });
+  }
+  return claims;
+}
+
 /** Build a labeled disclaimer claim for a section the model dropped. We
  *  cite stats pills when they're available in the registry so the
  *  placeholder still has something for the trader to inspect; if not,
@@ -556,18 +613,44 @@ Respond ONLY with the JSON object described in the system prompt.`;
     claims.push({ text, citations });
   }
 
-  // Last-resort fallback: if structured parsing yielded nothing but we DID get
-  // text back from the model, surface that text as a single un-citeable claim
-  // so the user at least sees the answer instead of a cryptic parse error.
+  // First-line salvage: when JSON parsing failed (extra prose, trailing
+  // commas, unclosed braces — common on longer SYS prompts), the raw text
+  // often still contains the `**Section:**` blocks the model meant to put
+  // inside the JSON. Pull those out by regex so the user gets the
+  // structured answer they would have gotten with valid JSON, instead of
+  // a "malformed JSON" dead-end.
+  if (!claims.length && res.ok && res.text) {
+    const salvaged = salvageSectionedClaims(res.text, registry);
+    if (salvaged.length > 0) {
+      console.warn(
+        `[ask] salvaged ${salvaged.length} sectioned claims from non-JSON model output`,
+      );
+      for (const claim of salvaged) {
+        for (const cid of claim.citations) {
+          const cit = registry.get(cid);
+          if (cit && !usedCitations.has(cid)) usedCitations.set(cid, cit);
+        }
+        claims.push(claim);
+      }
+    }
+  }
+
+  // Last-resort fallback: still no claims and we have text. Display the
+  // raw text (truncated) so the user sees something. If the text is
+  // JSON-shaped but unparseable, log it for debugging — the bracket check
+  // is just a hint that we're past plain-prose territory.
   if (!claims.length && res.ok && res.text) {
     let fallback = res.text.trim();
     const fence = fallback.match(/```(?:json|markdown)?\s*([\s\S]*?)\s*```/i);
     if (fence && fence[1]) fallback = fence[1].trim();
     if (/^[\[{]/.test(fallback)) {
       console.error('[ask] unparseable JSON-shaped output:', fallback.slice(0, 600));
-      fallback = 'Model returned malformed JSON. Try rephrasing the question.';
+      // Show the raw output anyway — it usually contains useful prose
+      // even when the JSON wrapper is broken. Better to give the user
+      // the model's actual words than a cryptic "malformed JSON" line.
+      fallback = fallback.slice(0, 1500);
     } else {
-      fallback = fallback.slice(0, 1200);
+      fallback = fallback.slice(0, 1500);
     }
     claims.push({ text: fallback, citations: [] });
   }

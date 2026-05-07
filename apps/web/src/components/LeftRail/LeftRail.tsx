@@ -297,16 +297,15 @@ export function LeftRail({
             className="rail-brand mono"
             onClick={onHome}
             title="home (clear selection)"
-            aria-label="go home"
+            aria-label="pm copilot — go home"
           >
             <img
-              src="/logo.svg"
-              alt="pm"
+              src="/wordmark.svg"
+              alt="pm copilot"
               className="rail-brand-img"
-              width={40}
+              width={107}
               height={20}
             />
-            <span className="rail-brand-name">copilot</span>
           </button>
         )}
         <div className="search-box">

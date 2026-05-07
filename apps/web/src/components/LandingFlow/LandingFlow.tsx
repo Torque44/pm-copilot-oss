@@ -381,8 +381,7 @@ export function LandingFlow({
       {/* utility bar — quiet status at the top */}
       <div className="lf-util-bar">
         <span className="brand-mini mono">
-          <img src="/logo.svg" alt="pm" className="util-logo" width={40} height={20} />
-          <span>copilot</span>
+          <img src="/wordmark.svg" alt="pm copilot" className="util-logo" width={107} height={20} />
         </span>
         <span className="sep" />
         <span className="mono">research desk</span>
@@ -552,7 +551,7 @@ export function LandingFlow({
             <div className="auth-mini-logo">
               <div className="poly-mark">P</div>
               <span className="swap-arrow">↔</span>
-              <img src="/logo.svg" alt="pm" className="auth-pm-logo" width={40} height={20} />
+              <img src="/mark.svg" alt="pm" className="auth-pm-logo" width={33} height={16} />
             </div>
             <div className="head-text">
               <div className="head-title">connect your wallet</div>

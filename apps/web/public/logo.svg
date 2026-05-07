@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40" fill="none">
-  <rect width="80" height="40" rx="6" fill="#0A0B10"/>
-  <path d="M 18 11 L 12 11 L 12 29 L 18 29" stroke="#22D3EE" stroke-width="2" stroke-linecap="square" fill="none"/>
-  <text x="22" y="27" font-family="IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#E6E8EE" letter-spacing="-0.02em">pm</text>
-  <path d="M 62 11 L 68 11 L 68 29 L 62 29" stroke="#22D3EE" stroke-width="2" stroke-linecap="square" fill="none"/>
-</svg>

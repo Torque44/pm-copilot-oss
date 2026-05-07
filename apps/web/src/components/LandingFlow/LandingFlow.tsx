@@ -79,7 +79,11 @@ const FALLBACK_TICKER: TickerItem[] = [
   { name: 'iran-us deal by year end', outcome: null, price: '0.17', vol: '$320k', dir: 'down' },
 ];
 
-const TICKER_CACHE_KEY = 'pm-copilot:ticker-cache:v2';
+// Bump the version when ticker logic changes (resolved-market filter,
+// outcome-label rules, etc.) so users with stale cache from a previous
+// release pick up the new behaviour on next load instead of seeing
+// cached "0.10 with no label" or "péter magyar 1.00" rows for 5 mins.
+const TICKER_CACHE_KEY = 'pm-copilot:ticker-cache:v3';
 const TICKER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Categories we sample for the ticker. Mixed so the strip doesn't feel like
@@ -146,18 +150,19 @@ type ApiEventsResponse = {
   }>;
 };
 
-/** Pull a TickerItem out of one event. Returns null if the event has no
- *  outcome with a meaningful YES price (we treat anything ≤ 0.01 as
- *  effectively zero — those are dead candidates in multi-outcome races
- *  and rendering them as "0.00" makes the ticker look broken). */
+/** Pull a TickerItem out of one event. Returns null if there's no
+ *  actively-trading outcome to surface. */
 function eventToTickerItem(ev: ApiEventsResponse['events'] extends (infer T)[] | undefined ? T : never): TickerItem | null {
   if (!ev || !ev.title) return null;
   const outcomes = Array.isArray(ev.outcomes) ? ev.outcomes : [];
-  // Pick the highest-YES outcome with a real price. Filter out 0% / sub-1%
-  // candidates so multi-outcome events show the actual leader, not a
-  // dead candidate listed first.
+  // Filter out RESOLVED outcomes. yes ≤ 0.02 is effectively a "no, this
+  // candidate already lost" market; yes ≥ 0.98 is "yes, this already
+  // happened" — both are settled and shouldn't show in a trending strip
+  // (user reported péter magyar at 1.00 in the hungary PM event, which
+  // was the bug). Keep the bracket [0.02, 0.98] for live markets only.
+  // Then pick the highest-YES outcome.
   const ranked = outcomes
-    .filter((o) => typeof o.yes === 'number' && o.yes > 0.01)
+    .filter((o) => typeof o.yes === 'number' && o.yes > 0.02 && o.yes < 0.98)
     .sort((a, b) => (b.yes as number) - (a.yes as number));
   const top = ranked[0];
   if (!top || typeof top.yes !== 'number') return null;
@@ -165,13 +170,19 @@ function eventToTickerItem(ev: ApiEventsResponse['events'] extends (infer T)[] |
   const vol = fmtVol(ev.volume24hr ?? top.volume24hr ?? null);
   const dir: 'up' | 'down' | 'flat' =
     top.yes >= 0.55 ? 'up' : top.yes <= 0.45 ? 'down' : 'flat';
-  // Outcome label: only show for genuine multi-outcome events. Binary
-  // markets have a label like "Yes" / "No" / outcome=question, which is
-  // redundant with the title.
-  const isBinary = outcomes.length <= 2 || ev.isMultiOutcome === false;
+  // Outcome label: show whenever the label carries information beyond
+  // what the title already says. Earlier version checked outcomes.length
+  // and an isMultiOutcome flag, but the API often returns the event in
+  // a shape where each candidate is its own market with only the
+  // leader's row populated (so outcomes.length === 1 but the event IS
+  // multi-outcome). Just look at the label itself: if it's something
+  // other than "Yes"/"No"/empty and it's not literally the title, show it.
   const lbl = top.label ? top.label.trim() : '';
-  const showOutcome =
-    !isBinary && lbl !== '' && !/^yes$/i.test(lbl) && !/^no$/i.test(lbl);
+  const titleLower = ev.title.trim().toLowerCase();
+  const lblLower = lbl.toLowerCase();
+  const isYesNo = /^yes$/i.test(lbl) || /^no$/i.test(lbl);
+  const isTitleEcho = lblLower === titleLower || titleLower.includes(lblLower) && lblLower.length > 8;
+  const showOutcome = lbl !== '' && !isYesNo && !isTitleEcho;
   return {
     name: shortTitle(ev.title),
     outcome: showOutcome ? shortLabel(lbl) : null,

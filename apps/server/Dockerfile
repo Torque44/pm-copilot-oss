@@ -35,15 +35,22 @@ RUN pnpm install --frozen-lockfile
 COPY apps/server/ apps/server/
 COPY packages/core/ packages/core/
 
-# Defaults. Azure Container Apps overrides PORT via its own env. CACHE_DIR
-# points at the Azure Files mount; the persist.ts layer writes
-# snapshot.json there so it survives restarts.
+# Defaults. The runtime host (Render / Railway / Azure / etc.) overrides
+# PORT via its own env. CACHE_DIR points at the persistent volume mount;
+# persist.ts writes snapshot.json there so it survives restarts.
 ENV CACHE_DIR=/var/data/cache
 ENV NODE_ENV=production
 ENV PORT=8787
 
-# The image listens on PORT (8787 by default). Container Apps maps this
-# to the public ingress endpoint configured in the Bicep template.
+# Entrypoint script wires the persistent volume into the two locations
+# the runtime needs (CACHE_DIR + /root/.claude). Idempotent — runs on
+# every container start. See apps/server/docker-entrypoint.sh.
+COPY apps/server/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+# The image listens on PORT (8787 by default). The host platform
+# (Railway / Container Apps / etc.) maps this to its public ingress.
 EXPOSE 8787
 
 # Run via tsx — same entry the existing `pnpm start` script uses on Render.

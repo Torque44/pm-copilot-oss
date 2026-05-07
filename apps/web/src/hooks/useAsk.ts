@@ -115,25 +115,51 @@ export function useAsk(market: unknown): UseAskResult {
     return () => clearInterval(id);
   }, [runStatus, runStartedAt]);
 
-  // When the user switches to a different market the hook re-runs with a new
-  // marketId; swap in that market's history. We only swap when transitioning
-  // between two different non-null ids — null→non-null happens on initial
-  // market load and would wipe in-flight messages typed before the market
-  // resolved. The lazy initializer already handled the first load.
+  // When the marketId resolves (cold reload: null → "xyz") or switches to
+  // a different market, swap in that market's history. The lazy init at
+  // line 96 already handles the case where marketId is non-null on first
+  // render, but on reload the brief hasn't streamed yet so marketId starts
+  // as null. We MUST load when it transitions to non-null — otherwise the
+  // save effect below races and wipes storage with an empty messages array.
   const lastMarketIdRef = useRef<string | null>(marketId);
+  // Tracks whether we've completed the load step for the current marketId.
+  // The save effect blocks until this flips true, preventing the cold-load
+  // race where messages=[] gets persisted before loadFromStorage runs.
+  const hydratedForRef = useRef<string | null>(marketId ? marketId : null);
   useEffect(() => {
     const prev = lastMarketIdRef.current;
     if (prev === marketId) return;
     lastMarketIdRef.current = marketId;
-    if (prev === null || marketId === null) return; // ignore null transitions
+    if (marketId === null) {
+      // Brief unloaded (user navigated home). Clear the in-memory chat but
+      // do NOT touch storage — the next market arrival re-hydrates from disk.
+      setMessages([]);
+      setError(null);
+      hydratedForRef.current = null;
+      return;
+    }
     setMessages(loadFromStorage(marketId));
     setError(null);
+    hydratedForRef.current = marketId;
   }, [marketId]);
 
   // Persist on every change. setMessages can mutate during streaming, so this
   // effect captures partial in-flight answers too — refresh mid-stream and
   // you keep what arrived.
+  //
+  // Two guards protect against the cold-load wipe bug:
+  //   1. hydratedForRef must match marketId — load runs before save can touch
+  //      storage for this id, so the brief empty-state intermediate render
+  //      can't race the load.
+  //   2. We never auto-persist an empty array. Empty storage is the same as
+  //      no storage; the explicit clear() path handles deletion via
+  //      removeItem(). This belt-and-suspenders prevents the race window
+  //      where messages=[] is written between render-1 (load fires) and
+  //      render-2 (closure picks up restored messages).
   useEffect(() => {
+    if (!marketId) return;
+    if (hydratedForRef.current !== marketId) return;
+    if (messages.length === 0) return;
     saveToStorage(marketId, messages);
   }, [marketId, messages]);
 

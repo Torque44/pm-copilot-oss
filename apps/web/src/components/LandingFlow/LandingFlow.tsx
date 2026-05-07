@@ -286,10 +286,10 @@ export function LandingFlow({
             <div className="manifest-head">
               <h2>seven specialists,<br /><em>not one chat shim</em>.</h2>
               <div className="sub">
-                most ai-on-pm tools call one llm with a market title and print chat.
-                this one fans out real data first, then writes a brief that's
-                anchored in what actually came back. every claim links to the
-                source row you can flash to.
+                each agent runs in parallel against its own data source. claims
+                fan in to the verdict band. click any <code>[news-3]</code> or
+                <code> [whale-7]</code> pill in the answer and the matching
+                source row flashes in the rail. sources stay one keystroke away.
               </div>
             </div>
 

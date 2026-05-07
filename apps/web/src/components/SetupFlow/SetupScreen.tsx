@@ -17,6 +17,10 @@ export interface SetupScreenProps {
     slot?: Slot;
   }) => void;
   onSkip?: () => void;
+  /** Called when the user picks the claude-code tile. Distinct from onSkip:
+   *  this should also persist anthropic-cc as the primary provider so the
+   *  tile renders connected on next open. */
+  onUseClaudeCode?: () => void;
   /** Currently-configured providers, drives the "✓ connected" tile state. */
   configured: {
     primary: ProviderName | null;
@@ -29,17 +33,35 @@ export interface SetupScreenProps {
   /** Remove a configured key. Called when the user clicks "remove" on a
    *  connected tile. */
   onRemove?: (slot: Slot) => void;
+  /** When true, Esc and backdrop click are treated as no-ops if nothing is
+   *  configured yet — forces the user to make an explicit choice (paste a
+   *  key, pick a tile, or click "use local claude code") instead of silently
+   *  setting setup-skipped=1 from a stray keystroke. The first-load gate
+   *  passes this; the right-rail "providers" overlay does not. */
+  requireChoice?: boolean;
 }
 
 export function SetupScreen({
   onConfigured,
   onSkip,
+  onUseClaudeCode,
   configured,
   claudeCodeReachable,
   onRemove,
+  requireChoice = false,
 }: SetupScreenProps) {
+  const anyConfigured =
+    !!configured.primary || configured.perplexity || configured.xai;
+  // First-time gate (requireChoice + nothing configured): Esc and backdrop
+  // are inert. Otherwise they soft-close the overlay. This prevents an
+  // accidental Esc from permanently parking a new user in a half-broken
+  // workbench just because their finger twitched.
+  const dismissable = !requireChoice || anyConfigured;
+  const handleDismiss = dismissable ? onSkip : undefined;
+
   // Esc → close (treat as "use local Claude Code" path when nothing's set).
   useEffect(() => {
+    if (!dismissable) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -48,22 +70,19 @@ export function SetupScreen({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onSkip]);
-
-  const anyConfigured =
-    !!configured.primary || configured.perplexity || configured.xai;
+  }, [onSkip, dismissable]);
 
   return (
-    <div className="setup-screen" onClick={onSkip}>
+    <div className="setup-screen" onClick={handleDismiss}>
       <div className="setup-card setup-card-wide" onClick={(e) => e.stopPropagation()}>
         <header className="setup-head">
           <div className="setup-head-row">
             <h1 className="setup-title">pm copilot · setup</h1>
-            {onSkip && (
+            {handleDismiss && (
               <button
                 type="button"
                 className="setup-close"
-                onClick={onSkip}
+                onClick={handleDismiss}
                 aria-label="close"
                 title="close (esc)"
               >
@@ -81,7 +100,7 @@ export function SetupScreen({
           configured={configured}
           {...(claudeCodeReachable !== undefined ? { claudeCodeReachable } : {})}
           onConfigured={onConfigured}
-          onUseClaudeCode={onSkip}
+          onUseClaudeCode={onUseClaudeCode ?? onSkip}
           {...(onRemove ? { onRemove } : {})}
         />
         <footer className="setup-foot mono">

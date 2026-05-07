@@ -241,7 +241,11 @@ export async function runComparablesAgent(
     return rb - ra;
   });
 
-  const top = scored.slice(0, 5);
+  // Top 15 comparables. Iran/geopolitics/elections etc surface dozens of
+  // related markets with similar shape; capping at 5 was leaving signal on
+  // the table. Scoring already de-duplicates and prefers resolved markets,
+  // so widening the cut just improves base-rate sample size.
+  const top = scored.slice(0, 15);
   if (top.length === 0) {
     return emptyResult(started, 'no comparable markets found');
   }
@@ -250,7 +254,15 @@ export async function runComparablesAgent(
   const noCount = top.filter((c) => c.outcome === 'no').length;
   const unresolved = top.length - yesCount - noCount;
   const resolved = yesCount + noCount;
-  const baseRate = resolved > 0 ? yesCount / resolved : null;
+  // Single-hit floor: 1-of-1 always reports 100% or 0% — meaningless and
+  // dangerous as a thesis anchor. Require ≥3 resolved before treating the
+  // ratio as a real base rate. Below the floor we still surface the comps,
+  // we just don't claim a base rate. UI shows the same n=resolved disclosure
+  // either way (NewsPanel renders `base rate: yes/n resolved YES (xx%)`
+  // alongside the comp list).
+  const BASE_RATE_FLOOR = 3;
+  const baseRate =
+    resolved >= BASE_RATE_FLOOR ? yesCount / resolved : null;
 
   const citations: Citation[] = top.map((c, i) => ({
     id: `comp·${i + 1}`,
@@ -264,6 +276,11 @@ export async function runComparablesAgent(
   if (baseRate != null) {
     claims.push({
       text: `Of ${resolved} comparable resolved markets, ${yesCount} resolved YES (${Math.round(baseRate * 100)}% base rate).${unresolved > 0 ? ` ${unresolved} still unresolved.` : ''}`,
+      citations: top.map((_, i) => `comp·${i + 1}`),
+    });
+  } else if (resolved > 0) {
+    claims.push({
+      text: `${resolved} resolved comparable${resolved === 1 ? '' : 's'} (${yesCount} YES, ${noCount} NO) — sample too small to anchor a base rate (need ≥${BASE_RATE_FLOOR}).`,
       citations: top.map((_, i) => `comp·${i + 1}`),
     });
   } else {

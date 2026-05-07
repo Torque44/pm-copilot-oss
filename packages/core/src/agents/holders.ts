@@ -94,7 +94,9 @@ export async function runHoldersAgent(
 
   emit({ t: 'agent:data', agent: 'holders', grounding });
 
-  const citations: Citation[] = rows.slice(0, 10).map((r, i) => ({
+  // Top 20 wallets get citations + ride into the LLM payload. Was 10 — UI
+  // panel renders up to 20 now, so the agent should attribute up to 20 too.
+  const citations: Citation[] = rows.slice(0, 20).map((r, i) => ({
     id: `whale·${i + 1}`,
     kind: 'whale' as const,
     label: `whale·${i + 1}`,
@@ -124,7 +126,7 @@ export async function runHoldersAgent(
 
   const payload = {
     market_title: market.title,
-    top_holders: rows.slice(0, 10).map((r, i) => ({
+    top_holders: rows.slice(0, 20).map((r, i) => ({
       rank: i + 1,
       address: r.address,
       label: r.label ?? null,

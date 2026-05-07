@@ -10,6 +10,7 @@ import { MarketPanel } from './MarketPanel';
 import { NewsPanel } from './NewsPanel';
 import type {
   BookRow,
+  BriefAgents,
   ComparableHit,
   EventOutcome,
   HolderRow,
@@ -25,6 +26,10 @@ export interface EvidenceGridProps {
   flashId: string | null;
   errorPanel?: PanelKey | null;
   loading: boolean;
+  /** Per-agent status from useBrief — used to render per-tab skeletons in
+   *  the research panel so e.g. the catalysts tab shows a loader while the
+   *  news agent is still running, instead of "no catalysts surfaced". */
+  agents?: BriefAgents;
   bookRows?: BookRow[];
   holderRows?: HolderRow[];
   catalysts?: NewsItem[];
@@ -42,6 +47,10 @@ export interface EvidenceGridProps {
   /** When set, overrides the default min(55vh, 620px) cap so the user can
    *  drag-resize the panels block taller or shorter. */
   heightPx?: number;
+  /** Retry handler shown in panel error states. Reconnects the brief SSE. */
+  onRetry?: () => void;
+  /** Opens the provider/setup overlay from a panel error link. */
+  onSwitchProvider?: () => void;
 }
 
 export function EvidenceGrid({
@@ -51,6 +60,7 @@ export function EvidenceGrid({
   flashId,
   errorPanel,
   loading,
+  agents,
   bookRows,
   holderRows,
   catalysts,
@@ -63,6 +73,8 @@ export function EvidenceGrid({
   selectedOutcomeId,
   onOutcomeSelect,
   heightPx,
+  onRetry,
+  onSwitchProvider,
 }: EvidenceGridProps) {
   // Per-panel loading: keep the skeleton up only until that panel's data
   // (or fallback) is available.
@@ -111,6 +123,8 @@ export function EvidenceGrid({
         errored={errorPanel === 'market'}
         loading={marketLoading}
         onFocus={onFocus}
+        {...(onRetry ? { onRetry } : {})}
+        {...(onSwitchProvider ? { onSwitchProvider } : {})}
       >
         <MarketPanel
           flashId={flashId}
@@ -129,6 +143,8 @@ export function EvidenceGrid({
         errored={errorPanel === 'research'}
         loading={researchLoading}
         onFocus={onFocus}
+        {...(onRetry ? { onRetry } : {})}
+        {...(onSwitchProvider ? { onSwitchProvider } : {})}
       >
         <NewsPanel
           flashId={flashId}
@@ -139,6 +155,10 @@ export function EvidenceGrid({
           {...(thesis ? { thesis } : {})}
           {...(comparables && comparables.length > 0 ? { comparables } : {})}
           {...(baseRate ? { baseRate } : {})}
+          newsRunning={agents?.news === 'running' || agents?.news === 'pending'}
+          sentimentRunning={agents?.sentiment === 'running' || agents?.sentiment === 'pending'}
+          thesisRunning={agents?.thesis === 'running' || agents?.thesis === 'pending'}
+          comparablesRunning={agents?.comparables === 'running' || agents?.comparables === 'pending'}
         />
       </Panel>
     </div>

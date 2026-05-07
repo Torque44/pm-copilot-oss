@@ -17,6 +17,16 @@ import type {
   NewsGrounding,
 } from './types';
 
+/** Lightweight tweet shape — kept compatible with x-stub.ts StubTweet so the
+ *  bundled stub loader can pass tweets through without conversion. Production
+ *  feeds (xactions MCP, etc) only need to return this shape. */
+export type AskTweet = {
+  handle: string;
+  text: string;
+  url?: string;
+  createdAt?: string;
+};
+
 export type AskEvent =
   | { t: 'ask:start' }
   | { t: 'ask:progress'; message: string }
@@ -34,30 +44,53 @@ You are given:
 - The market's metadata (title, end date, current YES/NO price, 24h volume)
 - The live orderbook (top bids/asks, spread, depth at ±5¢, slippage for $10k/$50k/$100k)
 - The top holders (address, side, size, concentration statistics)
-- The 72-hour news catalyst set (headline + source + URL + snippet)
+- The 72-hour news catalyst set (headline + source + URL + snippet, with publish timestamps where available)
+- The recent price-history time series for the YES token (24h of hourly bars when available, ISO timestamps + cents)
+- Recent tweets from vetted X handles (handle + excerpt + URL + timestamp), pre-filtered for relevance to this market
 
-Your answer MUST:
-1. Be 1–4 short claims, each grounded in the provided data. Do NOT speculate beyond what's present.
-2. Cite evidence inline using these pill labels:
-   - [book-stats]      → claims about mid, spread, depth, slippage as a whole
-   - [book-1b], [book-1a] etc → the top-1 bid / top-1 ask level (other levels: [book-2b], [book-2a], ...)
-   - [whale-N]         → holder row N (1-indexed)
-   - [whale-stats]     → aggregate concentration / side-bias claims
-   - [news-N]          → news item N (1-indexed)
-3. Keep claims compact (≤ 30 words each). Lead with the number or fact.
-4. If the question cannot be answered from the grounding, say so briefly in one claim and cite no pills.
-5. Return JSON — NOTHING else. No prose wrapper, no explanation.
+Your answer MUST be a structured trader brief, broken into labeled sections. People are betting real money — they need to see WHO is positioned, WHY, the supporting evidence, AND the underlying thesis from each side.
+
+Output 3–6 claims, one per section. Skip a section only if you have nothing to cite there. Sections appear in this order:
+
+1. **Numbers** — current price, recent move, spread, depth/slippage, volume context. Cite [book-stats], [book-1a], [book-1b], [price-history].
+2. **Holders** — who is positioned which way and how concentrated. Cite [whale-N], [whale-stats].
+3. **Catalysts** — recent news driving the price. Cite [news-N]. If a news item aligned with a >2¢ move, say so and align the timestamps explicitly.
+4. **Sentiment** — what vetted X voices are saying (only if tweets are present). Cite [kol-N].
+5. **Thesis (YES side)** — the strongest bull case grounded in the evidence above. Why are people paying the YES price? One short paragraph, must cite at least one [news-N], [whale-N], [kol-N], or [price-history].
+6. **Thesis (NO side)** — the strongest bear case, same rules. The two thesis claims should not contradict the data — they should each take the strongest available reading.
+
+Each claim is a SEPARATE entry in the JSON \`claims\` array. The \`text\` field MUST start with a markdown bold section label — exactly one of:
+\`**Numbers:**\`, \`**Holders:**\`, \`**Catalysts:**\`, \`**Sentiment:**\`, \`**Thesis (YES):**\`, \`**Thesis (NO):**\`
+followed by a space and the claim body. Example:
+\`**Numbers:** YES at 47¢, dropped 5¢ in 2h after [news-2] [price-history]. Spread 1.0¢, $50k slippage 1.4¢ [book-stats].\`
+
+Citation pill labels (use verbatim, wrapped in square brackets, inside the text):
+- [book-stats]                 → mid, spread, depth, slippage as a whole
+- [book-1b], [book-1a], etc.   → top-N bid/ask levels
+- [whale-N]                    → holder row N (1-indexed)
+- [whale-stats]                → aggregate concentration / side-bias
+- [news-N]                     → news item N (1-indexed)
+- [kol-N]                      → tweet N (1-indexed) from a vetted X handle
+- [price-history]              → recent time-series claims
+
+Hard rules:
+- Each claim's body ≤ 60 words after the section label. Be punchy, lead with the number or the fact.
+- The "citations" array must list every pill label that appears in the "text", deduped, in order of appearance.
+- No claim without at least one citation EXCEPT the answer-not-available fallback (one claim, no citations, no section label).
+- If the user's question is narrow ("who is the biggest NO whale?"), STILL produce the relevant section(s) plus a Thesis section so the trader sees both reads.
+- If a thesis side has zero supporting evidence in the grounding, say so briefly in that section ("**Thesis (NO):** Limited NO-side evidence in this dataset; consider this a thin read.") rather than fabricating support.
+- Return JSON — NOTHING else. No prose wrapper, no fences, no preamble.
 
 Return shape:
 {
   "claims": [
-    { "text": "<answer text with inline citations like [book-1a] or [whale-3]>", "citations": ["book-1a", "whale-3"] }
+    { "text": "**Numbers:** ...", "citations": ["book-1a", "price-history"] },
+    { "text": "**Holders:** ...", "citations": ["whale-3", "whale-stats"] },
+    { "text": "**Catalysts:** ...", "citations": ["news-2", "news-5"] },
+    { "text": "**Thesis (YES):** ...", "citations": ["news-5", "whale-stats"] },
+    { "text": "**Thesis (NO):** ...", "citations": ["whale-3", "news-7"] }
   ]
 }
-
-Rules for the "text" field:
-- Use the citation pill labels verbatim where they fit naturally at the end of a phrase, wrapped in square brackets.
-- The "citations" array must list every pill label appearing in "text" exactly once, in order of appearance.
 
 Be precise. Users making trades with real money read this. No filler words.`;
 
@@ -78,6 +111,35 @@ ${next4Asks}
 [book-stats] slippage estimates: ${slip}`;
 }
 
+/**
+ * Render the price history as ISO timestamps + cents, downsampled to keep the
+ * prompt tight. We always include first/last + min/max + a uniform stride.
+ * Catalyst-alignment questions need timestamps the model can match against
+ * news.publishedAt — this is the format the SYS prompt expects.
+ */
+function describePriceHistory(book: BookGrounding | null): string {
+  const hist = book?.priceHistory ?? [];
+  if (!hist.length) return 'Price history: unavailable.';
+  // Cap at ~24 points so we don't blow the prompt with hourly data > 1d.
+  const stride = Math.max(1, Math.ceil(hist.length / 24));
+  const sampled: typeof hist = [];
+  for (let i = 0; i < hist.length; i += stride) sampled.push(hist[i]!);
+  // Always include the very last bar so "now" is anchored.
+  const last = hist[hist.length - 1]!;
+  if (sampled[sampled.length - 1] !== last) sampled.push(last);
+  const lines = sampled.map((pt) => {
+    const iso = new Date(pt.t * 1000).toISOString().replace('.000Z', 'Z');
+    return `  ${iso}  ${(pt.p * 100).toFixed(1)}¢`;
+  }).join('\n');
+  const first = sampled[0]!;
+  const moveC = ((last.p - first.p) * 100);
+  const minP = Math.min(...sampled.map((s) => s.p));
+  const maxP = Math.max(...sampled.map((s) => s.p));
+  const range = `range ${(minP * 100).toFixed(1)}¢ → ${(maxP * 100).toFixed(1)}¢`;
+  return `Price history [price-history] (${sampled.length} bars over ${(((last.t - first.t) / 3600) | 0)}h, ${range}, net ${moveC >= 0 ? '+' : ''}${moveC.toFixed(1)}¢):
+${lines}`;
+}
+
 function describeHolders(holders: HoldersGrounding | null): string {
   if (!holders) return 'Holders: unavailable.';
   const rows = holders.rows.slice(0, 10).map((r, i) => {
@@ -90,10 +152,27 @@ function describeHolders(holders: HoldersGrounding | null): string {
 
 function describeNews(news: NewsGrounding | null): string {
   if (!news || !news.items.length) return 'News (72h): no catalysts surfaced.';
-  const items = news.items.slice(0, 6).map((n, i) =>
+  // Top 12 (was 6). Reasoning models handle the larger context fine, and
+  // "what's the most recent catalyst" type questions need a wider window
+  // than 6 articles to find the actual market-moving item.
+  const items = news.items.slice(0, 12).map((n, i) =>
     `[news-${i + 1}] ${n.headline} — ${n.source}${n.url ? ` (${n.url})` : ''}${n.snippet ? ` :: ${n.snippet.slice(0, 200)}` : ''}`
   ).join('\n');
   return `News (72h):\n${items}`;
+}
+
+function describeTweets(tweets: AskTweet[] | undefined): string {
+  if (!tweets || tweets.length === 0) {
+    return 'Vetted X handles (last 14d): no tweets matched.';
+  }
+  const items = tweets.slice(0, 10).map((t, i) => {
+    const handle = (t.handle || '').replace(/^@/, '');
+    const ts = t.createdAt ? ` · ${t.createdAt.slice(0, 10)}` : '';
+    const url = t.url ? ` (${t.url})` : '';
+    const text = (t.text || '').replace(/\s+/g, ' ').slice(0, 240);
+    return `[kol-${i + 1}] @${handle}${ts}${url} :: ${text}`;
+  }).join('\n');
+  return `Vetted X handles (last 14d):\n${items}`;
 }
 
 function describeMarket(m: MarketMeta): string {
@@ -112,7 +191,8 @@ function describeMarket(m: MarketMeta): string {
 function buildCitationRegistry(
   book: BookGrounding | null,
   holders: HoldersGrounding | null,
-  news: NewsGrounding | null
+  news: NewsGrounding | null,
+  tweets?: AskTweet[]
 ): Map<string, Citation> {
   const m = new Map<string, Citation>();
   if (book) {
@@ -130,6 +210,14 @@ function buildCitationRegistry(
       const id = `book-${i + 1}a`;
       m.set(id, { id, kind: 'book', label: id, payload: { side: 'ask', ...lvl } });
     });
+    if (book.priceHistory && book.priceHistory.length) {
+      m.set('price-history', {
+        id: 'price-history',
+        kind: 'book',
+        label: 'price-history',
+        payload: { points: book.priceHistory },
+      });
+    }
   }
   if (holders) {
     m.set('whale-stats', {
@@ -151,6 +239,20 @@ function buildCitationRegistry(
     news.items.forEach((item, i) => {
       const id = `news-${i + 1}`;
       m.set(id, { id, kind: 'news', label: id, payload: item, url: item.url });
+    });
+  }
+  if (tweets) {
+    tweets.forEach((t, i) => {
+      const id = `kol-${i + 1}`;
+      const handle = (t.handle || '').replace(/^@/, '');
+      const cit: Citation = {
+        id,
+        kind: 'kol',
+        label: `@${handle}`,
+        payload: t,
+      };
+      if (t.url) cit.url = t.url;
+      m.set(id, cit);
     });
   }
   return m;
@@ -176,7 +278,7 @@ function canonPillId(raw: string): string {
  */
 function fastPath(
   question: string,
-  grounding: { book: BookGrounding | null; holders: HoldersGrounding | null; news: NewsGrounding | null },
+  grounding: AskGrounding,
   registry: Map<string, Citation>
 ): AskAnswer | null {
   const q = question.toLowerCase().trim();
@@ -238,9 +340,19 @@ function fastPath(
   return null;
 }
 
+export type AskGrounding = {
+  book: BookGrounding | null;
+  holders: HoldersGrounding | null;
+  news: NewsGrounding | null;
+  /** Vetted-handle X tweets matched to this market. Optional — when present
+   *  the LLM is given the [kol-N] citation set; when absent the SYS prompt
+   *  tells the model X data isn't available so it doesn't fabricate. */
+  tweets?: AskTweet[];
+};
+
 export async function runAsk(
   market: MarketMeta,
-  grounding: { book: BookGrounding | null; holders: HoldersGrounding | null; news: NewsGrounding | null },
+  grounding: AskGrounding,
   question: string,
   emit: (ev: AskEvent) => void
 ): Promise<AskAnswer> {
@@ -248,7 +360,7 @@ export async function runAsk(
   emit({ t: 'ask:start' });
 
   // Try the deterministic fast path first — never times out, never fails.
-  const registry = buildCitationRegistry(grounding.book, grounding.holders, grounding.news);
+  const registry = buildCitationRegistry(grounding.book, grounding.holders, grounding.news, grounding.tweets);
   const fast = fastPath(question, grounding, registry);
   if (fast) {
     const elapsedMs = Date.now() - started;
@@ -262,9 +374,13 @@ export async function runAsk(
 
 ${describeBook(grounding.book)}
 
+${describePriceHistory(grounding.book)}
+
 ${describeHolders(grounding.holders)}
 
 ${describeNews(grounding.news)}
+
+${describeTweets(grounding.tweets)}
 
 QUESTION: ${question.trim()}
 

@@ -8,7 +8,7 @@
 // Click an outcome row in a multi card → load that specific outcome.
 // Click "+N more" → expand the multi card inline (no navigation).
 
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useMemo, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from 'react';
 import type { EventOutcome, EventSummary } from '../../types';
 import { formatRelativeDuration } from '../../lib/format';
 
@@ -184,7 +184,20 @@ export interface LeftRailProps {
   events?: EventSummary[];
   onCategoryChange?: (cat: string) => void;
   loading?: boolean;
+  /** Called when the user clicks the brand. Resets the workbench to the
+   *  home/empty state so they can browse markets without a loaded brief. */
+  onHome?: () => void;
+  /** Called when the user pastes or types a Polymarket URL into the search
+   *  input. The handler resolves the URL via /api/resolve and navigates to
+   *  the matching market. Returns true if it consumed the input (so the
+   *  search box can clear itself). */
+  onResolveUrl?: (url: string) => Promise<boolean> | boolean;
 }
+
+// Detects Polymarket URLs (event/market/condition links). Lenient: accepts
+// www-prefix, https-or-not, query strings, optional trailing slash. Anything
+// containing `polymarket.com/` is treated as a candidate for /api/resolve.
+const POLYMARKET_URL_RX = /\bpolymarket\.com\//i;
 
 export function LeftRail({
   selectedId,
@@ -193,9 +206,56 @@ export function LeftRail({
   events,
   onCategoryChange,
   loading = false,
+  onHome,
+  onResolveUrl,
 }: LeftRailProps) {
   const [cat, setCat] = useState<Category>('politics');
   const [q, setQ] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+
+  // Submit handler for the search box. Two paths:
+  //   (a) value contains `polymarket.com/` — call /api/resolve via the
+  //       parent handler, navigate on success, clear the input. While
+  //       in flight, show a small spinner so users know something
+  //       happened on paste/Enter.
+  //   (b) anything else — leave the value as a text filter for the
+  //       events list below (the existing `q` filter handles it).
+  const handleResolve = async (raw: string) => {
+    const trimmed = raw.trim();
+    if (!POLYMARKET_URL_RX.test(trimmed)) return;
+    if (!onResolveUrl) return;
+    setResolving(true);
+    setResolveError(null);
+    try {
+      const ok = await Promise.resolve(onResolveUrl(trimmed));
+      if (ok) {
+        setQ('');
+      } else {
+        setResolveError('couldn’t resolve that polymarket link');
+      }
+    } catch {
+      setResolveError('resolve failed — check the link or try again');
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleResolve(q);
+    }
+  };
+
+  const onSearchPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text');
+    if (POLYMARKET_URL_RX.test(pasted)) {
+      // Let the paste land in the input first (so the user sees it), then
+      // resolve. setTimeout(0) keeps it deterministic across browsers.
+      setTimeout(() => { void handleResolve(pasted); }, 0);
+    }
+  };
 
   const source = events ?? [];
 
@@ -231,16 +291,38 @@ export function LeftRail({
   return (
     <aside className="rail-left">
       <div className="rail-sticky">
+        {onHome && (
+          <button
+            type="button"
+            className="rail-brand mono"
+            onClick={onHome}
+            title="home (clear selection)"
+            aria-label="go home"
+          >
+            <span className="rail-brand-mark">◢</span>
+            <span className="rail-brand-name">pm copilot</span>
+          </button>
+        )}
         <div className="search-box">
-          <span className="search-icon">⌕</span>
+          <span className="search-icon">{resolving ? '⟳' : '⌕'}</span>
           <input
             className="search-input"
-            placeholder="search markets"
+            placeholder={onResolveUrl ? 'search markets or paste polymarket link' : 'search markets'}
             value={q}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              setQ(e.target.value);
+              if (resolveError) setResolveError(null);
+            }}
+            onKeyDown={onSearchKey}
+            onPaste={onSearchPaste}
+            spellCheck={false}
+            autoComplete="off"
           />
           <span className="kbd">⌘K</span>
         </div>
+        {resolveError && (
+          <div className="search-resolve-err mono">{resolveError}</div>
+        )}
         <div className="cat-tabs">
           {CATEGORIES.map((c) => (
             <button

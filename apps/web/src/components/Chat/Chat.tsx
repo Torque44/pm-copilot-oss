@@ -1,14 +1,92 @@
 // Chat — single persistent input bar at the bottom of the workbench.
 // History (if any) renders ABOVE the input; the input itself is always
 // visible and always interactive. No collapsed/expanded states.
+//
+// AI messages now render as a STRUCTURED BRIEF (numbers / holders /
+// catalysts / sentiment / thesis-yes / thesis-no), not one giant blob.
+// The ask agent emits one claim per section, each prefixed with a markdown
+// `**Section:**` label. We split on \n\n and render each block with its
+// own styled header + the citation pills it actually references.
 
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactElement } from 'react';
 import type { ChatMessage } from '../../types';
 
 export interface ChatProps {
   messages?: ChatMessage[];
   onSend?: (text: string) => void;
   busy?: boolean;
+}
+
+// ---- markdown-lite section renderer ----
+// We don't want a full markdown parser; just enough to pull a leading
+// `**Header:** body` out of each paragraph and to render `[cite-id]` tokens
+// as clickable pills inline with the text.
+
+type Block = { header: string | null; body: string; citations: string[] };
+
+const SECTION_RX = /^\*\*([^*]+?):\*\*\s*/; // e.g. "**Thesis (YES):** "
+const CITE_RX = /\[([a-z0-9]+(?:[·-][a-z0-9]+)*)\]/gi;
+
+function parseBlocks(content: string): Block[] {
+  if (!content) return [];
+  const paras = content
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paras.length === 0) return [];
+  return paras.map((para): Block => {
+    const m = para.match(SECTION_RX);
+    let header: string | null = null;
+    let body = para;
+    if (m) {
+      header = m[1]!.trim();
+      body = para.slice(m[0].length);
+    }
+    const cites: string[] = [];
+    let cm: RegExpExecArray | null;
+    CITE_RX.lastIndex = 0;
+    while ((cm = CITE_RX.exec(body)) !== null) {
+      const id = cm[1]!.toLowerCase();
+      if (!cites.includes(id)) cites.push(id);
+    }
+    return { header, body, citations: cites };
+  });
+}
+
+// Render the body with `[cite-id]` tokens inlined as pill spans. Returns a
+// flat array of (string | element) so React can render mixed content.
+function renderBody(body: string, key: string): Array<string | ReactElement> {
+  const out: Array<string | ReactElement> = [];
+  CITE_RX.lastIndex = 0;
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  let n = 0;
+  while ((m = CITE_RX.exec(body)) !== null) {
+    if (m.index > lastIdx) out.push(body.slice(lastIdx, m.index));
+    const id = m[1]!.toLowerCase();
+    out.push(
+      <span key={`${key}-cite-${n}`} className="cite-pill mono inline">
+        [{id}]
+      </span>,
+    );
+    lastIdx = m.index + m[0].length;
+    n += 1;
+  }
+  if (lastIdx < body.length) out.push(body.slice(lastIdx));
+  return out;
+}
+
+function headerClass(header: string | null): string {
+  if (!header) return 'chat-section';
+  const h = header.toLowerCase();
+  if (h.startsWith('thesis (yes)')) return 'chat-section thesis-yes';
+  if (h.startsWith('thesis (no)')) return 'chat-section thesis-no';
+  if (h.startsWith('thesis')) return 'chat-section thesis';
+  if (h.startsWith('numbers')) return 'chat-section numbers';
+  if (h.startsWith('holders')) return 'chat-section holders';
+  if (h.startsWith('catalysts')) return 'chat-section catalysts';
+  if (h.startsWith('sentiment')) return 'chat-section sentiment';
+  return 'chat-section';
 }
 
 export function Chat({ messages, onSend, busy = false }: ChatProps) {
@@ -23,6 +101,7 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
   }, [history.length, busy]);
 
   const send = () => {
+    if (busy) return;
     const v = text.trim();
     if (!v) return;
     onSend?.(v);
@@ -42,34 +121,72 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
     <div className="chat">
       {showHistory && (
         <div className="chat-history" ref={historyRef}>
-          {history.map((m, i) => (
-            <div key={i} className={`chat-msg ${m.role}`}>
-              {m.content}
-              {m.citations?.map((c, j) => (
-                <span key={j} className="cite-pill mono">
-                  [{c}]
-                </span>
-              ))}
-            </div>
-          ))}
+          {history.map((m, i) => {
+            // User messages stay simple (single line).
+            if (m.role !== 'ai') {
+              return (
+                <div key={i} className={`chat-msg ${m.role}`}>
+                  {m.content}
+                </div>
+              );
+            }
+            // AI message: split into sections. If only one block + no header,
+            // fall back to flat rendering so error messages / fallbacks
+            // ("Answer unavailable: …") don't get an awkward empty header.
+            const blocks = parseBlocks(m.content);
+            const flat = blocks.length <= 1 && (!blocks[0] || !blocks[0].header);
+            if (flat) {
+              return (
+                <div key={i} className="chat-msg ai">
+                  <div className="chat-flat">
+                    {renderBody(m.content, `${i}-flat`)}
+                  </div>
+                  {m.citations && m.citations.length > 0 && (
+                    <div className="chat-cite-row">
+                      {m.citations.map((c, j) => (
+                        <span key={j} className="cite-pill mono">[{c}]</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <div key={i} className="chat-msg ai chat-msg-structured">
+                {blocks.map((b, j) => (
+                  <div key={j} className={headerClass(b.header)}>
+                    {b.header && (
+                      <div className="chat-section-head mono">{b.header}</div>
+                    )}
+                    <div className="chat-section-body">
+                      {renderBody(b.body, `${i}-${j}`)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
           {busy && <div className="chat-msg ai chat-typing">…</div>}
         </div>
       )}
       <div className="chat-input-row">
+        {/* Input stays interactive while the previous answer streams — users
+            can draft / edit a follow-up. Only the send button is gated on
+            !busy so a question can't actually fire mid-stream. */}
         <input
           className="chat-input"
-          placeholder={busy ? 'thinking…' : 'ask about this market…'}
+          placeholder={busy ? 'drafting next question while answer streams…' : 'ask about this market…'}
           value={text}
           onChange={(e: ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
           onKeyDown={onKey}
-          disabled={busy}
         />
         <button
           type="button"
           className="chat-send"
           onClick={send}
           disabled={busy || !text.trim()}
-          aria-label="send"
+          aria-label={busy ? 'waiting for current answer to finish' : 'send'}
+          title={busy ? 'finish current answer first' : 'send (enter)'}
         >
           ↵
         </button>

@@ -200,6 +200,11 @@ export type BriefAgents = {
   thesis: AgentStatus;
   synthesis: AgentStatus;
   ask: AgentStatus;
+  /** Comparables is a fast HTTP fan-out (not in the right-rail dot list)
+   *  but the supervisor still emits start/done/error for it. Tracked here
+   *  so the research-panel "comparables" tab can show its own loading
+   *  skeleton vs. fall-through-to-empty. */
+  comparables: AgentStatus;
 };
 
 /** Detail captured per agent for tooltip surfacing — error text + elapsed ms.

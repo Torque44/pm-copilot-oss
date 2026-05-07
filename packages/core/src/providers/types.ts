@@ -41,6 +41,9 @@ export type CompleteOpts = {
     mode: 'on' | 'auto' | 'off';
     /** Source channels. Default ['x','web','news'] when sources omitted. */
     sources?: Array<'x' | 'web' | 'news'>;
+    /** Restrict X-source results to these vetted handles (no @ prefix).
+     *  Only applies when 'x' is in sources. xAI caps the list at 25. */
+    xHandles?: string[];
     /** Time window — only consider sources from the last N days. */
     fromDays?: number;
     /** Maximum search results to fold into the answer. */
@@ -66,6 +69,12 @@ export type CompleteResult = {
   /** Source URLs the provider used during a live-search call. xAI/Grok
    *  attaches these when search_parameters.return_citations=true. */
   citations?: string[];
+  /** Non-fatal warnings the caller should surface. e.g. "live-search was
+   *  requested but the endpoint rejected the search params, fell back to
+   *  the model's training data" — the call still succeeded but the answer
+   *  is grounded in stale knowledge, not real-time evidence. Agents can
+   *  emit this as `agent:warning` so users see why a section looks thin. */
+  warnings?: string[];
 };
 
 export interface ProviderCapabilities {

@@ -815,6 +815,40 @@
   font-style: italic;
 }
 
+/* ---------- Per-tab loading skeleton (catalysts/sentiment/thesis/comparables
+     while their respective agents are still streaming). Animated shimmer
+     beats the empty-state copy because the user can tell work is in flight. */
+.panel-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+.panel-skel-row {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: panel-skel-shimmer 1.4s ease-in-out infinite;
+}
+.panel-skel-row:nth-child(2) { width: 86%; animation-delay: 0.15s; }
+.panel-skel-row:nth-child(3) { width: 72%; animation-delay: 0.30s; }
+.panel-skel-hint {
+  color: var(--text-muted, #888);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+@keyframes panel-skel-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* ---------- News link styling ---------- */
 .news-link {
   color: inherit;
@@ -876,6 +910,62 @@
 .chat-typing {
   color: var(--text-muted, #888);
   letter-spacing: 4px;
+}
+
+/* ---------- Structured AI answer (sectioned brief) ----------
+   The ask agent emits one claim per section (numbers / holders / catalysts
+   / sentiment / thesis-yes / thesis-no). Each section gets its own block
+   with a small uppercase header and a colored left-bar accent so traders
+   can scan to the section they care about without re-reading the prose. */
+.chat-msg-structured {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-section {
+  padding: 8px 10px 8px 12px;
+  border-left: 2px solid var(--border, #262a38);
+  background: rgba(255, 255, 255, 0.015);
+  border-radius: 0 4px 4px 0;
+}
+.chat-section.numbers    { border-left-color: var(--accent, #5b8def); }
+.chat-section.holders    { border-left-color: #c084fc; }
+.chat-section.catalysts  { border-left-color: #f59e0b; }
+.chat-section.sentiment  { border-left-color: #22d3ee; }
+.chat-section.thesis     { border-left-color: var(--text-muted, #888); }
+.chat-section.thesis-yes { border-left-color: var(--success, #4ade80); background: rgba(74, 222, 128, 0.04); }
+.chat-section.thesis-no  { border-left-color: var(--danger,  #f87171); background: rgba(248, 113, 113, 0.04); }
+
+.chat-section-head {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted, #888);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.chat-section.thesis-yes .chat-section-head { color: var(--success, #4ade80); }
+.chat-section.thesis-no  .chat-section-head { color: var(--danger,  #f87171); }
+
+.chat-section-body {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text, #e6e8ee);
+}
+
+/* Fallback / error path: AI message that's a single block with no header. */
+.chat-flat { font-size: 14px; line-height: 1.55; }
+.chat-cite-row {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 6px;
+}
+
+/* Inline citation pill (sits inside the prose, not as a trailing badge). */
+.cite-pill.inline {
+  margin: 0 2px;
+  padding: 1px 5px;
+  font-size: 10.5px;
+  vertical-align: baseline;
 }
 
 /* The single input row — designed to feel like the Claude Code prompt bar:

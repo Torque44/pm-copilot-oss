@@ -34,24 +34,24 @@ import {
 function systemPromptForSub(sub: MarketSubcategory, marketTitle: string): string {
   const profile = profileFor(sub);
   const allowed = profile.handles.slice(0, 24).join(', ');
-  return `You are a sentiment analyst for prediction-market traders. Summarise what authoritative X voices have been saying about "${marketTitle}" using your knowledge of public statements up to your training cutoff.
+  return `You are a sentiment analyst for prediction-market traders. Summarise what authoritative X voices have been posting about "${marketTitle}". Live X search is enabled and restricted to the vetted handles below — use the actual recent posts the search tool returns.
 
 Source rules — STRICT:
 - ONLY cite from these vetted handles: ${allowed}.
 - ${profile.hint}
-- If you don't know a real public statement from one of those accounts on this exact topic, drop the source — DO NOT invent quotes.
-- NEVER cite anonymous retail accounts, "alpha" group accounts, pump/shill accounts, or unidentifiable handles.
-- It's fine to return fewer than 5 claims if the vetted set yields less.
+- Quote or paraphrase ACTUAL posts the live search returns. Do NOT invent quotes from training memory.
+- If live search returns no relevant posts from the vetted set, return fewer claims (or zero) rather than fabricate.
+- NEVER cite anonymous retail, "alpha" groups, pump/shill, or unidentifiable handles.
 
 Rules:
-- Output 3-5 short claims about the prevailing view among these source types.
+- Output 3-5 short claims about the prevailing view among these source types (or fewer if the search yielded less).
 - Each claim MUST end with one or more citation tags [kol·N] referencing a specific account you're attributing to (1 = first attributed source, 2 = second, …).
 - For each [kol·N], populate \`tweets\` with:
     handle  — the actual X handle (no @ prefix), must be from the vetted list above
-    excerpt — a short paraphrase of what that source has been saying (≤240 chars). Quote verbatim if you remember; otherwise paraphrase honestly.
-    url     — best guess at a representative post or "https://x.com/<handle>" if no specific tweet
-    ts      — leave empty string if uncertain
-- Aggregate "lean" describes the consensus implied by these sources for the YES side of the market.
+    excerpt — verbatim or near-verbatim quote from the post the search returned (≤240 chars).
+    url     — the actual post URL the search surfaced
+    ts      — ISO timestamp of the post when available, else empty string
+- Aggregate "lean" describes the consensus implied by these posts for the YES side of the market.
 
 Return JSON ONLY, no prose:
 {
@@ -139,16 +139,27 @@ Surface 3-5 representative takes that capture the conversation.`;
   const sub = classifyMarket(input.category, input.marketTitle);
   const sysPrompt = systemPromptForSub(sub, input.marketTitle);
 
-  // NOTE: xAI deprecated the `search_parameters` live-search shape on the
-  // /v1/chat/completions endpoint (HTTP 410: "switch to Agent Tools API").
-  // Until we migrate to /v1/responses + tools:[{type:'web_search'}], the
-  // sentiment agent runs against Grok's *training-data* knowledge of X. The
-  // system prompt acknowledges this and asks for sources Grok knows.
+  // Live X-search via xAI's Live Search API. We restrict to the vetted-handles
+  // allowlist for this sub-category (sources/registry) so Grok only pulls posts
+  // from accounts the user already trusts on the news side. fromDays=14
+  // matches the system prompt's "last 14 days" instruction. The xai provider
+  // gracefully retries without search_parameters if xAI rejects the shape, so
+  // a future API change degrades to training-data knowledge instead of erroring.
+  const profile = profileFor(sub);
+  const vettedHandles = profile.handles.slice(0, 25);
   const res = await provider.complete(userPrompt, {
     tier: 'reasoning',
     systemPrompt: sysPrompt,
     jsonOnly: true,
     timeoutMs: 90_000,
+    liveSearch: {
+      mode: 'on',
+      sources: ['x'],
+      xHandles: vettedHandles,
+      fromDays: 14,
+      maxResults: 15,
+      returnCitations: true,
+    },
   });
 
   let parsed: ParsedResponse | null = null;
@@ -200,6 +211,21 @@ Surface 3-5 representative takes that capture the conversation.`;
         .slice(0, 5)
     : [];
 
+  // If xAI silently fell back from live X-search to training data, the
+  // citations list will be empty even on `ok=true`. Surface that loudly
+  // as the first claim — the user trusted "live X" and got training-era
+  // recall instead, which is a different (and weaker) source of truth.
+  const liveSearchDisabled = (res.warnings ?? []).some((w) =>
+    w.startsWith('xai-live-search-disabled'),
+  );
+  if (liveSearchDisabled) {
+    claims.unshift({
+      text:
+        'xAI live-search was unavailable for this run — sentiment below is from the model\'s training data, not real-time X. Discount accordingly until the live API recovers.',
+      citations: [],
+    });
+  }
+
   // If live search returned nothing AND we have a fallback stub, re-run
   // against the stub. This rescues niche markets when Grok finds zero hits.
   if (claims.length === 0 && input.tweets && input.tweets.length > 0) {
@@ -248,7 +274,14 @@ async function runWithStubTweets(
   input: SentimentInput,
 ): Promise<AgentResult> {
   const started = Date.now();
-  if (!input.tweets || input.tweets.length === 0) {
+  // Stub tweets must pass the same allowlist gate the live-search path
+  // applies — otherwise an unvetted seed tweet smuggled into the stub
+  // bundle would surface as a "vetted X handle" citation in the UI.
+  const sub = classifyMarket(input.category, input.marketTitle);
+  const allowed = (input.tweets ?? []).filter((t) =>
+    isAllowlistedHandle(sub, (t.handle || '').replace(/^@/, '').trim()),
+  );
+  if (allowed.length === 0) {
     return {
       agent: 'sentiment',
       output: { claims: [], citations: [] },
@@ -257,7 +290,7 @@ async function runWithStubTweets(
     };
   }
 
-  const citations: Citation[] = input.tweets.map((t, i) => ({
+  const citations: Citation[] = allowed.map((t, i) => ({
     id: `kol·${i + 1}`,
     kind: 'kol',
     label: `@${t.handle}`,
@@ -274,7 +307,7 @@ async function runWithStubTweets(
       no: input.noPrice,
       ends: input.endDate,
     },
-    tweets: input.tweets.map((t, i) => ({
+    tweets: allowed.map((t, i) => ({
       idx: i + 1,
       handle: t.handle,
       text: t.text.slice(0, 280),

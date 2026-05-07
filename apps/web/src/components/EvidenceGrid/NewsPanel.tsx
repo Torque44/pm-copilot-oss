@@ -25,6 +25,12 @@ export interface NewsPanelProps {
   baseRate?: { yesCount: number; resolvedCount: number; totalCount: number } | null;
   /** Citation flash dispatcher — wired from EvidenceGrid. */
   onFlash?: (id: string) => void;
+  /** Per-source running flags so each tab can render its own loading
+   *  skeleton instead of "no X surfaced" while the agent is still in flight. */
+  newsRunning?: boolean;
+  sentimentRunning?: boolean;
+  thesisRunning?: boolean;
+  comparablesRunning?: boolean;
 }
 
 export function NewsPanel({
@@ -36,6 +42,10 @@ export function NewsPanel({
   comparables,
   baseRate,
   onFlash,
+  newsRunning = false,
+  sentimentRunning = false,
+  thesisRunning = false,
+  comparablesRunning = false,
 }: NewsPanelProps) {
   const [tab, setTab] = useState<Tab>('catalysts');
   const items = catalysts ?? [];
@@ -79,7 +89,15 @@ export function NewsPanel({
         </button>
       </div>
 
-      {tab === 'catalysts' && items.length === 0 && (
+      {tab === 'catalysts' && items.length === 0 && newsRunning && (
+        <div className="panel-skel">
+          <div className="panel-skel-row" />
+          <div className="panel-skel-row" />
+          <div className="panel-skel-row" />
+          <div className="panel-skel-hint mono">scanning curated sources…</div>
+        </div>
+      )}
+      {tab === 'catalysts' && items.length === 0 && !newsRunning && (
         <div className="panel-placeholder mono">no catalysts surfaced</div>
       )}
       {tab === 'catalysts' && items.length > 0 && (
@@ -126,7 +144,14 @@ export function NewsPanel({
         </div>
       )}
 
-      {tab === 'sentiment' && sentiment !== null && sentiment.length === 0 && (
+      {tab === 'sentiment' && sentiment !== null && sentiment.length === 0 && sentimentRunning && (
+        <div className="panel-skel">
+          <div className="panel-skel-row" />
+          <div className="panel-skel-row" />
+          <div className="panel-skel-hint mono">querying vetted handles via xAI live search…</div>
+        </div>
+      )}
+      {tab === 'sentiment' && sentiment !== null && sentiment.length === 0 && !sentimentRunning && (
         <div className="panel-placeholder mono">no sentiment surfaced for this market</div>
       )}
       {tab === 'sentiment' && sentiment !== null && sentiment.length > 0 && (
@@ -164,7 +189,15 @@ export function NewsPanel({
         </ul>
       )}
 
-      {tab === 'thesis' && !haveThesis && (
+      {tab === 'thesis' && !haveThesis && thesisRunning && (
+        <div className="panel-skel">
+          <div className="panel-skel-row" />
+          <div className="panel-skel-row" />
+          <div className="panel-skel-row" />
+          <div className="panel-skel-hint mono">building causal claim tree…</div>
+        </div>
+      )}
+      {tab === 'thesis' && !haveThesis && !thesisRunning && (
         <div className="panel-placeholder mono">no thesis derived</div>
       )}
       {tab === 'thesis' && haveThesis && (
@@ -191,15 +224,27 @@ export function NewsPanel({
         </ul>
       )}
 
-      {tab === 'comparables' && !haveComps && (
+      {tab === 'comparables' && !haveComps && comparablesRunning && (
+        <div className="panel-skel">
+          <div className="panel-skel-row" />
+          <div className="panel-skel-row" />
+          <div className="panel-skel-hint mono">searching resolved markets with similar shape…</div>
+        </div>
+      )}
+      {tab === 'comparables' && !haveComps && !comparablesRunning && (
         <div className="panel-placeholder mono">no comparable markets surfaced</div>
       )}
       {tab === 'comparables' && haveComps && (
         <div className="comparables-list">
-          {baseRate && baseRate.resolvedCount > 0 && (
+          {baseRate && baseRate.resolvedCount >= 3 && (
             <div className="comparables-baserate mono">
               base rate: {baseRate.yesCount}/{baseRate.resolvedCount} resolved YES
               ({Math.round((baseRate.yesCount / baseRate.resolvedCount) * 100)}%)
+            </div>
+          )}
+          {baseRate && baseRate.resolvedCount > 0 && baseRate.resolvedCount < 3 && (
+            <div className="comparables-baserate mono muted">
+              n={baseRate.resolvedCount} resolved · sample too small for a base rate
             </div>
           )}
           {comparables!.map((c, i) => {

@@ -88,21 +88,32 @@ export async function runThesisAgent(
   void ctx;
 
   // ---- Pass 1: prose analysis ----
+  // Cap the upstream summary at 3000 chars. On contested markets the merged
+  // claim stream from all specialists routinely runs 5-8K, which compounds
+  // subprocess startup overhead and pushes pass-1 past its timeout for no
+  // analytical benefit (reasoning models lose signal on long inputs anyway).
+  const evidenceSummary = (input.evidenceClaimSummary || '(no upstream evidence yet)').slice(0, 3000);
+
   const analysisPrompt = `Market: "${input.marketTitle}"
 Current YES price: ${input.yesPrice != null ? (input.yesPrice * 100).toFixed(1) + '¢' : 'unknown'}
 
 Upstream evidence summary:
-${input.evidenceClaimSummary || '(no upstream evidence yet)'}
+${evidenceSummary}
 
 Valid citation IDs (only these resolve to real sources):
 ${[...validIds].slice(0, 30).join(', ') || '(none)'}
 
 Write the thesis brief.`;
 
+  // 150s timeout: reasoning tier on the Claude Code subprocess (or any
+  // reasoning model) routinely takes 60-120s for thesis-shape prompts,
+  // especially on contested markets with long evidence summaries. 90s left
+  // a thin margin and produced spurious failures; 150s matches the headroom
+  // the ask agent already uses for the same model.
   const passOne = await provider.complete(analysisPrompt, {
     tier: 'reasoning',
     systemPrompt: ANALYSIS_SYS,
-    timeoutMs: 90_000,
+    timeoutMs: 150_000,
   });
 
   if (!passOne.ok || !passOne.text) {

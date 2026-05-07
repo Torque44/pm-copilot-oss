@@ -9,6 +9,7 @@ import { readGrounding, rememberGrounding } from '../groundingStore.js';
 import { runMarketAgent } from '@pm-copilot/core/agents/market';
 import { runHoldersAgent } from '@pm-copilot/core/agents/holders';
 import { runNewsAgent } from '@pm-copilot/core/agents/news';
+import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import type { MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent } from '@pm-copilot/core';
 
 /** Validate the body's market shape just enough to trust it for grounding fetches. */
@@ -86,7 +87,17 @@ export async function askHandler(req: Request, res: Response) {
 
   try {
     const grounding = await ensureGrounding(market, emit);
-    await runAsk(market, grounding, question, emit);
+    // Pull in the bundled stub tweets so questions about "vetted X handles
+    // posting on this market" get a non-empty answer. xactions / live-search
+    // would override this at registration time; for now this is the canonical
+    // chat-side source of [kol-N] citations.
+    const tweets = topTweetsForMarket(market.title, 10).map((t) => ({
+      handle: t.handle,
+      text: t.text,
+      url: t.url,
+      createdAt: t.createdAt,
+    }));
+    await runAsk(market, { ...grounding, tweets }, question, emit);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';
     sse.send({ t: 'ask:error', error: msg, elapsedMs: 0 });

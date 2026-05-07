@@ -37,6 +37,13 @@ test-results/
 *.tgz
 .history/
 
+# personal/ops artifacts (outreach trackers, ad-hoc scripts)
+# These leak through into clone-and-fork users and signal "playground".
+*.xlsx
+*.xlsm
+*.csv
+/scripts/
+
 # superpowers brainstorming companion (per-session scratch)
 .superpowers/
 

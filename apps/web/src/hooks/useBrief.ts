@@ -60,6 +60,7 @@ const INITIAL_AGENTS: BriefAgents = {
   thesis: 'pending',
   synthesis: 'pending',
   ask: 'pending',
+  comparables: 'pending',
 };
 
 // Section title overrides for known agents (keeps panels human-readable).
@@ -169,8 +170,8 @@ type RawNewsGrounding = { kind?: string; items?: RawNewsItem[] };
  *  to-flash on a `book-1b` pill highlights the corresponding row. */
 function bookGroundingToRows(g: RawBookGrounding): BookRow[] {
   const rows: BookRow[] = [];
-  const bids = Array.isArray(g.bids) ? g.bids.slice(0, 3) : [];
-  const asks = Array.isArray(g.asks) ? g.asks.slice(0, 3) : [];
+  const bids = Array.isArray(g.bids) ? g.bids.slice(0, 20) : [];
+  const asks = Array.isArray(g.asks) ? g.asks.slice(0, 20) : [];
   bids.forEach((l, i) => {
     if (typeof l.price !== 'number' || typeof l.size !== 'number') return;
     rows.push({
@@ -195,7 +196,7 @@ function bookGroundingToRows(g: RawBookGrounding): BookRow[] {
 }
 
 function holdersGroundingToRows(g: RawHoldersGrounding): HolderRow[] {
-  const src = Array.isArray(g.rows) ? g.rows.slice(0, 6) : [];
+  const src = Array.isArray(g.rows) ? g.rows.slice(0, 20) : [];
   const yesPct = g.sideBias?.yesPct ?? null;
   return src.flatMap((r, i): HolderRow[] => {
     if (!r.address || typeof r.sizeUsd !== 'number') return [];

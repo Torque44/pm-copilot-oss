@@ -43,6 +43,21 @@ export const DENYLIST_DOMAINS: ReadonlySet<string> = new Set([
   'fandom.com',           // also user-editable
   'wikidata.org',
   'simple.wikipedia.org',
+  // Wikimedia family — all user-editable. The `.endsWith` check below
+  // catches `xx.wikipedia.org` for any language subdomain, but the project
+  // family roots need to be listed explicitly. The risk: a user-editable
+  // page can be doctored mid-trade, so any LLM citing it has been fed
+  // potentially-just-modified content.
+  'wikimedia.org',
+  'commons.wikimedia.org',
+  'wiktionary.org',
+  'wikiquote.org',
+  'wikinews.org',
+  'wikibooks.org',
+  'wikiversity.org',
+  'wikisource.org',
+  'wikivoyage.org',
+  'mediawiki.org',
   'medium.com',           // open posting
   'substack.com',         // open posting (individual newsletters can be excellent but the platform is open)
   'reddit.com',

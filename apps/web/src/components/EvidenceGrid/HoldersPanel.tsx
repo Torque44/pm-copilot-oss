@@ -8,7 +8,9 @@ export interface HoldersPanelProps {
 }
 
 function fmtMoney(n: number): string {
-  return `$${n.toLocaleString('en-US').padStart(7, ' ')}`;
+  // No padStart — leading whitespace collapses in HTML. Column alignment
+  // is handled by `text-align: right` + tabular numbers in CSS.
+  return `$${n.toLocaleString('en-US')}`;
 }
 
 function shortAddr(addr: string): string {

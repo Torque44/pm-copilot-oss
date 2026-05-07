@@ -27,29 +27,48 @@ It's read-only. We don't place orders.
 
 ## Quickstart
 
-Requires Node 20+ and `pnpm` 9+.
+Requires Node 20+ and `pnpm` 9+ (`npm i -g pnpm`).
 
 ```bash
-git clone https://github.com/<you>/pm-copilot-oss
+git clone https://github.com/Torque44/pm-copilot-oss
 cd pm-copilot-oss
 pnpm install
-cp .env.example .env
-
-# Pick ONE auth path:
-#   (a) leave ANTHROPIC_API_KEY blank and have Claude Code installed locally
-#       (`claude /login` once); the server uses subprocess auth for free
-#   (b) paste an Anthropic / OpenAI / Gemini / xAI key in .env
-#   (c) skip .env entirely and paste a key in the browser setup screen
-#       (encrypted to IndexedDB, never logged server-side)
-
 pnpm dev
 ```
 
-Web at http://localhost:5173, server at http://localhost:8787.
+Web at <http://localhost:5173>, server at <http://localhost:8787>.
 
 The first time you load the web app, the **setup screen** appears with one
-tile per provider. Pick claude code or paste an API key — the key is stored
-encrypted in your browser only.
+tile per provider. Pick **Use local Claude Code** (zero-config if `claude`
+is on your PATH) or paste an Anthropic / OpenAI / Gemini / xAI / Perplexity
+key. Keys live encrypted in IndexedDB only — never logged server-side, never
+sent anywhere except as per-request `x-llm-key` headers.
+
+You can skip the browser setup entirely and put keys in `.env` instead:
+
+```bash
+cp .env.example .env
+# edit .env — set ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
+pnpm dev
+```
+
+### Running this with Claude Code or ChatGPT (cold-clone agent flow)
+
+If you hand this repo to an LLM coding agent (Claude Code, Cursor, Codex,
+Copilot CLI), the workflow is:
+
+```bash
+git clone https://github.com/Torque44/pm-copilot-oss
+cd pm-copilot-oss
+pnpm install
+pnpm typecheck   # confirms the workspace compiles cleanly
+pnpm dev         # boots web + server
+```
+
+That's the contract. No env files needed unless the agent wants to bake a
+provider key in. The agent can talk to the running server at
+<http://localhost:8787> (`/api/health/providers`, `/api/events`,
+`/api/brief?marketId=…`, `/api/ask`). All endpoints return JSON or SSE.
 
 ## What works today
 
@@ -127,8 +146,9 @@ pm-copilot-oss/
 │   │       ├── sources/      # curated per-category source allowlists
 │   │       └── mcp/          # MCP registry + bundled feed loaders
 │   └── skill/                # Claude Code skill bundle
-├── docs/specs/               # design docs
-├── HANDOFF.md                # original v1 task list
+├── docs/
+│   ├── specs/                # design docs
+│   └── HANDOFF.md            # original v1 task list (historical)
 └── README.md                 # you are here
 ```
 
@@ -177,7 +197,7 @@ The supervisor will route the relevant agent at request time.
 
 ## Status vs the v1 plan
 
-The original `HANDOFF.md` defined 11 tasks (A–K) for the first beta. As of
+The original `docs/HANDOFF.md` defined 11 tasks (A–K) for the first beta. As of
 this commit:
 
 - Tasks A–F (backend port, providers, supervisor, UI rebuild, hooks, lib) — **done**

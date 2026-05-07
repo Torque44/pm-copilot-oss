@@ -29,7 +29,12 @@ import { hydrate as hydrateCache, clear as clearCache } from './cache.js';
 import { hydrate as hydrateGrounding } from './groundingStore.js';
 import { hydrate as hydrateBriefs, invalidateBrief } from './briefStore.js';
 
-const PORT = Number(process.env['PORT'] || 8787);
+// Prefer SERVER_PORT, fall back to PORT, then 8787. Skip PORT if it collides
+// with the Vite frontend (5173) — that happens when the dev harness inherits
+// PORT=5173 to forward to subprocesses, which the api would otherwise pick up
+// and then fail to bind because Vite already owns that port.
+const _rawPort = Number(process.env['SERVER_PORT'] || process.env['PORT'] || 8787);
+const PORT = _rawPort === 5173 ? 8787 : _rawPort;
 const CORS_ORIGIN = process.env['CORS_ORIGIN'] || 'http://localhost:5173';
 
 async function main() {

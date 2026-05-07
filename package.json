@@ -15,8 +15,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,html}\"",
-    "smoke": "pnpm -F @pm-copilot/server smoke",
-    "prewarm": "node scripts/prewarm-cache.mjs"
+    "smoke": "pnpm -F @pm-copilot/server smoke"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.13.0",

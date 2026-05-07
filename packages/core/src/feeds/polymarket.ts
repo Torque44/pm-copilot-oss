@@ -158,6 +158,44 @@ export async function getBook(tokenId: string): Promise<BookResponse> {
   return get<BookResponse>(`${CLOB}/book?token_id=${tokenId}`);
 }
 
+// --- Price history (timestamped time-series for the YES token) ---
+//
+// Polymarket CLOB exposes /prices-history with an `interval` param that maps
+// to a (lookback, fidelity) pair internally. We default to 1d/60min (24h of
+// hourly bars) which is enough to align 72h news catalysts with the recent
+// price path without flooding the prompt. Bumping to 1w gives weekly context
+// when the trader asks longer-horizon questions.
+
+export type PricePoint = { t: number; p: number };  // unix epoch seconds, price 0..1
+export type PriceHistoryResponse = {
+  history: { t: number; p: number }[];
+};
+export type PriceHistoryInterval = '1h' | '6h' | '1d' | '1w' | '1m' | 'max';
+
+export async function getPriceHistory(
+  tokenId: string,
+  interval: PriceHistoryInterval = '1d',
+): Promise<PricePoint[]> {
+  // Polymarket's `fidelity` is in minutes between samples. Sane defaults so
+  // we don't pay for second-level resolution we won't use.
+  const fidelityMin = interval === '1h' ? 1
+    : interval === '6h' ? 5
+    : interval === '1d' ? 60
+    : interval === '1w' ? 360
+    : interval === '1m' ? 1440
+    : 1440;
+  const url = `${CLOB}/prices-history?market=${encodeURIComponent(tokenId)}&interval=${interval}&fidelity=${fidelityMin}`;
+  try {
+    const res = await get<PriceHistoryResponse>(url);
+    if (!res?.history || !Array.isArray(res.history)) return [];
+    return res.history
+      .filter((row) => row && typeof row.t === 'number' && typeof row.p === 'number')
+      .map((row) => ({ t: row.t, p: row.p }));
+  } catch {
+    return [];
+  }
+}
+
 export type HoldersGroup = {
   token: string;
   holders: {

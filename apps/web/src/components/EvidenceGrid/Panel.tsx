@@ -26,6 +26,12 @@ export interface PanelProps {
   errored: boolean;
   loading: boolean;
   onFocus: (key: PanelKey) => void;
+  /** Optional retry handler shown in the error state. */
+  onRetry?: () => void;
+  /** Optional "switch provider" handler — opens the setup overlay. */
+  onSwitchProvider?: () => void;
+  /** Error copy override. Defaults to a generic gamma-api timeout line. */
+  errorMessage?: string;
   children: ReactNode;
 }
 
@@ -37,12 +43,28 @@ export function Panel({
   errored,
   loading,
   onFocus,
+  onRetry,
+  onSwitchProvider,
+  errorMessage,
   children,
 }: PanelProps) {
+  const activate = () => onFocus(panelKey);
   return (
     <section
       className={`panel ${focused ? 'focused' : ''} ${errored ? 'errored' : ''}`}
-      onClick={() => onFocus(panelKey)}
+      onClick={activate}
+      role="button"
+      tabIndex={0}
+      aria-pressed={focused}
+      aria-label={`${title} panel (${PANEL_KBD[panelKey]} to focus)`}
+      onKeyDown={(e) => {
+        // Enter / Space activate, matching the click handler. Don't swallow
+        // other keys — global ⌘1/⌘2 shortcuts still need to bubble.
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
+      }}
     >
       <header className="panel-head">
         <span className="panel-title">{title}</span>
@@ -52,10 +74,30 @@ export function Panel({
       <div className="panel-body">
         {errored ? (
           <div className="panel-error">
-            <div className="panel-error-head">polymarket gamma-api timeout</div>
+            <div className="panel-error-head">{errorMessage ?? 'data fetch failed'}</div>
             <div className="panel-error-body">
-              no response in 8000ms. <a className="link">retry</a> ·{' '}
-              <a className="link">switch provider</a>
+              {onRetry && (
+                <button
+                  type="button"
+                  className="link link-btn"
+                  onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                >
+                  retry
+                </button>
+              )}
+              {onRetry && onSwitchProvider && ' · '}
+              {onSwitchProvider && (
+                <button
+                  type="button"
+                  className="link link-btn"
+                  onClick={(e) => { e.stopPropagation(); onSwitchProvider(); }}
+                >
+                  switch provider
+                </button>
+              )}
+              {!onRetry && !onSwitchProvider && (
+                <span className="mono muted">try refreshing the page</span>
+              )}
             </div>
           </div>
         ) : loading ? (

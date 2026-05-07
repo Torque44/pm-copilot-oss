@@ -9,15 +9,32 @@ import type { Market } from '../../types';
 
 export interface MarketHeaderProps {
   market: Market;
+  /** Whether this market is currently saved in the watchlist. Drives the
+   *  filled vs outline state of the watchlist button. */
+  inWatchlist?: boolean;
+  /** Click handler for the watchlist toggle. When omitted the button is
+   *  hidden so MarketHeader stays drop-in-compatible with old call sites. */
+  onToggleWatchlist?: () => void;
 }
 
-export function MarketHeader({ market }: MarketHeaderProps) {
+export function MarketHeader({ market, inWatchlist, onToggleWatchlist }: MarketHeaderProps) {
   return (
     <div className="market-header">
       <div className="mh-row">
         <div className="mh-title-block">
           <span className="venue-chip mono">{market.venue}</span>
           <h1 className="mh-title">{market.title}</h1>
+          {onToggleWatchlist && (
+            <button
+              type="button"
+              className={`mh-watch-btn mono ${inWatchlist ? 'on' : ''}`}
+              onClick={onToggleWatchlist}
+              title={inWatchlist ? 'remove from watchlist (⌘B)' : 'add to watchlist (⌘B)'}
+              aria-label={inWatchlist ? 'remove from watchlist' : 'add to watchlist'}
+            >
+              {inWatchlist ? '★ watching' : '☆ watch'}
+            </button>
+          )}
         </div>
         {!market.multi && market.yes !== undefined && market.no !== undefined && (
           <div className="mh-prices">

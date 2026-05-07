@@ -36,6 +36,10 @@ export type UseProviderResult = {
   config: ProviderConfig;
   loading: boolean;
   setKey: (slot: ProviderSlot, provider: ProviderName | null, key: string) => Promise<void>;
+  /** Mark the local Claude Code subprocess as the primary provider. No key is
+   *  stored — server detects the anthropic-cc marker and routes via the
+   *  subprocess instead of the public Anthropic API. */
+  setUseClaudeCode: () => Promise<void>;
   clearKey: (slot: ProviderSlot) => Promise<void>;
   getKeys: () => Promise<ProviderKeyBundle>;
 };
@@ -54,9 +58,13 @@ async function readConfig(): Promise<ProviderConfig> {
     getSecret(SECRET_KEY_PERPLEXITY),
     getSecret(SECRET_KEY_XAI),
   ]);
+  const providerName = isProviderName(primaryProvider) ? primaryProvider : null;
+  // anthropic-cc uses the local Claude Code subprocess and never needs a
+  // pasted key, so the marker alone is sufficient to count as configured.
+  const hasPrimaryKey = providerName === 'anthropic-cc' ? true : Boolean(primary);
   return {
-    primary: isProviderName(primaryProvider) ? primaryProvider : null,
-    hasPrimaryKey: Boolean(primary),
+    primary: providerName,
+    hasPrimaryKey,
     hasPerplexity: Boolean(perplexity),
     hasXai: Boolean(xai),
   };
@@ -113,6 +121,15 @@ export function useProvider(): UseProviderResult {
     [refresh],
   );
 
+  const setUseClaudeCode = useCallback(async (): Promise<void> => {
+    if (typeof window === 'undefined') return;
+    // Clear any prior primary key so BYOK headers don't ship a stale value
+    // alongside the anthropic-cc marker.
+    await deleteSecret(SECRET_KEY_PRIMARY);
+    await setSecret(SECRET_KEY_PRIMARY_PROVIDER, 'anthropic-cc');
+    await refresh();
+  }, [refresh]);
+
   const clearKey = useCallback(
     async (slot: ProviderSlot): Promise<void> => {
       if (typeof window === 'undefined') return;
@@ -146,5 +163,5 @@ export function useProvider(): UseProviderResult {
     return out;
   }, []);
 
-  return { config, loading, setKey, clearKey, getKeys };
+  return { config, loading, setKey, setUseClaudeCode, clearKey, getKeys };
 }

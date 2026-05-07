@@ -9,7 +9,7 @@
 //     ⌘B add-to-watchlist, Esc closes overlays.
 //   - Citation pill clicks → flashCitation(id).
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LeftRail } from './components/LeftRail/LeftRail';
 import { MarketHeader } from './components/MarketHeader/MarketHeader';
 import { EvidenceGrid } from './components/EvidenceGrid/EvidenceGrid';
@@ -24,6 +24,7 @@ import { LoadingToast } from './components/States/LoadingToast';
 import { ErrorState } from './components/States/ErrorState';
 import { SetupScreen } from './components/SetupFlow/SetupScreen';
 import { PositionStrip } from './components/PositionStrip/PositionStrip';
+import { KeyboardHelp } from './components/KeyboardHelp/KeyboardHelp';
 
 import { useEventsList } from './hooks/useEventsList';
 import { useBrief } from './hooks/useBrief';
@@ -282,7 +283,7 @@ function thesisFromSection(
 // ---------- main app ----------
 
 export function App() {
-  const { config: providerConfig, loading: providerLoading, setKey, clearKey } = useProvider();
+  const { config: providerConfig, loading: providerLoading, setKey, setUseClaudeCode, clearKey } = useProvider();
   const providerHealthHook = useProviderHealth();
   const { route, navigate } = useRoute();
   // Default tab matches LeftRail's initial active tab so the first fetch
@@ -302,7 +303,36 @@ export function App() {
   // marketId comes from URL when route is /m/:id; otherwise blank.
   const selectedMarketId = route.name === 'market' ? route.marketId : null;
 
-  const { brief, sseState } = useBrief(selectedMarketId);
+  // Shared "resolve a Polymarket URL → marketId → navigate" handler. Used
+  // both by the EmptyState's paste hint and by the LeftRail's search box
+  // (so users can paste a market link from anywhere and land on its brief
+  // instead of needing to scroll the events list). Returns true on success
+  // so the search box can clear itself.
+  const resolvePolymarketUrl = useCallback(
+    async (url: string): Promise<boolean> => {
+      const trimmed = url.trim();
+      if (!trimmed.includes('polymarket.com/')) return false;
+      try {
+        const r = await fetch(`/api/resolve?url=${encodeURIComponent(trimmed)}`);
+        if (!r.ok) return false;
+        const j = (await r.json()) as { marketId?: string; eventId?: string };
+        if (j.marketId) {
+          navigate({ name: 'market', marketId: j.marketId });
+          return true;
+        }
+        // Some Polymarket links resolve to an event with multiple sub-markets
+        // (no single market URL). The /api/resolve endpoint already picks the
+        // top-volume sub-market when that happens; if the response still has
+        // no marketId we surface false so the caller can show an error.
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    [navigate],
+  );
+
+  const { brief, sseState, reconnect: reconnectBrief } = useBrief(selectedMarketId);
 
   // For multi-outcome events, find the parent event so the market panel
   // can offer outcome-switching tabs. We look in two places:
@@ -351,8 +381,25 @@ export function App() {
   // UI state
   const [focusedPanel, setFocusedPanel] = useState<PanelKey | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  // Rails collapsed state — persisted in localStorage so toggling once
+  // sticks across reloads. Lazy initializer reads on mount; an effect
+  // writes on each change. Same pattern as the resizable grid height.
+  const [leftCollapsed, setLeftCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('pm-copilot:left-collapsed') === '1';
+  });
+  const [rightCollapsed, setRightCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('pm-copilot:right-collapsed') === '1';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('pm-copilot:left-collapsed', leftCollapsed ? '1' : '0');
+  }, [leftCollapsed]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('pm-copilot:right-collapsed', rightCollapsed ? '1' : '0');
+  }, [rightCollapsed]);
   const [flashId, setFlashId] = useState<string | null>(null);
   // Resizable evidence-grid height. Persisted in localStorage so the user
   // doesn't have to re-drag every session. null = follow CSS default.
@@ -376,6 +423,8 @@ export function App() {
   // which was causing the workbench to unmount and feel like a full reload).
   // The /setup URL still works for the first-load gate.
   const [setupOpen, setSetupOpen] = useState(false);
+  // Keyboard help modal — toggled by `?` (when no input is focused).
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const onFlash = useCallback((id: string) => {
     setFlashId(null);
@@ -401,6 +450,28 @@ export function App() {
     }
   }, [providerLoading, providerConfig.hasPrimaryKey, route.name, navigate]);
 
+  // Auto-promote claude-code to primary when:
+  //   1. The local subprocess is reachable (health check passed), AND
+  //   2. No primary is currently configured (no paste-key + no marker), AND
+  //   3. The user previously dismissed setup (so we don't pre-empt their choice)
+  // This handles the migration case where the marker-write code didn't exist
+  // when the user first dismissed setup, plus the cold-boot UX for new users
+  // who already have Claude Code running. Once set, the next setup-modal open
+  // shows the tile as "✓ connected" without any extra click.
+  const autoPromotedRef = useRef(false);
+  useEffect(() => {
+    if (autoPromotedRef.current) return;
+    if (providerLoading) return;
+    if (typeof window === 'undefined') return;
+    const ccReachable = providerHealthHook.health?.checks?.['claude-code']?.ok === true;
+    if (!ccReachable) return;
+    if (providerConfig.primary !== null) return;
+    const skipped = window.localStorage.getItem('pm-copilot:setup-skipped') === '1';
+    if (!skipped) return;
+    autoPromotedRef.current = true;
+    void setUseClaudeCode();
+  }, [providerLoading, providerHealthHook.health, providerConfig.primary, setUseClaudeCode]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -422,8 +493,22 @@ export function App() {
         else watchlist.add(item);
         return;
       }
+      // `?` opens the keyboard cheat sheet — skip if the user is typing in
+      // an input/textarea/contentEditable surface (the search box, chat,
+      // setup keyfields). Same guard pattern shipped trading terminals use.
+      if (e.key === '?') {
+        const tgt = e.target as HTMLElement | null;
+        const tag = tgt?.tagName;
+        const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || (tgt?.isContentEditable ?? false);
+        if (!isTyping) {
+          e.preventDefault();
+          setHelpOpen((o) => !o);
+          return;
+        }
+      }
       if (e.key === 'Escape') {
         setPaletteOpen(false);
+        setHelpOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -516,6 +601,18 @@ export function App() {
     setSetupOpen(false);
     if (route.name === 'setup') navigate({ name: 'home' });
   };
+  // When the user picks the claude-code tile we register anthropic-cc as the
+  // primary provider so the tile renders with a "✓ connected" badge on
+  // subsequent setup-modal opens. Claude Code itself doesn't need a key — the
+  // server detects the marker and routes via the subprocess.
+  const onUseClaudeCode = async () => {
+    await setUseClaudeCode();
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('pm-copilot:setup-skipped', '1');
+    }
+    setSetupOpen(false);
+    if (route.name === 'setup') navigate({ name: 'home' });
+  };
 
   // Find positions matching the current selected market (for the strip above the verdict band).
   const matchingPositions = selectedMarketId
@@ -559,6 +656,8 @@ export function App() {
         events={events}
         onCategoryChange={(c) => setCategory(c)}
         loading={eventsLoading}
+        onHome={() => navigate({ name: 'home' })}
+        onResolveUrl={resolvePolymarketUrl}
       />
 
       <main className="workbench">
@@ -570,18 +669,7 @@ export function App() {
               meta: `${r.yes != null ? r.yes.toFixed(2) + ' yes · ' : ''}${r.resolveIn}`,
               cat: r.category,
             }))}
-            onPaste={async (url) => {
-              const trimmed = url.trim();
-              if (!trimmed.includes('polymarket.com/')) return;
-              try {
-                const r = await fetch(`/api/resolve?url=${encodeURIComponent(trimmed)}`);
-                if (!r.ok) return;
-                const j = (await r.json()) as { marketId?: string };
-                if (j.marketId) navigate({ name: 'market', marketId: j.marketId });
-              } catch {
-                /* swallow — user can pick from the rail */
-              }
-            }}
+            onPaste={async (url) => { void resolvePolymarketUrl(url); }}
             onPickRecent={(marketId) => navigate({ name: 'market', marketId })}
           />
         ) : !market ? (
@@ -594,7 +682,24 @@ export function App() {
           )
         ) : (
           <>
-            <MarketHeader market={market} />
+            <MarketHeader
+              market={market}
+              inWatchlist={selectedMarketId ? watchlist.has(selectedMarketId) : false}
+              onToggleWatchlist={
+                selectedMarketId
+                  ? () => {
+                      const item: WatchItem = {
+                        marketId: selectedMarketId,
+                        title: market.title,
+                        price: market.yes ?? 0,
+                        delta: '+0.00',
+                      };
+                      if (watchlist.has(selectedMarketId)) watchlist.remove(selectedMarketId);
+                      else watchlist.add(item);
+                    }
+                  : undefined
+              }
+            />
             <EvidenceGrid
               focusedPanel={focusedPanel}
               onFocus={(k) => setFocusedPanel((p) => p === k ? null : k)}
@@ -602,6 +707,7 @@ export function App() {
               flashId={flashId}
               errorPanel={errorPanel}
               loading={isLoading}
+              agents={brief.agents}
               {...(brief.bookRows.length ? { bookRows: brief.bookRows } : {})}
               {...(brief.holderRows.length ? { holderRows: brief.holderRows } : {})}
               {...(newsCatalysts.length ? { catalysts: newsCatalysts } : {})}
@@ -619,6 +725,8 @@ export function App() {
                   }
                 : {})}
               {...(evidenceGridHeight != null ? { heightPx: evidenceGridHeight } : {})}
+              onRetry={reconnectBrief}
+              onSwitchProvider={() => setSetupOpen(true)}
             />
             <ResizeHandle
               currentHeight={evidenceGridHeight ?? 520}
@@ -643,8 +751,29 @@ export function App() {
 
       <RightRail
         collapsed={rightCollapsed}
-        agentStates={agentStatesFromBrief(brief.agents)}
-        agentDetails={agentDetailsFromBrief(brief.agentDetails)}
+        agentStates={(() => {
+          const states = agentStatesFromBrief(brief.agents);
+          // Override the ask slot (last position) with live ask-hook state.
+          // Brief never updates ask; the chat does. This keeps the rail in
+          // sync with what the user sees in the chat box.
+          if (ask.runStatus === 'running') states[6] = 'running';
+          else if (ask.runStatus === 'done') states[6] = 'done';
+          else if (ask.runStatus === 'error') states[6] = 'error';
+          return states;
+        })()}
+        agentDetails={(() => {
+          const details = agentDetailsFromBrief(brief.agentDetails);
+          // Provide elapsed time for the ask row so it shows "running… · 4.2s"
+          // while in flight and "DONE · 12.1s" when the answer lands.
+          if (ask.runStatus === 'running' && ask.runElapsedMs != null) {
+            details[6] = { elapsedMs: ask.runElapsedMs };
+          } else if (ask.runStatus === 'done' && ask.lastElapsedMs != null) {
+            details[6] = { elapsedMs: ask.lastElapsedMs };
+          } else if (ask.runStatus === 'error' && ask.lastElapsedMs != null) {
+            details[6] = { elapsedMs: ask.lastElapsedMs, error: ask.error ?? 'ask failed' };
+          }
+          return details;
+        })()}
         watchlist={watchlist.list}
         onWatchlistRemove={watchlist.remove}
         recents={recents.list.map((r) => ({ marketId: r.marketId, title: r.title, yes: r.yes }))}
@@ -673,10 +802,13 @@ export function App() {
         items={paletteItems}
       />
 
+      <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+
       {showSetup && (
         <SetupScreen
           onConfigured={onSetupSave}
           onSkip={onSetupSkip}
+          onUseClaudeCode={() => { void onUseClaudeCode(); }}
           configured={{
             primary: providerConfig.primary,
             perplexity: providerConfig.hasPerplexity,
@@ -688,6 +820,10 @@ export function App() {
           onRemove={(slot) => {
             void clearKey(slot);
           }}
+          // First-load gate (route='setup' + nothing configured): force a
+          // choice. Right-rail providers overlay (setupOpen=true) is freely
+          // dismissible because the workbench is already usable.
+          requireChoice={route.name === 'setup' && !providerConfig.hasPrimaryKey}
         />
       )}
     </div>

@@ -113,6 +113,12 @@ export type BookGrounding = {
   mid: number | null;
   topDepthUsd: number;         // USD resting within 5¢ of mid, summed both sides
   slippage: { size: number; avgPrice: number | null; slippageC: number | null }[];
+  /** Recent price-history time series for the YES token. Unix epoch seconds +
+   *  price in [0, 1]. Optional because not every venue / feed will populate
+   *  it; the chat ask-agent uses it to align timestamped news catalysts with
+   *  observed price moves. Polymarket built-in feed includes 24h of hourly bars
+   *  by default. */
+  priceHistory?: { t: number; p: number }[];
   raw?: unknown;
 };
 

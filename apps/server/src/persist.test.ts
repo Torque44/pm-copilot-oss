@@ -77,7 +77,7 @@ describe('persist — write + read round-trip', () => {
     const snap = await persistAfter.loadSnapshot();
 
     expect(snap).not.toBeNull();
-    expect(snap!.cache.survives.value).toBe(42);
+    expect(snap!.cache.survives!.value).toBe(42);
   });
 
   it('loadSnapshot returns null when no snapshot exists yet (cold boot)', async () => {

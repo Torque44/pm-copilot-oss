@@ -10,14 +10,20 @@ import { describe, it, expect } from 'vitest';
 import { salvageSectionedClaims } from './ask';
 import type { Citation } from './types';
 
+// Test fixture registry. Citation requires label + payload; we use the
+// id as label and an empty object as payload since the salvage parser
+// doesn't read either — it only checks `registry.has(id)`.
+const cit = (id: string, kind: 'book' | 'whale' | 'news' | 'kol' | 'comp'): Citation => ({
+  id, kind, label: id, payload: {},
+});
 const REG: Map<string, Citation> = new Map([
-  ['book-stats', { id: 'book-stats', kind: 'book' }],
-  ['book-1a',    { id: 'book-1a',    kind: 'book' }],
-  ['whale-3',    { id: 'whale-3',    kind: 'whale' }],
-  ['whale-stats',{ id: 'whale-stats',kind: 'whale' }],
-  ['news-2',     { id: 'news-2',     kind: 'news' }],
-  ['news-7',     { id: 'news-7',     kind: 'news' }],
-  ['kol-1',      { id: 'kol-1',      kind: 'kol' }],
+  ['book-stats', cit('book-stats', 'book')],
+  ['book-1a',    cit('book-1a',    'book')],
+  ['whale-3',    cit('whale-3',    'whale')],
+  ['whale-stats',cit('whale-stats','whale')],
+  ['news-2',     cit('news-2',     'news')],
+  ['news-7',     cit('news-7',     'news')],
+  ['kol-1',      cit('kol-1',      'kol')],
 ]);
 
 describe('salvageSectionedClaims', () => {

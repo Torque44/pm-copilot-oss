@@ -9,7 +9,7 @@
 // power users who run many markets.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch } from '../lib/client';
+import { apiJSON } from '../lib/client';
 import type { ChatMessage } from '../types';
 
 const STORAGE_PREFIX = 'pm-copilot:chat:';
@@ -177,42 +177,26 @@ export function useAsk(market: unknown): UseAskResult {
       setRunElapsedMs(0);
 
       try {
-        const res = await apiFetch('/api/ask', {
-          method: 'POST',
-          headers: { accept: 'text/event-stream' },
-          body: { marketId: (market as { marketId?: string }).marketId, market, question: trimmed } as unknown as BodyInit,
-        });
-        if (!res.ok || !res.body) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-
-        // Manual SSE frame parser. Each frame is `data: {...}\n\n`.
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buf = '';
+        // cf-azure-rewrite: /api/ask is a synchronous JSON endpoint now.
+        // No SSE, no manual frame parser. The server collects every event
+        // the ask agent emits into an array and returns it in one response;
+        // we replay that array through the existing handleAskEvent reducer
+        // so the chat-message-build behavior is identical to the old
+        // streaming path (just no per-frame reveal animation).
         const acc: ChatMessage = { role: 'ai', content: '', citations: [] };
-
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          let idx = buf.indexOf('\n\n');
-          while (idx !== -1) {
-            const frame = buf.slice(0, idx);
-            buf = buf.slice(idx + 2);
-            for (const line of frame.split('\n')) {
-              if (!line.startsWith('data:')) continue;
-              const payload = line.slice(5).trim();
-              if (!payload) continue;
-              try {
-                const ev = JSON.parse(payload) as AskEvent;
-                handleAskEvent(ev, acc, setMessages);
-              } catch {
-                /* malformed frame — skip */
-              }
-            }
-            idx = buf.indexOf('\n\n');
-          }
+        const res = await apiJSON<{ events: AskEvent[]; complete: boolean }>(
+          '/api/ask',
+          {
+            method: 'POST',
+            body: {
+              marketId: (market as { marketId?: string }).marketId,
+              market,
+              question: trimmed,
+            } as unknown as BodyInit,
+          },
+        );
+        for (const ev of res.events ?? []) {
+          handleAskEvent(ev, acc, setMessages);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

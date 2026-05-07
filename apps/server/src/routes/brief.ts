@@ -2,9 +2,17 @@
 // GET /api/brief?marketId=<gamma market id>     → brief a specific market
 // GET /api/brief?marketId=...&force=1           → ignore cache, re-run agents
 //
-// SSE stream of agent events leading up to the final brief. If we have a fresh
-// cached brief for the market, we replay the stored event log with a small
-// stagger — UI fills in identically, but we skip LLM cost + Polymarket calls.
+// Returns a JSON response containing the full event log from the supervisor
+// run. Clients reduce the event array into a BriefShape via the same reducer
+// they used during the SSE era (apps/web/src/hooks/useBrief.ts:reduce).
+//
+// History note: this route used to stream Server-Sent Events as agents
+// completed. The cf-azure-rewrite (May 2026) dropped SSE because (a) the
+// brief isn't usable until synthesis completes anyway, so progressive
+// streaming was visual filler, and (b) it constrained the deploy story —
+// every host had to handle long-lived event streams. The supervisor still
+// runs the seven agents in parallel server-side; we just collect every
+// emitted event into an array here and return it in one HTTP response.
 
 import type { Request, Response } from 'express';
 import {
@@ -14,7 +22,6 @@ import {
   gammaToMarketMeta,
 } from '@pm-copilot/core/feeds/polymarket';
 import { cached } from '../cache.js';
-import { openSse } from '@pm-copilot/core/sse';
 import { runSupervisor } from '@pm-copilot/core/agents/supervisor';
 import { byokProvider } from '@pm-copilot/core/providers/byok';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
@@ -23,6 +30,21 @@ import type { MarketMeta, AgentEvent, Category } from '@pm-copilot/core';
 import { getCached, startRecording, type BriefEnvelope } from '../briefStore.js';
 
 const MARKET_TTL_MS = 5 * 60 * 1000;
+
+/** Response shape returned by GET /api/brief. The client iterates events
+ *  through its existing reducer (`apps/web/src/hooks/useBrief.ts:reduce`)
+ *  to build the BriefShape it renders. `complete: true` means the
+ *  supervisor finished cleanly; `false` means it crashed or timed out
+ *  and the events array contains a partial run plus an error envelope. */
+export type BriefResponse = {
+  /** Full event log: market envelope + per-agent start/done/error +
+   *  brief:section / cite / brief:complete envelopes. */
+  events: BriefEnvelope[];
+  /** True if the brief finished without an error envelope. */
+  complete: boolean;
+  /** When the response was cached vs freshly run. Present on cache hit. */
+  cache?: { source: 'memory'; ageMs: number };
+};
 
 function parseCategory(raw: unknown): Category {
   const v = String(raw ?? '');
@@ -74,30 +96,25 @@ async function resolveMarketById(marketId: string): Promise<MarketMeta | null> {
   });
 }
 
-function sleep(ms: number) {
-  return new Promise<void>(r => setTimeout(r, ms));
-}
-
 export async function briefHandler(req: Request, res: Response) {
   const marketId = req.query.marketId ? String(req.query.marketId) : null;
   const category = parseCategory(req.query.category);
   const force = req.query.force === '1' || req.query.force === 'true';
 
-  const sse = openSse(res);
-
   // Fast path: if we already have a recent, complete brief for this marketId,
-  // replay the event log instead of re-running the agent pipeline.
+  // return the stored event log instead of re-running the agent pipeline.
   if (marketId && !force) {
     const cachedBrief = getCached(marketId);
     if (cachedBrief) {
-      const ageS = Math.round((Date.now() - cachedBrief.savedAt) / 1000);
+      const ageMs = Date.now() - cachedBrief.savedAt;
+      const ageS = Math.round(ageMs / 1000);
       console.info(`[brief] cache HIT ${marketId} (age ${ageS}s, ${cachedBrief.events.length} events)`);
-      sse.send({ t: 'cache', source: 'memory', ageMs: Date.now() - cachedBrief.savedAt });
-      for (const ev of cachedBrief.events) {
-        sse.send(ev);
-        await sleep(40); // gentle stagger so sections feel like they land, not pop
-      }
-      sse.close();
+      const body: BriefResponse = {
+        events: cachedBrief.events,
+        complete: true,
+        cache: { source: 'memory', ageMs },
+      };
+      res.json(body);
       return;
     }
     console.info(`[brief] cache MISS ${marketId} — running fresh`);
@@ -111,27 +128,38 @@ export async function briefHandler(req: Request, res: Response) {
       ? await resolveMarketById(marketId)
       : await resolveTopMarket(category);
   } catch (err: unknown) {
-    sse.send({ t: 'error', error: `resolveMarket failed: ${errMsg(err)}` });
-    sse.close();
+    res.status(500).json({
+      events: [{ t: 'error', error: `resolveMarket failed: ${errMsg(err)}` } as BriefEnvelope],
+      complete: false,
+    } satisfies BriefResponse);
     return;
   }
   if (!market) {
-    sse.send({ t: 'error', error: marketId ? `market ${marketId} not found` : `no active ${category} market found` });
-    sse.close();
+    res.status(404).json({
+      events: [{
+        t: 'error',
+        error: marketId ? `market ${marketId} not found` : `no active ${category} market found`,
+      } as BriefEnvelope],
+      complete: false,
+    } satisfies BriefResponse);
     return;
   }
 
-  // Start recording every event to the brief store so subsequent loads are instant.
+  // Collect every event the supervisor emits into a single array. We also
+  // record each event into the per-market brief store so the next request
+  // for this market gets the cache HIT path above.
   const record = startRecording(market.marketId);
+  const events: BriefEnvelope[] = [];
   const marketEv: BriefEnvelope = { t: 'market', market };
   record(marketEv);
-  sse.send(marketEv);
+  events.push(marketEv);
 
   const emit = (ev: AgentEvent) => {
     record(ev);
-    sse.send(ev);
+    events.push(ev);
   };
 
+  let complete = true;
   try {
     // Per HANDOFF.md §Task C: build per-agent provider routing from BYOK
     // headers (or env-var fallbacks) and thread it through the supervisor.
@@ -145,10 +173,12 @@ export async function briefHandler(req: Request, res: Response) {
   } catch (err: unknown) {
     const errEv: BriefEnvelope = { t: 'error', error: errMsg(err) || 'supervisor crashed' };
     record(errEv);
-    sse.send(errEv);
-  } finally {
-    sse.close();
+    events.push(errEv);
+    complete = false;
   }
+
+  const body: BriefResponse = { events, complete };
+  res.json(body);
 }
 
 function errMsg(err: unknown): string {

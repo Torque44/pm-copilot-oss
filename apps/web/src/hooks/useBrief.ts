@@ -6,7 +6,7 @@
 // plus a couple of meta envelopes ('market', 'cache'). We tolerate the
 // superset and only key on `t`.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AgentStatus,
   BookRow,
@@ -21,8 +21,7 @@ import type {
   Market,
   NewsItem,
 } from '../types';
-import { useSSE, type SSEState } from './useSSE';
-import { buildBriefSSEUrl } from '../lib/client';
+import { apiJSON } from '../lib/client';
 import { formatRelativeDuration, fmtMoney } from '../lib/format';
 
 // Keys we track for agent status. The supervisor today emits market/holders/
@@ -379,33 +378,87 @@ function reduce(events: BriefEventLike[]): BriefShape {
   };
 }
 
+/** Lifecycle state for a brief fetch. Maps roughly to the old SSE
+ *  states but folded into a simpler shape since there's no more
+ *  long-lived stream — just a single GET that runs ~30-60s. */
+export type BriefLoadState = 'idle' | 'loading' | 'ready' | 'error';
+
+/** Server response shape for GET /api/brief. The server constructs this
+ *  by collecting every supervisor event into an array; the client runs
+ *  the same `reduce()` reducer it always did to turn the array into a
+ *  BriefShape. Mirrors `BriefResponse` in apps/server/src/routes/brief.ts. */
+type BriefApiResponse = {
+  events: BriefEventLike[];
+  complete: boolean;
+  cache?: { source: string; ageMs: number };
+};
+
+const EMPTY_BRIEF: BriefShape = reduce([]);
+
 export type UseBriefResult = {
   brief: BriefShape;
-  sseState: SSEState;
+  /** Replaces the old `sseState`. 'loading' covers the entire ~30-60s
+   *  fetch since there's no progressive streaming anymore. */
+  loadState: BriefLoadState;
+  /** Surface any error from the fetch path (network / non-200). */
+  error: string | null;
+  /** Force a refetch (the equivalent of the old `reconnect`). Useful
+   *  for the "retry" affordance in the workbench panel. */
   reconnect: () => void;
 };
 
 export function useBrief(marketId: string | null): UseBriefResult {
-  // buildBriefSSEUrl is async (reads keys from IndexedDB). We resolve it in
-  // an effect and feed the resulting URL to useSSE. Until it resolves the
-  // url is null so useSSE stays idle — no flash-of-no-key request.
-  const [url, setUrl] = useState<string | null>(null);
+  const [brief, setBrief] = useState<BriefShape>(EMPTY_BRIEF);
+  const [loadState, setLoadState] = useState<BriefLoadState>('idle');
+  const [error, setError] = useState<string | null>(null);
+  // Bumping `nonce` triggers a refetch via the effect below. Same role
+  // the SSE hook's reconnect-counter played.
+  const [nonce, setNonce] = useState(0);
+
+  const reconnect = useCallback(() => {
+    setNonce((n) => n + 1);
+  }, []);
+
   useEffect(() => {
-    let cancelled = false;
     if (!marketId) {
-      setUrl(null);
+      setBrief(EMPTY_BRIEF);
+      setLoadState('idle');
+      setError(null);
       return;
     }
-    void buildBriefSSEUrl(marketId).then((u) => {
-      if (!cancelled) setUrl(u);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [marketId]);
 
-  const { events, state, reconnect } = useSSE<BriefEventLike>(url);
-  const brief = useMemo<BriefShape>(() => reduce(events), [events]);
+    let cancelled = false;
+    setBrief(EMPTY_BRIEF);
+    setLoadState('loading');
+    setError(null);
 
-  return { brief, sseState: state, reconnect };
+    (async () => {
+      try {
+        const res = await apiJSON<BriefApiResponse>(
+          `/api/brief?marketId=${encodeURIComponent(marketId)}`,
+        );
+        if (cancelled) return;
+        const events = Array.isArray(res.events) ? res.events : [];
+        setBrief(reduce(events));
+        setLoadState(res.complete ? 'ready' : 'error');
+        if (!res.complete) {
+          // Surface the first error envelope's message if the server
+          // marked this run incomplete.
+          const errEv = events.find((e) => (e as { t?: string }).t === 'error') as
+            | { t: 'error'; error?: string }
+            | undefined;
+          setError(errEv?.error ?? 'brief did not complete');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
+        setLoadState('error');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [marketId, nonce]);
+
+  return { brief, loadState, error, reconnect };
 }

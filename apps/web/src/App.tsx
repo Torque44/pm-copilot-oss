@@ -338,7 +338,11 @@ export function App() {
     [navigate],
   );
 
-  const { brief, sseState, reconnect: reconnectBrief } = useBrief(selectedMarketId);
+  // useBrief is no longer SSE-backed (cf-azure-rewrite). loadState
+  // replaces sseState; same role, simpler shape (idle | loading | ready
+  // | error). The old isLoading + errored derivations below adjust to
+  // the new field names.
+  const { brief, loadState, reconnect: reconnectBrief } = useBrief(selectedMarketId);
 
   // For multi-outcome events, find the parent event so the market panel
   // can offer outcome-switching tabs. We look in two places:
@@ -659,7 +663,7 @@ export function App() {
     : [];
 
   const errorPanel: PanelKey | null = brief.errors.length > 0 && !market ? 'research' : null;
-  const isLoading = sseState !== 'idle' && sseState !== 'closed' && !brief.complete && Boolean(selectedMarketId);
+  const isLoading = loadState === 'loading' && Boolean(selectedMarketId);
   const isEmpty = !selectedMarketId;
 
   // Project brief data into panel-ready shapes. Prefer real grounding from
@@ -712,7 +716,7 @@ export function App() {
             onPickRecent={(marketId) => navigate({ name: 'market', marketId })}
           />
         ) : !market ? (
-          sseState === 'error' || brief.errors.length > 0 ? (
+          loadState === 'error' || brief.errors.length > 0 ? (
             <ErrorState message={brief.errors[0] || 'failed to fetch brief'} />
           ) : (
             <div className="loading-shell">

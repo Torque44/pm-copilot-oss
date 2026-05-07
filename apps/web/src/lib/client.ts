@@ -58,6 +58,18 @@ function mergeHeaders(base: HeadersInit | undefined, extra: Record<string, strin
   return h;
 }
 
+/** Resolve a relative `/api/...` path against VITE_API_BASE if set.
+ *  In dev the Vite proxy handles relative paths to the local backend on
+ *  :8787. In production (Cloudflare Pages → Azure Container App) the
+ *  frontend and backend live on different origins, so we prepend the
+ *  configured backend host. Absolute URLs pass through untouched. */
+function resolvePath(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = (import.meta.env.VITE_API_BASE ?? '').toString().replace(/\/$/, '');
+  if (!base) return path;
+  return `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
 export async function apiFetch(path: string, opts: ApiRequestOpts = {}): Promise<Response> {
   const { skipBYOK, headers: rawHeaders, body: rawBody, ...rest } = opts;
   const byokHeaders = skipBYOK ? {} : await loadByokHeaders();
@@ -81,7 +93,7 @@ export async function apiFetch(path: string, opts: ApiRequestOpts = {}): Promise
   const init: RequestInit = { ...rest, headers };
   if (body !== undefined) init.body = body as BodyInit;
 
-  const res = await fetch(path, init);
+  const res = await fetch(resolvePath(path), init);
   return res;
 }
 
@@ -129,34 +141,7 @@ export async function authTest(
   }
 }
 
-/** Build the SSE URL for the brief endpoint, attaching BYOK keys as query
- *  params so the server's middleware can pick them up (EventSource can't
- *  send custom headers).
- *
- *  Trade-off: keys appear in the URL bar + browser history + any access
- *  logs. Acceptable for local private beta; production should swap to a
- *  session-token handshake (see HANDOFF.md).
- *
- *  Async because we read from cryptoStorage. Callers that don't have a
- *  primary key configured can still call this — they'll just get a URL
- *  without the BYOK params, and the server falls through to env vars
- *  (or subprocess auth for the anthropic provider).
- */
-export async function buildBriefSSEUrl(marketId: string): Promise<string> {
-  const params = new URLSearchParams({ marketId });
-  try {
-    const [primary, primaryProvider, perplexity, xai] = await Promise.all([
-      getSecret(SECRET_KEY_PRIMARY),
-      getSecret(SECRET_KEY_PRIMARY_PROVIDER),
-      getSecret(SECRET_KEY_PERPLEXITY),
-      getSecret(SECRET_KEY_XAI),
-    ]);
-    if (primary) params.set('key', primary);
-    if (primaryProvider) params.set('provider', primaryProvider);
-    if (perplexity) params.set('pkey', perplexity);
-    if (xai) params.set('xkey', xai);
-  } catch {
-    /* fall through — no BYOK; server may still serve via env vars */
-  }
-  return `/api/brief?${params.toString()}`;
-}
+// `buildBriefSSEUrl` was removed in the cf-azure-rewrite. The /api/brief
+// endpoint is now a synchronous JSON GET, so callers use `apiJSON` /
+// `apiFetch` like any other endpoint — BYOK keys travel as headers via
+// the existing apiFetch wrapper, no query-string fallback needed.

@@ -893,19 +893,17 @@
    * overflow-y: auto can actually take over and scroll. Without it,
    * the cell stretches to fit content and the scroll never engages. */
   min-height: 0;
+  max-height: none;
+  height: 100%;
   overflow-y: auto;
   padding-right: 4px;
 }
-/* Anchor-to-bottom trick: when the conversation is shorter than the
- * history area, this absorbs all leftover vertical space, pushing the
- * messages flush against the input — no empty gap between content and
- * the input bar. When the conversation is taller than the area,
- * margin-top: auto resolves to 0 and overflow-y handles scrolling
- * normally. This is the standard Discord/iMessage/Claude-Code pattern;
- * it sidesteps the `justify-content: flex-end` clipping anti-pattern
- * that cuts off the top of long conversations.  */
+/* Latest structured answer stretch: when the conversation is shorter than the
+ * history area, the latest answer uses leftover vertical space so the
+ * answer cards stretch instead of leaving an empty band above the
+ * pinned input. Taller conversations still scroll normally. */
 .chat-history > :first-child {
-  margin-top: auto;
+  margin-top: 0;
 }
 .chat-msg {
   font-size: 14px;
@@ -931,9 +929,13 @@
    with a small uppercase header and a colored left-bar accent so traders
    can scan to the section they care about without re-reading the prose. */
 .chat-msg-structured {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 8px;
+  grid-auto-rows: auto;
+}
+.chat-history > .chat-msg-structured:last-child {
+  flex: 1 1 auto;
+  grid-auto-rows: minmax(max-content, 1fr);
 }
 .chat-section {
   padding: 6px 10px 7px 12px;

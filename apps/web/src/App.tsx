@@ -35,6 +35,8 @@ import { usePositions } from './hooks/usePositions';
 import { useRecentlyViewed } from './hooks/useRecentlyViewed';
 import { useFetchedEvent } from './hooks/useFetchedEvent';
 import { useAsk } from './hooks/useAsk';
+import { useAuth } from './hooks/useAuth';
+import { LandingFlow } from './components/LandingFlow/LandingFlow';
 import { useRoute } from './lib/routing';
 import { flashCitation } from './lib/citationFlash';
 import { deriveVerdictStats } from './lib/derivedStats';
@@ -286,6 +288,10 @@ export function App() {
   const { config: providerConfig, loading: providerLoading, setKey, setUseClaudeCode, clearKey } = useProvider();
   const providerHealthHook = useProviderHealth();
   const { route, navigate } = useRoute();
+  // Wallet + X handle session. Gates the desk behind the LandingFlow
+  // until at least a wallet is on file (X handle is optional). Stored
+  // in localStorage; cross-tab synced.
+  const auth = useAuth();
   // Default tab matches LeftRail's initial active tab so the first fetch
   // returns events the LeftRail filter will actually accept. Bug history:
   // LeftRail defaulted to 'politics' but App.tsx fetched 'crypto', so the
@@ -356,10 +362,28 @@ export function App() {
   const watchlist = useWatchlist();
 
   // Wallet from localStorage (entered once in PositionsTab) so positions persist.
+  // The right-rail Positions tab still owns its own wallet override
+  // (paste a different address to inspect someone else's positions),
+  // but the canonical default is the auth wallet from the LandingFlow.
+  // Hydrate from auth.wallet first; fall back to the legacy
+  // pm-copilot:wallet key for users who set up before the LandingFlow
+  // shipped. Effect below keeps the two in sync when auth.wallet changes.
   const [wallet, setWallet] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
-    return window.localStorage.getItem('pm-copilot:wallet') || '';
+    return (
+      window.localStorage.getItem('pm-copilot:auth:wallet') ||
+      window.localStorage.getItem('pm-copilot:wallet') ||
+      ''
+    );
   });
+  // Sync auth-side wallet → local wallet ONLY when auth.wallet itself
+  // changes (sign-in, cross-tab change). Don't depend on `wallet` here —
+  // the right-rail override input mutates `wallet` directly and we don't
+  // want to clobber that override every time the user types.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (auth.wallet) setWallet(auth.wallet);
+  }, [auth.wallet]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (wallet) window.localStorage.setItem('pm-copilot:wallet', wallet);
@@ -555,6 +579,22 @@ export function App() {
       <main className="app-shell">
         <div className="empty-state"><div className="empty-card"><div className="empty-title">loading…</div></div></div>
       </main>
+    );
+  }
+
+  // Auth gate. The desk is read-only but we still want a wallet on file
+  // so the right-rail positions tab and any wallet-keyed analytics have
+  // something to work with. The LandingFlow handles the multi-step
+  // onboarding (wallet picker → address paste → optional X handle →
+  // handoff loader). Once `auth.signedIn` flips true, this branch falls
+  // through and the workbench renders normally on the next pass.
+  if (!auth.signedIn) {
+    return (
+      <LandingFlow
+        onConnectWallet={(addr) => auth.setWallet(addr)}
+        onSubmitHandle={(h) => auth.setXHandle(h)}
+        onHandoffComplete={() => { /* no-op — gate already flipped */ }}
+      />
     );
   }
 

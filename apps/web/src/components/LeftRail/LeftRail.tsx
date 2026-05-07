@@ -299,8 +299,13 @@ export function LeftRail({
             title="home (clear selection)"
             aria-label="go home"
           >
-            <span className="rail-brand-mark">◢</span>
-            <span className="rail-brand-name">pm copilot</span>
+            <img
+              src="/brand-wordmark.svg"
+              alt="pm copilot"
+              className="rail-brand-img"
+              width={132}
+              height={20}
+            />
           </button>
         )}
         <div className="search-box">

@@ -1,0 +1,402 @@
+// LandingFlow — the pre-desk experience. Lifted from the
+// research-desk/flow.html design bundle and adapted to React. Four stages:
+//
+//   1. landing  — hero pitch + manifest of the seven agents + sign-in CTA
+//   2. auth     — wallet picker (Polymarket users), proceeds to address paste
+//   3. twitter  — optional X handle so news weighting sees "accounts you trust"
+//   4. handoff  — short loader, then the parent flips to the desk
+//
+// What's deliberately simpler than the design bundle:
+//   - No real WalletConnect / MetaMask / Coinbase SDK. Each wallet row
+//     opens the same address-paste step, persists locally, done. We carry
+//     the visual flow forward — the SDK can land later behind the same
+//     onConnect callback and the user-facing UX stays identical.
+//   - The X "connect with X" button is a stub that focuses the handle
+//     input. Real OAuth requires app registration on x.com/developers.
+//
+// Voice: lowercase, mono headers, terse. Carried verbatim from the design
+// bundle which was already in this repo's voice (the design tool was
+// instructed against it).
+
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { isPlausibleEvmAddress } from '../../hooks/useAuth';
+import './landing.css';
+
+type Stage = 'landing' | 'auth-wallets' | 'auth-paste' | 'twitter' | 'handoff';
+
+export interface LandingFlowProps {
+  /** Called once the user has at minimum a wallet address. The hook then
+   *  also calls onComplete after the optional X handle step (or skip). */
+  onConnectWallet: (addr: string) => void;
+  /** Called when the user submits or skips the X handle step. The flow
+   *  itself transitions to the handoff loader; the parent should flip
+   *  the auth gate to "signed in" so the next render mounts the desk. */
+  onSubmitHandle: (handle: string | null) => void;
+  /** Called after the handoff loader completes. The parent uses this to
+   *  un-mount the LandingFlow once the gate has updated. */
+  onHandoffComplete: () => void;
+}
+
+const TICKER_ITEMS = [
+  { name: 'btc $100k eoy', price: '0.62', delta: '+0.04', dir: 'up' },
+  { name: 'fed cuts in june', price: '0.31', delta: '-0.05', dir: 'down' },
+  { name: 'spot eth etf h1', price: '0.81', delta: '+0.02', dir: 'up' },
+  { name: 'recession by q4', price: '0.18', delta: '-0.01', dir: 'down' },
+  { name: 'gpt-5 by dec', price: '0.44', delta: '+0.03', dir: 'up' },
+  { name: 'iran deal by aug', price: '0.36', delta: '-0.05', dir: 'down' },
+  { name: 'taiwan crisis 2026', price: '0.12', delta: '+0.01', dir: 'up' },
+  { name: 'sora public release', price: '0.58', delta: '+0.07', dir: 'up' },
+];
+
+const AGENTS = [
+  ['01', 'book.agent', 'streams the polymarket order book; flags thin-side risk and unusual size.'],
+  ['02', 'holders.agent', 'reads the top-250 wallet table; surfaces concentration and recent rotations.'],
+  ['03', 'news.agent', 'indexes weighted feeds against your follow graph; ranks by venue, not engagement.'],
+  ['04', 'sentiment.agent', 'reads vetted X handles only; quotes and time-stamps every claim.'],
+  ['05', 'thesis.agent', 'composes a structured argument tree (supports vs challenges); every leaf cited.'],
+  ['06', 'comparables.agent', 'finds resolved markets with similar shape; surfaces a base rate.'],
+  ['07', 'synthesis.agent', 'aggregates the six above. allowlist filters every citation.'],
+];
+
+export function LandingFlow({
+  onConnectWallet,
+  onSubmitHandle,
+  onHandoffComplete,
+}: LandingFlowProps) {
+  const [stage, setStage] = useState<Stage>('landing');
+  const [walletPick, setWalletPick] = useState<string | null>(null);
+  const [addr, setAddr] = useState('');
+  const [addrError, setAddrError] = useState<string | null>(null);
+  const [handle, setHandle] = useState('');
+  const handleInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Handoff loader sequence — five "priming" lines that cycle, then call
+  // back so the parent unmounts this whole component and renders the desk.
+  const [hoLine, setHoLine] = useState('priming agents…');
+  useEffect(() => {
+    if (stage !== 'handoff') return;
+    const lines = [
+      'priming agents…',
+      'connecting to polymarket gamma…',
+      'wiring citation registry…',
+      'warming the orderbook stream…',
+      'opening the desk…',
+    ];
+    let idx = 0;
+    setHoLine(lines[0]!);
+    const id = setInterval(() => {
+      idx += 1;
+      if (idx >= lines.length) {
+        clearInterval(id);
+        onHandoffComplete();
+        return;
+      }
+      setHoLine(lines[idx]!);
+    }, 700);
+    return () => clearInterval(id);
+  }, [stage, onHandoffComplete]);
+
+  // Focus handle input on stage entry so power users can just type + ↵.
+  useEffect(() => {
+    if (stage === 'twitter') {
+      const id = setTimeout(() => handleInputRef.current?.focus(), 80);
+      return () => clearTimeout(id);
+    }
+    return;
+  }, [stage]);
+
+  const onSubmitAddr = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = addr.trim();
+    if (!isPlausibleEvmAddress(trimmed)) {
+      setAddrError('that doesn\'t look like a valid 0x address.');
+      return;
+    }
+    setAddrError(null);
+    onConnectWallet(trimmed);
+    setStage('twitter');
+  };
+
+  const onSubmitHandleForm = (e: FormEvent) => {
+    e.preventDefault();
+    const cleaned = handle.replace(/^@/, '').trim();
+    onSubmitHandle(cleaned || null);
+    setStage('handoff');
+  };
+
+  const onSkipHandle = () => {
+    onSubmitHandle(null);
+    setStage('handoff');
+  };
+
+  return (
+    <div className="lf-root">
+      {/* utility bar — quiet status at the top */}
+      <div className="lf-util-bar">
+        <span className="brand-mini mono">[pm] copilot</span>
+        <span className="sep" />
+        <span className="mono">research desk</span>
+        <span className="right">
+          <span className="live-dot" />
+          markets live · v0.1
+        </span>
+      </div>
+
+      {/* ticker tape — rolling horizontally */}
+      <div className="lf-ticker">
+        <div className="lf-ticker-track">
+          {[...TICKER_ITEMS, ...TICKER_ITEMS].map((it, i) => (
+            <span key={i} className="lf-ticker-item mono">
+              <span className="name">{it.name}</span>
+              <span className="price">{it.price}</span>
+              <span className={`delta ${it.dir}`}>{it.delta}</span>
+              <span className="sep-pipe">|</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ============== STAGE 1: landing ============== */}
+      <div className={`lf-stage lf-stage-landing ${stage === 'landing' ? 'active' : ''}`}>
+        <main className="land">
+          <section className="land-hero-band">
+            <div className="land-marker mono">
+              <span className="num">01</span>
+              <span>research desk for polymarket</span>
+              <span className="rule" />
+              <span className="meta">v0.1 · early access · may 2026</span>
+            </div>
+
+            <h1 className="headline">
+              every claim,<br />
+              <em>cited to</em><br />
+              the <span className="accent">order book</span>.
+            </h1>
+
+            <div className="lede-grid">
+              <p className="lede-prose">
+                pm copilot is an <b>evidence-first workspace</b> for prediction-market
+                traders. seven agents read the book, holders, news, and X sentiment
+                in parallel, and every line they write links back to a source row
+                you can flash to in <b>under three seconds</b>.
+              </p>
+
+              <div className="lede-spec mono">
+                <div className="lede-spec-row">
+                  <span className="k">grounding</span>
+                  <span className="v">7 agents <small>per market</small></span>
+                </div>
+                <div className="lede-spec-row">
+                  <span className="k">citations</span>
+                  <span className="v">id-allowlisted <small>no fabricated sources</small></span>
+                </div>
+                <div className="lede-spec-row">
+                  <span className="k">sources</span>
+                  <span className="v">curated <small>wikipedia banned</small></span>
+                </div>
+                <div className="lede-spec-row">
+                  <span className="k">signature</span>
+                  <span className="v">read-only <small>no spend perms</small></span>
+                </div>
+              </div>
+            </div>
+
+            <div className="cta-row">
+              <button className="btn-primary" onClick={() => setStage('auth-wallets')}>
+                sign in with polymarket
+                <svg className="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75}>
+                  <path d="M6 12 L10 8 L6 4" />
+                </svg>
+              </button>
+              <span className="cta-helper mono">
+                press <kbd>↵</kbd> to continue · <kbd>byok</kbd> for keys
+              </span>
+            </div>
+          </section>
+
+          <section className="manifest-band">
+            <div className="manifest-head">
+              <h2>seven agents,<br /><em>one verdict</em>.</h2>
+              <div className="sub">
+                each runs in parallel against a primary data source. claims roll up
+                to the verdict band. sources stay one keystroke away.
+              </div>
+            </div>
+
+            <div className="manifest-list">
+              {AGENTS.map(([idx, name, desc]) => (
+                <div key={idx} className="manifest-row">
+                  <span className="idx mono">{idx}</span>
+                  <span className="name mono">{name}</span>
+                  <span className="desc">{desc}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <footer className="land-foot mono">
+            <div>© 2026 pm copilot · <b>not financial advice</b></div>
+            <div>built in mono</div>
+            <div className="right">read-only · open source · MIT</div>
+          </footer>
+        </main>
+      </div>
+
+      {/* ============== STAGE 2: wallet picker ============== */}
+      <div className={`lf-stage lf-stage-auth ${stage === 'auth-wallets' || stage === 'auth-paste' ? 'active' : ''}`}>
+        <div className="lf-modal">
+          <div className="lf-modal-head">
+            <div className="auth-mini-logo">
+              <div className="poly-mark">P</div>
+              <span className="swap-arrow">↔</span>
+              <div className="pm-mark">[p]</div>
+            </div>
+            <div className="head-text">
+              <div className="head-title">connect your polymarket wallet</div>
+              <div className="head-sub mono">read-only · we never sign transactions</div>
+            </div>
+            <button className="head-x" onClick={() => setStage('landing')} aria-label="close">✕</button>
+          </div>
+
+          {stage === 'auth-wallets' && (
+            <div className="lf-modal-body">
+              <div className="modal-label mono">choose a wallet</div>
+              <div className="wallet-list">
+                <button className="wallet-row" onClick={() => { setWalletPick('metamask'); setStage('auth-paste'); }}>
+                  <div className="wico mm">M</div>
+                  <div className="wname">
+                    <div className="n">MetaMask</div>
+                    <div className="s mono">browser extension · most polymarket users</div>
+                  </div>
+                  <span className="wstatus">paste address</span>
+                </button>
+                <button className="wallet-row" onClick={() => { setWalletPick('walletconnect'); setStage('auth-paste'); }}>
+                  <div className="wico wc">W</div>
+                  <div className="wname">
+                    <div className="n">WalletConnect</div>
+                    <div className="s mono">scan a qr from your mobile wallet</div>
+                  </div>
+                  <span className="wstatus">paste address</span>
+                </button>
+                <button className="wallet-row" onClick={() => { setWalletPick('coinbase'); setStage('auth-paste'); }}>
+                  <div className="wico cb">C</div>
+                  <div className="wname">
+                    <div className="n">Coinbase Wallet</div>
+                    <div className="s mono">extension or mobile</div>
+                  </div>
+                  <span className="wstatus">paste address</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {stage === 'auth-paste' && (
+            <form className="lf-modal-body" onSubmit={onSubmitAddr}>
+              <div className="modal-label mono">
+                paste your {walletPick === 'metamask' ? 'metamask' : walletPick === 'coinbase' ? 'coinbase' : 'wallet'} address
+              </div>
+              <div className="addr-row">
+                <input
+                  type="text"
+                  className="addr-input mono"
+                  placeholder="0x…"
+                  value={addr}
+                  onChange={(e) => { setAddr(e.target.value); setAddrError(null); }}
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoFocus
+                />
+                <button type="submit" className="addr-submit">continue ↵</button>
+              </div>
+              {addrError && <div className="addr-error mono">{addrError}</div>}
+              <div className="addr-hint mono">
+                we read your polymarket positions read-only. no signing, no spending,
+                no permissions requested.
+              </div>
+              <button type="button" className="addr-back mono" onClick={() => setStage('auth-wallets')}>
+                ← pick a different wallet
+              </button>
+            </form>
+          )}
+
+          <div className="lf-modal-foot mono">
+            <span className="lock">⊙</span>
+            <span>read-only · no spend permissions requested</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ============== STAGE 3: twitter handoff ============== */}
+      <div className={`lf-stage lf-stage-twitter ${stage === 'twitter' ? 'active' : ''}`}>
+        <div className="twitter-card">
+          <div className="progress mono">
+            <span className="dot done" />
+            <span>polymarket</span>
+            <span className="step-name muted">·</span>
+            <span className="dot active" />
+            <span className="step-name">x / twitter</span>
+            <span className="step-name muted">·</span>
+            <span className="dot" />
+            <span>desk</span>
+          </div>
+
+          <h2>one more, link your X handle.</h2>
+
+          <p className="why">
+            pm copilot follows the feeds of <span className="accent">accounts you trust</span>
+            so its news + sentiment agents weight signal vs noise. we read your follow graph
+            and list memberships <span className="accent">once</span>, then never again.
+          </p>
+
+          <form className="x-connect-row" onSubmit={onSubmitHandleForm}>
+            <button type="button" className="btn-x" onClick={() => handleInputRef.current?.focus()}>
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+              connect with X
+            </button>
+
+            <div className="or-divider mono">or paste a handle</div>
+
+            <div className="handle-input-wrap">
+              <span className="at">@</span>
+              <input
+                ref={handleInputRef}
+                className="handle-input"
+                placeholder="vitalikbuterin"
+                autoComplete="off"
+                spellCheck={false}
+                value={handle}
+                onChange={(e) => setHandle(e.target.value)}
+              />
+              <button type="submit" className="handle-submit">continue ↵</button>
+            </div>
+          </form>
+
+          <div className="privacy-note mono">
+            <span className="cit-glyph">⊙</span>
+            <span>
+              <b>scopes:</b> read public profile, follows, lists. no posting, no DMs.
+              revoke anytime from your X settings.
+            </span>
+          </div>
+
+          <div className="skip-row mono">
+            <span>step 2 of 2</span>
+            <button type="button" className="skip-link" onClick={onSkipHandle}>
+              skip for now →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ============== STAGE 4: handoff loader ============== */}
+      <div className={`lf-stage lf-stage-handoff ${stage === 'handoff' ? 'active' : ''}`}>
+        <div className="handoff-card">
+          <div className="ho-spinner" />
+          <div className="ho-line mono">{hoLine}</div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -85,6 +85,14 @@ body, html { height: 100%; overflow: hidden; }
   color: var(--accent, #fbbf24); font-size: 16px; line-height: 1;
 }
 .rail-brand-name { color: inherit; }
+.rail-brand-img {
+  display: block;
+  height: 20px;
+  width: auto;
+  opacity: 0.95;
+  transition: opacity 120ms;
+}
+.rail-brand:hover .rail-brand-img { opacity: 1; }
 .search-box {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px;

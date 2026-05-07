@@ -869,19 +869,19 @@
   border-top: 1px solid var(--border, #262a38) !important;
   background: var(--surface, #12141c) !important;
   padding: 14px 16px 16px !important;
-  display: flex !important;
-  flex-direction: column !important;
+  /* Grid layout so the row split is unambiguous: history fills row 1,
+   * input is row 2 at its natural height. Earlier flex-based version
+   * had the input + chat-history fighting over `margin-top: auto` /
+   * `flex: 1 1 auto`, which on some viewports left empty space between
+   * the message content and the input bar (the user-visible bug). Grid
+   * `1fr auto` says "row 1 takes all leftover space, row 2 is natural"
+   * with no ambiguity, so the history always fills the chat box. */
+  display: grid !important;
+  grid-template-rows: 1fr auto;
   gap: 10px;
-  /* Take all the vertical space the evidence grid + verdict band give
-   * back. Inside this container, history grows to fill and scrolls;
-   * input has a fixed height pinned at the bottom (natural flex flow,
-   * no justify-content trickery — that produced the giant empty-gap bug
-   * because it stacks every child at the bottom regardless of intent).
-   *
-   * min-height pins a usable conversation area even when the user has
-   * dragged the evidence grid tall — without it the chat collapses to
-   * just the input bar and the structured 6-section answer (~480px
-   * worth of content) gets clipped under the input.  */
+  /* The chat takes whatever vertical space the workbench has after the
+   * evidence grid + verdict band. min-height pins a usable area when
+   * the grid is dragged tall. */
   flex: 1 1 auto;
   min-height: 240px;
 }
@@ -889,18 +889,21 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1 1 auto;
+  /* min-height: 0 lets this grid cell shrink below content size so
+   * overflow-y: auto can actually take over and scroll. Without it,
+   * the cell stretches to fit content and the scroll never engages. */
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
 /* Anchor-to-bottom trick: when the conversation is shorter than the
  * history area, this absorbs all leftover vertical space, pushing the
- * messages flush against the input. When it's taller, margin-top: auto
- * resolves to 0 and overflow-y: auto handles scrolling normally. This is
- * the standard pattern Discord/iMessage/Claude-Code use; it sidesteps
- * the `justify-content: flex-end` + overflow-clip anti-pattern that
- * cuts off the top of long conversations.  */
+ * messages flush against the input — no empty gap between content and
+ * the input bar. When the conversation is taller than the area,
+ * margin-top: auto resolves to 0 and overflow-y handles scrolling
+ * normally. This is the standard Discord/iMessage/Claude-Code pattern;
+ * it sidesteps the `justify-content: flex-end` clipping anti-pattern
+ * that cuts off the top of long conversations.  */
 .chat-history > :first-child {
   margin-top: auto;
 }
@@ -988,16 +991,13 @@
   border: 1px solid var(--border, #262a38);
   border-radius: 8px;
   padding: 0 12px;
-  /* Keep the input row at its natural height. */
-  flex: 0 0 auto;
-  /* Push to the bottom of the .chat column container in BOTH states:
-   *   - empty (only the input is rendered): margin-top: auto eats all the
-   *     leftover space above it so the input sits at the bottom
-   *   - with history: chat-history's flex:1 already fills the space, and
-   *     margin-top: auto is a no-op (no leftover space to absorb)
-   * This is the standard chat pattern — input docked at bottom, history
-   * scrolls above. */
-  margin-top: auto;
+  /* Input is row 2 of the chat grid (`grid-template-rows: 1fr auto`)
+   * so it sits at the bottom regardless of whether chat-history is
+   * rendered. Without explicit grid-row, the input would auto-place
+   * into row 1 in the empty state (no messages yet) and float to the
+   * top of the chat box. Pinning to row 2 fixes that — the empty
+   * row 1 (1fr) absorbs the leftover space above it. */
+  grid-row: 2;
   transition: border-color 0.12s;
 }
 .chat-input-row:focus-within {

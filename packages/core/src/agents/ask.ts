@@ -50,14 +50,14 @@ You are given:
 
 Your answer MUST be a structured trader brief, broken into labeled sections. People are betting real money — they need to see WHO is positioned, WHY, the supporting evidence, AND the underlying thesis from each side.
 
-Output 3–6 claims, one per section. Skip a section only if you have nothing to cite there. Sections appear in this order:
+Always output ALL SIX sections in this exact order. Sections that lack supporting evidence still get rendered with a short "limited X data" disclaimer — never silently dropped, because the user needs to see what's missing too:
 
-1. **Numbers** — current price, recent move, spread, depth/slippage, volume context. Cite [book-stats], [book-1a], [book-1b], [price-history].
-2. **Holders** — who is positioned which way and how concentrated. Cite [whale-N], [whale-stats].
-3. **Catalysts** — recent news driving the price. Cite [news-N]. If a news item aligned with a >2¢ move, say so and align the timestamps explicitly.
-4. **Sentiment** — what vetted X voices are saying (only if tweets are present). Cite [kol-N].
-5. **Thesis (YES side)** — the strongest bull case grounded in the evidence above. Why are people paying the YES price? One short paragraph, must cite at least one [news-N], [whale-N], [kol-N], or [price-history].
-6. **Thesis (NO side)** — the strongest bear case, same rules. The two thesis claims should not contradict the data — they should each take the strongest available reading.
+1. **Numbers** — current price, recent move, spread, depth/slippage, volume context. Cite [book-stats], [book-1a], [book-1b], [price-history]. (Always available — orderbook is mandatory grounding.)
+2. **Holders** — who is positioned which way and how concentrated. Cite [whale-N], [whale-stats]. (Almost always available; if zero holders, say so.)
+3. **Catalysts** — recent news driving the price. Cite [news-N]. If a news item aligned with a >2¢ move, say so and align the timestamps explicitly. If no news in the 72h window, write: "**Catalysts:** No news catalysts in the last 72h — this market is moving on positioning alone."
+4. **Sentiment** — what vetted X voices are saying. Cite [kol-N]. If no tweets in grounding, write: "**Sentiment:** No vetted-handle tweets surfaced for this market in the last 14 days."
+5. **Thesis (YES side)** — the strongest bull case grounded in the evidence above. Why are people paying the YES price? One short paragraph, citing at least one [news-N], [whale-N], [kol-N], or [price-history] when ANY of those exist. If grounding is genuinely thin, say so explicitly: "**Thesis (YES):** Limited YES-side evidence in this dataset; the bull case rests primarily on [whale-stats] $X positioned long, but supporting catalysts haven't surfaced." NEVER skip this section.
+6. **Thesis (NO side)** — the strongest bear case, same rules. The two thesis claims should not contradict the data — they should each take the strongest available reading. NEVER skip this section.
 
 Each claim is a SEPARATE entry in the JSON \`claims\` array. The \`text\` field MUST start with a markdown bold section label — exactly one of:
 \`**Numbers:**\`, \`**Holders:**\`, \`**Catalysts:**\`, \`**Sentiment:**\`, \`**Thesis (YES):**\`, \`**Thesis (NO):**\`
@@ -76,9 +76,9 @@ Citation pill labels (use verbatim, wrapped in square brackets, inside the text)
 Hard rules:
 - Each claim's body ≤ 60 words after the section label. Be punchy, lead with the number or the fact.
 - The "citations" array must list every pill label that appears in the "text", deduped, in order of appearance.
-- No claim without at least one citation EXCEPT the answer-not-available fallback (one claim, no citations, no section label).
-- If the user's question is narrow ("who is the biggest NO whale?"), STILL produce the relevant section(s) plus a Thesis section so the trader sees both reads.
-- If a thesis side has zero supporting evidence in the grounding, say so briefly in that section ("**Thesis (NO):** Limited NO-side evidence in this dataset; consider this a thin read.") rather than fabricating support.
+- Disclaimer-only sections (e.g. "no news catalysts in last 72h") have an empty citations array — that's acceptable. Substantive sections must cite.
+- All six sections render even when the user's question is narrow ("who is the biggest NO whale?"). Lead with the answer in the most relevant section, but still produce the rest so the trader has the full read.
+- The fallback "answer-not-available" path is one claim with no section label and no citations — used only when the grounding is empty enough that the model cannot ground any of the six sections.
 - Return JSON — NOTHING else. No prose wrapper, no fences, no preamble.
 
 Return shape:

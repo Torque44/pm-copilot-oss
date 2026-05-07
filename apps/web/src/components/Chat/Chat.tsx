@@ -94,11 +94,23 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
   const history = messages ?? [];
   const historyRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll history to the bottom when new messages or progress streams in.
+  // Auto-scroll history to the bottom whenever the latest message grows
+  // (streaming progress) or a new message arrives. Tracking only
+  // `history.length` missed in-place updates from the SSE stream — once the
+  // AI message landed we never re-scrolled, so the bottom of long sectioned
+  // answers was hidden under the fold. Hashing on length + last content
+  // length is cheap and catches both cases. Use rAF so the DOM has painted
+  // the new content before we measure scrollHeight.
+  const lastLen = history.length;
+  const lastContentLen = history[lastLen - 1]?.content.length ?? 0;
   useEffect(() => {
     const el = historyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [history.length, busy]);
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [lastLen, lastContentLen, busy]);
 
   const send = () => {
     if (busy) return;

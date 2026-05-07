@@ -405,42 +405,42 @@ function buildSectionPlaceholder(
     case 'numbers':
       return {
         claim: {
-          text: `${label} Live orderbook + price-history available in the rail above.`,
+          text: `${label} live orderbook and price history are in the market panel above.`,
           citations: cite('book-stats'),
         },
       };
     case 'holders':
       return {
         claim: {
-          text: `${label} See holders panel for full positioning. Top-5 concentration and side bias surfaced via [whale-stats] when available.`,
+          text: `${label} see the holders panel for full positioning. top-5 concentration and side bias come from [whale-stats] when available.`,
           citations: cite('whale-stats'),
         },
       };
     case 'catalysts':
       return {
         claim: {
-          text: `${label} No catalyst-aligned news in the 72h window — the brief surfaced no items the model cited as price-moving for this run.`,
+          text: `${label} no news catalysts in the last 72h. this market is moving on positioning alone.`,
           citations: [],
         },
       };
     case 'sentiment':
       return {
         claim: {
-          text: `${label} No vetted-handle X posts surfaced for this market in this run. Configure xAI live search in setup, or check the sentiment tab for a deeper sweep.`,
+          text: `${label} no vetted-handle X posts surfaced for this market this run. configure xAI live search in setup, or check the sentiment tab for a deeper sweep.`,
           citations: [],
         },
       };
     case 'thesis-yes':
       return {
         claim: {
-          text: `${label} The bull case wasn't synthesised on this pass — likely because the model judged the YES-side evidence in this run as thin. Re-ask with a narrower YES-focused prompt for a richer read.`,
+          text: `${label} the bull case wasn't synthesised this run. the YES-side evidence in the brief was thin. re-ask with a narrower YES-focused prompt for a sharper read.`,
           citations: [],
         },
       };
     case 'thesis-no':
       return {
         claim: {
-          text: `${label} The bear case wasn't synthesised on this pass — same reason as above for the NO side. A targeted "what would kill the YES thesis?" question gets a sharper answer.`,
+          text: `${label} the bear case wasn't synthesised this run, same reason. a targeted "what would kill the YES thesis" question gets a sharper answer.`,
           citations: [],
         },
       };

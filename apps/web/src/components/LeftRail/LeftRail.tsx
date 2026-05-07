@@ -300,12 +300,13 @@ export function LeftRail({
             aria-label="go home"
           >
             <img
-              src="/brand-wordmark.svg"
-              alt="pm copilot"
+              src="/logo.svg"
+              alt="pm"
               className="rail-brand-img"
-              width={132}
+              width={40}
               height={20}
             />
+            <span className="rail-brand-name">copilot</span>
           </button>
         )}
         <div className="search-box">

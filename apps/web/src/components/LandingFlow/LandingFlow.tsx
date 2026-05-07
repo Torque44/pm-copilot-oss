@@ -49,13 +49,13 @@ const TICKER_ITEMS = [
 ];
 
 const AGENTS = [
-  ['01', 'book.agent', 'streams the polymarket order book; flags thin-side risk and unusual size.'],
-  ['02', 'holders.agent', 'reads the top-250 wallet table; surfaces concentration and recent rotations.'],
-  ['03', 'news.agent', 'indexes weighted feeds against your follow graph; ranks by venue, not engagement.'],
-  ['04', 'sentiment.agent', 'reads vetted X handles only; quotes and time-stamps every claim.'],
-  ['05', 'thesis.agent', 'composes a structured argument tree (supports vs challenges); every leaf cited.'],
-  ['06', 'comparables.agent', 'finds resolved markets with similar shape; surfaces a base rate.'],
-  ['07', 'synthesis.agent', 'aggregates the six above. allowlist filters every citation.'],
+  ['01', 'book.agent', 'reads the polymarket CLOB. mid, spread, depth at ±5¢, slippage for $10k/$50k/$100k.'],
+  ['02', 'holders.agent', 'top wallet table. concentration, side bias, recent rotations.'],
+  ['03', 'news.agent', 'curated source allowlist per category. wikipedia and other user-editable sources hard-banned.'],
+  ['04', 'sentiment.agent', 'vetted X handles only via xAI live search. quotes the actual post and timestamps it.'],
+  ['05', 'thesis.agent', 'causal claim tree. supports vs challenges, kill-thesis pass at the end.'],
+  ['06', 'comparables.agent', 'resolved polymarket markets with similar shape. surfaces a base rate when n ≥ 3.'],
+  ['07', 'synthesis.agent', 'merges the six above behind a citation-id allowlist. invent a citation, get dropped.'],
 ];
 
 export function LandingFlow({
@@ -76,11 +76,11 @@ export function LandingFlow({
   useEffect(() => {
     if (stage !== 'handoff') return;
     const lines = [
-      'priming agents…',
-      'connecting to polymarket gamma…',
-      'wiring citation registry…',
-      'warming the orderbook stream…',
-      'opening the desk…',
+      'priming agents.',
+      'connecting to polymarket gamma.',
+      'wiring the citation registry.',
+      'warming the orderbook stream.',
+      'opening the desk.',
     ];
     let idx = 0;
     setHoLine(lines[0]!);
@@ -133,7 +133,10 @@ export function LandingFlow({
     <div className="lf-root">
       {/* utility bar — quiet status at the top */}
       <div className="lf-util-bar">
-        <span className="brand-mini mono">[pm] copilot</span>
+        <span className="brand-mini mono">
+          <img src="/logo.svg" alt="pm" className="util-logo" width={40} height={20} />
+          <span>copilot</span>
+        </span>
         <span className="sep" />
         <span className="mono">research desk</span>
         <span className="right">
@@ -168,35 +171,37 @@ export function LandingFlow({
             </div>
 
             <h1 className="headline">
-              every claim,<br />
-              <em>cited to</em><br />
-              the <span className="accent">order book</span>.
+              paste a polymarket url.<br />
+              <em>seven agents</em> fan out.<br />
+              every line cites <span className="accent">the source</span>.
             </h1>
 
             <div className="lede-grid">
               <p className="lede-prose">
-                pm copilot is an <b>evidence-first workspace</b> for prediction-market
-                traders. seven agents read the book, holders, news, and X sentiment
-                in parallel, and every line they write links back to a source row
-                you can flash to in <b>under three seconds</b>.
+                most ai-on-pm tools call one llm with a market title and print chat.
+                this one runs the data fan-out first. seven agents read the polymarket
+                clob, top wallets, last 72h of news, vetted X handles, resolved
+                comparables. each one emits claims with citation ids. the synthesis
+                layer drops any id that isn't in upstream evidence, so the model
+                <b> can't invent sources</b>. open source, MIT, BYOK.
               </p>
 
               <div className="lede-spec mono">
                 <div className="lede-spec-row">
-                  <span className="k">grounding</span>
-                  <span className="v">7 agents <small>per market</small></span>
+                  <span className="k">agents</span>
+                  <span className="v">7 <small>per market</small></span>
                 </div>
                 <div className="lede-spec-row">
                   <span className="k">citations</span>
-                  <span className="v">id-allowlisted <small>no fabricated sources</small></span>
+                  <span className="v">id-allowlisted <small>hard-blocked otherwise</small></span>
                 </div>
                 <div className="lede-spec-row">
                   <span className="k">sources</span>
                   <span className="v">curated <small>wikipedia banned</small></span>
                 </div>
                 <div className="lede-spec-row">
-                  <span className="k">signature</span>
-                  <span className="v">read-only <small>no spend perms</small></span>
+                  <span className="k">read-only</span>
+                  <span className="v">no signing <small>no spending</small></span>
                 </div>
               </div>
             </div>
@@ -209,17 +214,19 @@ export function LandingFlow({
                 </svg>
               </button>
               <span className="cta-helper mono">
-                press <kbd>↵</kbd> to continue · <kbd>byok</kbd> for keys
+                press <kbd>↵</kbd> to continue. BYOK keys live encrypted in your browser.
               </span>
             </div>
           </section>
 
           <section className="manifest-band">
             <div className="manifest-head">
-              <h2>seven agents,<br /><em>one verdict</em>.</h2>
+              <h2>seven specialists,<br /><em>not one chat shim</em>.</h2>
               <div className="sub">
-                each runs in parallel against a primary data source. claims roll up
-                to the verdict band. sources stay one keystroke away.
+                most ai-on-pm tools call one llm with a market title and print chat.
+                this one fans out real data first, then writes a brief that's
+                anchored in what actually came back. every claim links to the
+                source row you can flash to.
               </div>
             </div>
 
@@ -235,9 +242,9 @@ export function LandingFlow({
           </section>
 
           <footer className="land-foot mono">
-            <div>© 2026 pm copilot · <b>not financial advice</b></div>
+            <div>© 2026 pm copilot. <b>not financial advice.</b></div>
             <div>built in mono</div>
-            <div className="right">read-only · open source · MIT</div>
+            <div className="right">read-only. MIT. open source.</div>
           </footer>
         </main>
       </div>
@@ -249,11 +256,11 @@ export function LandingFlow({
             <div className="auth-mini-logo">
               <div className="poly-mark">P</div>
               <span className="swap-arrow">↔</span>
-              <div className="pm-mark">[p]</div>
+              <img src="/logo.svg" alt="pm" className="auth-pm-logo" width={40} height={20} />
             </div>
             <div className="head-text">
-              <div className="head-title">connect your polymarket wallet</div>
-              <div className="head-sub mono">read-only · we never sign transactions</div>
+              <div className="head-title">connect your wallet</div>
+              <div className="head-sub mono">read-only. no signing, no spending.</div>
             </div>
             <button className="head-x" onClick={() => setStage('landing')} aria-label="close">✕</button>
           </div>
@@ -321,7 +328,7 @@ export function LandingFlow({
 
           <div className="lf-modal-foot mono">
             <span className="lock">⊙</span>
-            <span>read-only · no spend permissions requested</span>
+            <span>read-only. no spend permissions requested.</span>
           </div>
         </div>
       </div>
@@ -343,9 +350,9 @@ export function LandingFlow({
           <h2>one more, link your X handle.</h2>
 
           <p className="why">
-            pm copilot follows the feeds of <span className="accent">accounts you trust</span>
-            so its news + sentiment agents weight signal vs noise. we read your follow graph
-            and list memberships <span className="accent">once</span>, then never again.
+            the news and sentiment agents weight by <span className="accent">accounts you actually follow</span>.
+            we read your follow graph <span className="accent">once</span>, then never again.
+            skip if you don't trust us yet.
           </p>
 
           <form className="x-connect-row" onSubmit={onSubmitHandleForm}>
@@ -377,7 +384,7 @@ export function LandingFlow({
             <span className="cit-glyph">⊙</span>
             <span>
               <b>scopes:</b> read public profile, follows, lists. no posting, no DMs.
-              revoke anytime from your X settings.
+              revoke anytime from x settings.
             </span>
           </div>
 

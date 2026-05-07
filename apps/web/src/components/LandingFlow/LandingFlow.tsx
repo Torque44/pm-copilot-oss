@@ -24,6 +24,15 @@ import './landing.css';
 
 type Stage = 'landing' | 'auth-wallets' | 'auth-paste' | 'twitter' | 'handoff';
 
+// Minimal shape for EIP-1193 injected wallet providers (window.ethereum).
+// Just enough to call eth_requestAccounts; we don't sign or send tx.
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  isMetaMask?: boolean;
+  isCoinbaseWallet?: boolean;
+  isRabby?: boolean;
+};
+
 export interface LandingFlowProps {
   /** Called once the user has at minimum a wallet address. The hook then
    *  also calls onComplete after the optional X handle step (or skip). */
@@ -67,6 +76,8 @@ export function LandingFlow({
   const [walletPick, setWalletPick] = useState<string | null>(null);
   const [addr, setAddr] = useState('');
   const [addrError, setAddrError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [handle, setHandle] = useState('');
   const handleInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -115,6 +126,58 @@ export function LandingFlow({
     setAddrError(null);
     onConnectWallet(trimmed);
     setStage('twitter');
+  };
+
+  // Browser-injected wallet connect (MetaMask, Coinbase Wallet extension,
+  // Rabby, OKX, Brave). All inject a window.ethereum provider. We don't
+  // sign anything — just request the user's address with eth_requestAccounts.
+  // No SDK, no extra deps; ~0KB bundle cost.
+  const connectInjected = async (which: 'metamask' | 'coinbase' | 'walletconnect') => {
+    setConnectError(null);
+    if (which === 'walletconnect') {
+      // WalletConnect QR flow needs an SDK we haven't bundled. Fall through
+      // to the address-paste step which works for everyone — including
+      // mobile-only users on the Polymarket app, who can copy their
+      // address straight from their profile.
+      setWalletPick('walletconnect');
+      setStage('auth-paste');
+      return;
+    }
+    const eth = (window as Window & { ethereum?: EthereumProvider }).ethereum;
+    if (!eth || typeof eth.request !== 'function') {
+      // No injected wallet available — fall back to paste with a helpful
+      // hint. Common case on mobile browsers without the wallet extension.
+      setConnectError(
+        which === 'metamask'
+          ? 'metamask not detected in this browser. install the extension or paste your address below.'
+          : 'coinbase wallet extension not detected. install it or paste your address below.',
+      );
+      setWalletPick(which);
+      setStage('auth-paste');
+      return;
+    }
+    setConnecting(which);
+    try {
+      const accounts = await eth.request({ method: 'eth_requestAccounts' });
+      if (!Array.isArray(accounts) || accounts.length === 0) {
+        throw new Error('no account returned by wallet');
+      }
+      const first = accounts[0];
+      if (typeof first !== 'string' || !isPlausibleEvmAddress(first)) {
+        throw new Error('wallet returned an unexpected address shape');
+      }
+      onConnectWallet(first);
+      setStage('twitter');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // User rejected the request (MetaMask code 4001) or any other error
+      // — drop to paste with the message visible.
+      setConnectError(`connect failed: ${msg.slice(0, 140)}. try pasting your address instead.`);
+      setWalletPick(which);
+      setStage('auth-paste');
+    } finally {
+      setConnecting(null);
+    }
   };
 
   const onSubmitHandleForm = (e: FormEvent) => {
@@ -269,31 +332,53 @@ export function LandingFlow({
             <div className="lf-modal-body">
               <div className="modal-label mono">choose a wallet</div>
               <div className="wallet-list">
-                <button className="wallet-row" onClick={() => { setWalletPick('metamask'); setStage('auth-paste'); }}>
+                <button
+                  type="button"
+                  className="wallet-row"
+                  onClick={() => { void connectInjected('metamask'); }}
+                  disabled={connecting !== null}
+                >
                   <div className="wico mm">M</div>
                   <div className="wname">
                     <div className="n">MetaMask</div>
-                    <div className="s mono">browser extension · most polymarket users</div>
+                    <div className="s mono">browser extension. most polymarket users.</div>
                   </div>
-                  <span className="wstatus">paste address</span>
+                  <span className="wstatus">
+                    {connecting === 'metamask' ? 'connecting…' : 'connect'}
+                  </span>
                 </button>
-                <button className="wallet-row" onClick={() => { setWalletPick('walletconnect'); setStage('auth-paste'); }}>
+                <button
+                  type="button"
+                  className="wallet-row"
+                  onClick={() => { void connectInjected('walletconnect'); }}
+                  disabled={connecting !== null}
+                >
                   <div className="wico wc">W</div>
                   <div className="wname">
                     <div className="n">WalletConnect</div>
-                    <div className="s mono">scan a qr from your mobile wallet</div>
+                    <div className="s mono">paste address from your mobile wallet</div>
                   </div>
-                  <span className="wstatus">paste address</span>
+                  <span className="wstatus">paste</span>
                 </button>
-                <button className="wallet-row" onClick={() => { setWalletPick('coinbase'); setStage('auth-paste'); }}>
+                <button
+                  type="button"
+                  className="wallet-row"
+                  onClick={() => { void connectInjected('coinbase'); }}
+                  disabled={connecting !== null}
+                >
                   <div className="wico cb">C</div>
                   <div className="wname">
                     <div className="n">Coinbase Wallet</div>
-                    <div className="s mono">extension or mobile</div>
+                    <div className="s mono">extension. injects into the same path as metamask.</div>
                   </div>
-                  <span className="wstatus">paste address</span>
+                  <span className="wstatus">
+                    {connecting === 'coinbase' ? 'connecting…' : 'connect'}
+                  </span>
                 </button>
               </div>
+              {connectError && (
+                <div className="addr-error mono" style={{ marginTop: 12 }}>{connectError}</div>
+              )}
             </div>
           )}
 
@@ -302,6 +387,9 @@ export function LandingFlow({
               <div className="modal-label mono">
                 paste your {walletPick === 'metamask' ? 'metamask' : walletPick === 'coinbase' ? 'coinbase' : 'wallet'} address
               </div>
+              {connectError && (
+                <div className="addr-error mono" style={{ marginBottom: 8 }}>{connectError}</div>
+              )}
               <div className="addr-row">
                 <input
                   type="text"
@@ -320,7 +408,7 @@ export function LandingFlow({
                 we read your polymarket positions read-only. no signing, no spending,
                 no permissions requested.
               </div>
-              <button type="button" className="addr-back mono" onClick={() => setStage('auth-wallets')}>
+              <button type="button" className="addr-back mono" onClick={() => { setConnectError(null); setStage('auth-wallets'); }}>
                 ← pick a different wallet
               </button>
             </form>

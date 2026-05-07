@@ -1,12 +1,14 @@
 // useAuth — minimal session state for the landing → desk flow.
 //
 // What this stores:
-//   - `wallet`  — a Polymarket wallet address (0x...) the user pasted or
-//     resolved through a wallet connector. Used downstream to load
-//     positions in the right rail.
-//   - `xHandle` — the user's X / Twitter handle (no @). Optional. Powers
-//     the news + sentiment agents' "weight by accounts you trust" logic
-//     once that lands.
+//   - `wallet`           — a Polymarket wallet address (0x...) the user
+//     pasted, signed in via window.ethereum, or otherwise provided.
+//   - `xHandle`          — the user's X / Twitter handle (no @). Optional.
+//   - `onboardingComplete` — separate gate flag that flips ONLY after the
+//     user finishes the full landing → wallet → twitter → handoff flow
+//     OR explicitly skips the twitter step. Without this flag, App.tsx
+//     would unmount LandingFlow the moment a wallet was set, which
+//     skipped the Twitter step entirely (the bug the user hit).
 //
 // What this is NOT:
 //   - Real cryptographic auth. There's no signed challenge, no JWT, no
@@ -14,12 +16,6 @@
 //     identifier to load wallet-keyed Polymarket data and to bias the
 //     news weighting. Any user "claims" any wallet they want; if it's
 //     not theirs they just see someone else's positions, no harm done.
-//   - A wallet SDK. We sidestep MetaMask / WalletConnect / Coinbase SDKs
-//     here so the bundle stays small and there's no chain-rpc dependency.
-//     The "Sign in with Polymarket" button in LandingFlow shows the same
-//     three wallet rows as the design; clicking any row opens an address-
-//     paste step. Real wallet detection can be wired later behind the
-//     same useAuth interface — only the landing component needs to know.
 //
 // Persistence: localStorage, namespaced under `pm-copilot:auth:*`. Cleared
 // by signOut(). Reads are synchronous so the App can gate its first paint
@@ -29,27 +25,39 @@ import { useCallback, useEffect, useState } from 'react';
 
 const KEY_WALLET = 'pm-copilot:auth:wallet';
 const KEY_HANDLE = 'pm-copilot:auth:x-handle';
+const KEY_ONBOARDED = 'pm-copilot:auth:onboarded';
 
 export type AuthState = {
   wallet: string | null;
   xHandle: string | null;
+  onboardingComplete: boolean;
 };
 
 function readState(): AuthState {
-  if (typeof window === 'undefined') return { wallet: null, xHandle: null };
+  if (typeof window === 'undefined') {
+    return { wallet: null, xHandle: null, onboardingComplete: false };
+  }
   return {
     wallet: window.localStorage.getItem(KEY_WALLET),
     xHandle: window.localStorage.getItem(KEY_HANDLE),
+    onboardingComplete: window.localStorage.getItem(KEY_ONBOARDED) === '1',
   };
 }
 
 export type UseAuthResult = {
-  /** True when at least a wallet is connected. xHandle is optional. */
+  /** True when wallet is set AND the user finished the onboarding flow.
+   *  Both gates must be true before App.tsx renders the workbench, so
+   *  the LandingFlow can keep mounted through wallet → twitter → handoff
+   *  instead of unmounting the moment a wallet is recorded. */
   signedIn: boolean;
   wallet: string | null;
   xHandle: string | null;
+  onboardingComplete: boolean;
   setWallet: (addr: string) => void;
   setXHandle: (handle: string | null) => void;
+  /** Called by LandingFlow after the handoff loader finishes. Flips the
+   *  gate so the next App render shows the desk. */
+  completeOnboarding: () => void;
   signOut: () => void;
 };
 
@@ -68,7 +76,7 @@ export function useAuth(): UseAuthResult {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onStorage = (e: StorageEvent) => {
-      if (e.key === KEY_WALLET || e.key === KEY_HANDLE) {
+      if (e.key === KEY_WALLET || e.key === KEY_HANDLE || e.key === KEY_ONBOARDED) {
         setState(readState());
       }
     };
@@ -94,18 +102,26 @@ export function useAuth(): UseAuthResult {
     setState((s) => ({ ...s, xHandle: cleaned }));
   }, []);
 
+  const completeOnboarding = useCallback(() => {
+    window.localStorage.setItem(KEY_ONBOARDED, '1');
+    setState((s) => ({ ...s, onboardingComplete: true }));
+  }, []);
+
   const signOut = useCallback(() => {
     window.localStorage.removeItem(KEY_WALLET);
     window.localStorage.removeItem(KEY_HANDLE);
-    setState({ wallet: null, xHandle: null });
+    window.localStorage.removeItem(KEY_ONBOARDED);
+    setState({ wallet: null, xHandle: null, onboardingComplete: false });
   }, []);
 
   return {
-    signedIn: !!state.wallet,
+    signedIn: !!state.wallet && state.onboardingComplete,
     wallet: state.wallet,
     xHandle: state.xHandle,
+    onboardingComplete: state.onboardingComplete,
     setWallet,
     setXHandle,
+    completeOnboarding,
     signOut,
   };
 }

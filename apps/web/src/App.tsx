@@ -582,18 +582,17 @@ export function App() {
     );
   }
 
-  // Auth gate. The desk is read-only but we still want a wallet on file
-  // so the right-rail positions tab and any wallet-keyed analytics have
-  // something to work with. The LandingFlow handles the multi-step
-  // onboarding (wallet picker → address paste → optional X handle →
-  // handoff loader). Once `auth.signedIn` flips true, this branch falls
-  // through and the workbench renders normally on the next pass.
+  // Auth gate. signedIn = wallet set AND onboardingComplete. The
+  // separate onboardingComplete flag keeps LandingFlow mounted across
+  // all 4 stages (landing → wallet → twitter → handoff). Without it,
+  // setting the wallet in stage 2 would immediately flip the gate and
+  // unmount the flow, skipping the Twitter screen entirely.
   if (!auth.signedIn) {
     return (
       <LandingFlow
         onConnectWallet={(addr) => auth.setWallet(addr)}
         onSubmitHandle={(h) => auth.setXHandle(h)}
-        onHandoffComplete={() => { /* no-op — gate already flipped */ }}
+        onHandoffComplete={() => auth.completeOnboarding()}
       />
     );
   }

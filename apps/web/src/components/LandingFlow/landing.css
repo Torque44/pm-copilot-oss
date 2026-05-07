@@ -170,7 +170,16 @@ h1.headline .accent { color: var(--citation); }
   color: var(--text);
   margin: 0;
 }
-.lede-prose b { font-weight: 500; }
+.lede-prose b { font-weight: 500; color: var(--text); }
+.lede-prose code {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--citation);
+  background: var(--citation-12, rgba(34, 211, 238, 0.12));
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin: 0 1px;
+}
 .lede-spec {
   display: flex;
   flex-direction: column;
@@ -243,6 +252,68 @@ h1.headline .accent { color: var(--citation); }
   margin: 0 2px;
 }
 
+/* contract band — explains the citation pipeline in 4 numbered steps,
+   sits between hero and manifest. concrete > abstract: it names the
+   citation ids the user will actually see ([book-1a], [whale-3] etc.) */
+.contract-band {
+  padding-top: 64px;
+  padding-bottom: 80px;
+  border-top: 1px solid var(--border);
+}
+.contract-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 32px;
+}
+.contract-head .num { color: var(--text); font-weight: 600; }
+.contract-head .rule { flex: 1; height: 1px; background: var(--border); margin: 0 4px; }
+.contract-head .meta { letter-spacing: 0.06em; }
+
+.contract-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 48px;
+}
+.contract-steps li {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 18px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+  align-items: baseline;
+}
+.contract-steps .step-num {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: -0.02em;
+}
+.contract-steps .step-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.contract-steps code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--citation);
+  background: var(--citation-12, rgba(34, 211, 238, 0.12));
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin: 0 1px;
+}
+@media (max-width: 720px) {
+  .contract-steps { grid-template-columns: 1fr; gap: 0; }
+}
+
 /* manifest band */
 .manifest-band {
   padding-top: 64px;
@@ -290,7 +361,7 @@ h1.headline .accent { color: var(--citation); }
 }
 .manifest-row {
   display: grid;
-  grid-template-columns: 56px 200px 1fr;
+  grid-template-columns: 56px 180px 130px 1fr;
   gap: 24px;
   align-items: baseline;
   padding: 16px 0;
@@ -303,13 +374,27 @@ h1.headline .accent { color: var(--citation); }
   letter-spacing: 0.08em;
 }
 .manifest-row .name {
-  color: var(--citation);
+  color: var(--text);
   font-size: 12px;
   font-weight: 500;
 }
+.manifest-row .pill {
+  color: var(--citation);
+  background: var(--citation-12, rgba(34, 211, 238, 0.12));
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  justify-self: start;
+  letter-spacing: 0;
+}
 .manifest-row .desc {
-  color: var(--text);
+  color: var(--text-muted);
   line-height: 1.55;
+}
+@media (max-width: 720px) {
+  .manifest-row { grid-template-columns: 32px 1fr; gap: 12px; }
+  .manifest-row .pill { grid-column: 2 / -1; }
+  .manifest-row .desc { grid-column: 2 / -1; }
 }
 
 .land-foot {

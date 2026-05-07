@@ -57,14 +57,14 @@ const TICKER_ITEMS = [
   { name: 'sora public release', price: '0.58', delta: '+0.07', dir: 'up' },
 ];
 
-const AGENTS = [
-  ['01', 'book.agent', 'reads the polymarket CLOB. mid, spread, depth at ±5¢, slippage for $10k/$50k/$100k.'],
-  ['02', 'holders.agent', 'top wallet table. concentration, side bias, recent rotations.'],
-  ['03', 'news.agent', 'curated source allowlist per category. wikipedia and other user-editable sources hard-banned.'],
-  ['04', 'sentiment.agent', 'vetted X handles only via xAI live search. quotes the actual post and timestamps it.'],
-  ['05', 'thesis.agent', 'causal claim tree. supports vs challenges, kill-thesis pass at the end.'],
-  ['06', 'comparables.agent', 'resolved polymarket markets with similar shape. surfaces a base rate when n ≥ 3.'],
-  ['07', 'synthesis.agent', 'merges the six above behind a citation-id allowlist. invent a citation, get dropped.'],
+const AGENTS: Array<[string, string, string, string]> = [
+  ['01', 'book.agent', '[book-1a]', 'polymarket CLOB. mid, spread, depth at ±5¢, slippage for $10k/$50k/$100k.'],
+  ['02', 'holders.agent', '[whale-3]', 'top wallet table. concentration, side bias, recent rotations.'],
+  ['03', 'news.agent', '[news-7]', '72h news from a per-category allowlist. wikipedia, medium, reddit hard-banned.'],
+  ['04', 'sentiment.agent', '[kol-2]', 'vetted X handles only via xAI live search. quotes the post, stamps the time.'],
+  ['05', 'thesis.agent', '[thesis]', 'causal claim tree. supports vs challenges, kill-thesis pass.'],
+  ['06', 'comparables.agent', '[comp-4]', 'resolved polymarket markets with similar shape. base rate when n ≥ 3.'],
+  ['07', 'synthesis.agent', '∅ allowlist', 'merges the six. drops any cite id not in upstream evidence.'],
 ];
 
 export function LandingFlow({
@@ -234,37 +234,45 @@ export function LandingFlow({
             </div>
 
             <h1 className="headline">
-              paste a polymarket url.<br />
-              <em>seven agents</em> fan out.<br />
-              every line cites <span className="accent">the source</span>.
+              the AI on most pm tools<br />
+              <em>makes up</em> citations.<br />
+              <span className="accent">this one</span> can't.
             </h1>
 
             <div className="lede-grid">
               <p className="lede-prose">
-                most ai-on-pm tools call one llm with a market title and print chat.
-                this one runs the data fan-out first. seven agents read the polymarket
-                clob, top wallets, last 72h of news, vetted X handles, resolved
-                comparables. each one emits claims with citation ids. the synthesis
-                layer drops any id that isn't in upstream evidence, so the model
-                <b> can't invent sources</b>. open source, MIT, BYOK.
+                paste any polymarket market or event url. seven specialists fan
+                out in parallel: <b>orderbook depth</b>, <b>top wallet rotations</b>,
+                <b> news from a curated allowlist</b> (wikipedia, medium, reddit,
+                substack are banned by hostname because user-editable sources can
+                be doctored mid-trade), <b>vetted X handles</b>, <b>resolved
+                comparables</b> for base rates. each agent emits claims tagged
+                with citation ids like <code>[whale-3]</code> or <code>[news-7]</code>.
+                the synthesis layer can only cite ids the upstream agents
+                actually emitted. invent one, the system drops it. <b>the
+                contract is enforced in code, not by prompt instruction.</b>
               </p>
 
               <div className="lede-spec mono">
                 <div className="lede-spec-row">
-                  <span className="k">agents</span>
-                  <span className="v">7 <small>per market</small></span>
+                  <span className="k">fan-out</span>
+                  <span className="v">7 specialists <small>parallel</small></span>
                 </div>
                 <div className="lede-spec-row">
                   <span className="k">citations</span>
-                  <span className="v">id-allowlisted <small>hard-blocked otherwise</small></span>
+                  <span className="v">id-allowlisted <small>at synthesis</small></span>
                 </div>
                 <div className="lede-spec-row">
-                  <span className="k">sources</span>
-                  <span className="v">curated <small>wikipedia banned</small></span>
+                  <span className="k">denylist</span>
+                  <span className="v">wikipedia <small>+ medium + reddit + substack</small></span>
                 </div>
                 <div className="lede-spec-row">
                   <span className="k">read-only</span>
                   <span className="v">no signing <small>no spending</small></span>
+                </div>
+                <div className="lede-spec-row">
+                  <span className="k">license</span>
+                  <span className="v">MIT <small>fork it</small></span>
                 </div>
               </div>
             </div>
@@ -282,22 +290,65 @@ export function LandingFlow({
             </div>
           </section>
 
+          <section className="contract-band">
+            <div className="contract-head mono">
+              <span className="num">02</span>
+              <span>the contract</span>
+              <span className="rule" />
+              <span className="meta">enforced in code, not by prompt</span>
+            </div>
+            <ol className="contract-steps">
+              <li>
+                <span className="step-num mono">01</span>
+                <span className="step-body">
+                  seven specialists fan out in parallel against real
+                  data sources. one llm call per agent, never one llm
+                  for the whole brief.
+                </span>
+              </li>
+              <li>
+                <span className="step-num mono">02</span>
+                <span className="step-body">
+                  each agent emits structured claims tagged with citation
+                  ids it can prove: <code>[book-1a]</code>, <code>[whale-3]</code>,
+                  <code> [news-7]</code>, <code>[kol-2]</code>, <code>[comp-4]</code>.
+                </span>
+              </li>
+              <li>
+                <span className="step-num mono">03</span>
+                <span className="step-body">
+                  synthesis merges the six and runs every cite id through
+                  an allowlist of ids upstream agents actually produced.
+                  unknown ids get stripped from text and citations array.
+                </span>
+              </li>
+              <li>
+                <span className="step-num mono">04</span>
+                <span className="step-body">
+                  the brief renders with cyan citation pills. click any
+                  pill, the matching source row flashes in the rail in
+                  under a second. answer to evidence in one keystroke.
+                </span>
+              </li>
+            </ol>
+          </section>
+
           <section className="manifest-band">
             <div className="manifest-head">
-              <h2>seven specialists,<br /><em>not one chat shim</em>.</h2>
+              <h2>seven agents,<br /><em>one brief</em>.</h2>
               <div className="sub">
-                each agent runs in parallel against its own data source. claims
-                fan in to the verdict band. click any <code>[news-3]</code> or
-                <code> [whale-7]</code> pill in the answer and the matching
-                source row flashes in the rail. sources stay one keystroke away.
+                six specialists pull live data in parallel. a seventh merges
+                them through the citation allowlist. each agent owns its own
+                source, scope, and pill prefix.
               </div>
             </div>
 
             <div className="manifest-list">
-              {AGENTS.map(([idx, name, desc]) => (
+              {AGENTS.map(([idx, name, pill, desc]) => (
                 <div key={idx} className="manifest-row">
                   <span className="idx mono">{idx}</span>
                   <span className="name mono">{name}</span>
+                  <span className="pill mono">{pill}</span>
                   <span className="desc">{desc}</span>
                 </div>
               ))}

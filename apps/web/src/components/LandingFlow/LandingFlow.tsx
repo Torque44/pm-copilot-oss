@@ -270,10 +270,6 @@ export function LandingFlow({
                   <span className="k">read-only</span>
                   <span className="v">no signing <small>no spending</small></span>
                 </div>
-                <div className="lede-spec-row">
-                  <span className="k">license</span>
-                  <span className="v">MIT <small>fork it</small></span>
-                </div>
               </div>
             </div>
 

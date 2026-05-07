@@ -270,6 +270,126 @@ function canonPillId(raw: string): string {
     .toLowerCase();
 }
 
+// ---------- Section enforcement helpers ----------
+// The Chat UI renders one block per claim, keyed off the markdown bold
+// section label at the start of each claim's text. We enforce a fixed set
+// of sections in canonical order so every answer is shaped consistently.
+
+type CanonSection =
+  | 'numbers'
+  | 'holders'
+  | 'catalysts'
+  | 'sentiment'
+  | 'thesis-yes'
+  | 'thesis-no';
+
+const SECTION_ORDER: CanonSection[] = [
+  'numbers',
+  'holders',
+  'catalysts',
+  'sentiment',
+  'thesis-yes',
+  'thesis-no',
+];
+
+// Matches `**Section name:**` at the START of a claim. Captures the label.
+const SECTION_LABEL_RX = /^\*\*([^*]+?):\*\*\s*/;
+
+/** Map a free-text section label (model output) to a canonical key. Lenient
+ *  on capitalisation, parens, and punctuation so "Thesis (Yes)", "thesis yes",
+ *  and "THESIS-YES" all collapse to 'thesis-yes'. */
+function canonicalSection(raw: string): CanonSection | null {
+  const norm = raw.toLowerCase().trim();
+  if (norm.startsWith('number')) return 'numbers';
+  if (norm.startsWith('holder')) return 'holders';
+  if (norm.startsWith('catalyst')) return 'catalysts';
+  if (norm.startsWith('sentiment')) return 'sentiment';
+  if (norm.includes('thesis') && norm.includes('yes')) return 'thesis-yes';
+  if (norm.includes('thesis') && norm.includes('no')) return 'thesis-no';
+  if (norm === 'thesis') return 'thesis-yes'; // ambiguous → bull case by default
+  return null;
+}
+
+/** Pretty label used in the placeholder text. Matches what the Chat UI
+ *  expects (`**Numbers:** body`, `**Thesis (YES):** body`, etc.). */
+function sectionLabel(s: CanonSection): string {
+  switch (s) {
+    case 'numbers': return '**Numbers:**';
+    case 'holders': return '**Holders:**';
+    case 'catalysts': return '**Catalysts:**';
+    case 'sentiment': return '**Sentiment:**';
+    case 'thesis-yes': return '**Thesis (YES):**';
+    case 'thesis-no': return '**Thesis (NO):**';
+  }
+}
+
+/** Position of a claim in the canonical order, for sort. Unrecognised
+ *  claims sort to the end. */
+function orderOf(c: Claim): number {
+  const m = c.text.match(SECTION_LABEL_RX);
+  if (!m) return SECTION_ORDER.length + 1;
+  const canon = canonicalSection(m[1]!.trim());
+  if (!canon) return SECTION_ORDER.length + 1;
+  return SECTION_ORDER.indexOf(canon);
+}
+
+/** Build a labeled disclaimer claim for a section the model dropped. We
+ *  cite stats pills when they're available in the registry so the
+ *  placeholder still has something for the trader to inspect; if not,
+ *  the citations array is empty (which the UI permits for disclaimer
+ *  rows specifically — substantive sections still must cite). */
+function buildSectionPlaceholder(
+  sec: CanonSection,
+  registry: Map<string, Citation>,
+): { claim: Claim } {
+  const label = sectionLabel(sec);
+  const cite = (id: string): string[] => (registry.has(id) ? [id] : []);
+  switch (sec) {
+    case 'numbers':
+      return {
+        claim: {
+          text: `${label} Live orderbook + price-history available in the rail above.`,
+          citations: cite('book-stats'),
+        },
+      };
+    case 'holders':
+      return {
+        claim: {
+          text: `${label} See holders panel for full positioning. Top-5 concentration and side bias surfaced via [whale-stats] when available.`,
+          citations: cite('whale-stats'),
+        },
+      };
+    case 'catalysts':
+      return {
+        claim: {
+          text: `${label} No catalyst-aligned news in the 72h window — the brief surfaced no items the model cited as price-moving for this run.`,
+          citations: [],
+        },
+      };
+    case 'sentiment':
+      return {
+        claim: {
+          text: `${label} No vetted-handle X posts surfaced for this market in this run. Configure xAI live search in setup, or check the sentiment tab for a deeper sweep.`,
+          citations: [],
+        },
+      };
+    case 'thesis-yes':
+      return {
+        claim: {
+          text: `${label} The bull case wasn't synthesised on this pass — likely because the model judged the YES-side evidence in this run as thin. Re-ask with a narrower YES-focused prompt for a richer read.`,
+          citations: [],
+        },
+      };
+    case 'thesis-no':
+      return {
+        claim: {
+          text: `${label} The bear case wasn't synthesised on this pass — same reason as above for the NO side. A targeted "what would kill the YES thesis?" question gets a sharper answer.`,
+          citations: [],
+        },
+      };
+  }
+}
+
 /**
  * Fast-path: deterministic answers for the most common demo questions.
  * These never call the LLM, so they CANNOT time out. Returns null if the
@@ -457,6 +577,52 @@ Respond ONLY with the JSON object described in the system prompt.`;
       text: `Answer unavailable: ${res.error ?? 'LLM call failed'}.`,
       citations: [],
     });
+  }
+
+  // Section-completeness pass: even with the SYS prompt requiring all six
+  // sections, the model regularly drops 2-4 of them when grounding for that
+  // section is thin (no recent news → no Catalysts; no tweets → no Sentiment;
+  // narrow question → no Thesis). That makes the answer feel half-finished
+  // and — worse — a question like "what's the sentiment?" can come back
+  // without a Sentiment section, which is unacceptable.
+  //
+  // We enforce the contract in code: detect which sections the model
+  // returned and inject a labeled placeholder claim for any missing ones,
+  // in canonical order. The model's own claims keep their original order
+  // among themselves; placeholders fill the gaps. The fallback path
+  // (single un-sectioned claim, e.g. "Answer unavailable: …") is left
+  // alone — that's a different shape and the user shouldn't see fake
+  // sections wrapping a parse error.
+  const isFallback = claims.length === 1 && !SECTION_LABEL_RX.test(claims[0]!.text);
+  if (!isFallback) {
+    const present = new Set<CanonSection>();
+    for (const c of claims) {
+      const m = c.text.match(SECTION_LABEL_RX);
+      if (m) {
+        const canon = canonicalSection(m[1]!.trim());
+        if (canon) present.add(canon);
+      }
+    }
+    const missing = SECTION_ORDER.filter((s) => !present.has(s));
+    if (missing.length > 0) {
+      // Build placeholders. We can supply a citation for two of them when
+      // the upstream registry has the relevant data (book-stats for
+      // Numbers, whale-stats for Holders) so the disclaimer still has at
+      // least one anchored pill.
+      for (const sec of missing) {
+        const placeholder = buildSectionPlaceholder(sec, registry);
+        claims.push(placeholder.claim);
+        for (const cid of placeholder.claim.citations) {
+          const cit = registry.get(cid);
+          if (cit && !usedCitations.has(cid)) usedCitations.set(cid, cit);
+        }
+      }
+      // Re-sort claims by canonical section order so Numbers always comes
+      // first, Thesis (NO) always last. Claims without a recognised label
+      // (shouldn't exist after this pass, but be defensive) sort to the
+      // end in their original order.
+      claims.sort((a, b) => orderOf(a) - orderOf(b));
+    }
   }
 
   const answer: AskAnswer = {

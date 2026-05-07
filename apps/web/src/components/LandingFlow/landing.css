@@ -76,11 +76,25 @@
   height: 100%;
   white-space: nowrap;
   padding-left: 100%;
-  animation: lf-tick 80s linear infinite;
+  /* 45s feels live without inducing motion sickness. The track loop
+   * is `[items, items]`, so 45s means a single cycle of items takes
+   * ~22s to traverse the viewport — fast enough that you see fresh
+   * content every glance, slow enough to read. */
+  animation: lf-tick 45s linear infinite;
   font-size: 11px;
 }
 .lf-ticker-item { display: inline-flex; gap: 8px; align-items: baseline; }
 .lf-ticker-item .name { color: var(--text-muted); }
+/* outcome chip — renders for multi-outcome events ("hungary pm: orbán")
+ * so users can tell which candidate the price belongs to. Cyan citation
+ * styling keeps the visual language consistent with the rest of the app. */
+.lf-ticker-item .outcome {
+  color: var(--citation);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--citation-12, rgba(34, 211, 238, 0.12));
+}
 .lf-ticker-item .price { color: var(--text); font-feature-settings: 'tnum' 1; }
 /* color by direction so the strip visually groups: cyan-leaning YES,
  * red-leaning NO, neutral middle. uses YES/NO semantics not up/down so

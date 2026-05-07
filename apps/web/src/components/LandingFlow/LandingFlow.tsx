@@ -46,13 +46,41 @@ export interface LandingFlowProps {
   onHandoffComplete: () => void;
 }
 
-// Stub ticker — only used until the live /api/events fetches return.
-// Once real markets land we render those instead.
-type TickerItem = { name: string; price: string; vol: string; dir: 'up' | 'down' | 'flat' };
+// Live ticker pulls from /api/events on mount. We pre-render with a
+// stale-while-revalidate cache from localStorage so the strip is never
+// empty — second-and-later visits see the last good fetch instantly,
+// then swap in the new data when the network returns.
+type TickerItem = {
+  /** Truncated event title, lowercase. */
+  name: string;
+  /** Candidate / outcome label when the event has > 2 outcomes; null
+   *  for binary markets where the title already contains the question. */
+  outcome: string | null;
+  /** YES probability for the leading outcome, 2 decimals. */
+  price: string;
+  /** Pre-formatted 24h volume (e.g. "$2.1m" or "$340k"). May be empty. */
+  vol: string;
+  /** YES > 0.55 = up, < 0.45 = down, middle = flat. Drives price color. */
+  dir: 'up' | 'down' | 'flat';
+};
 
-const STUB_TICKER: TickerItem[] = [
-  { name: 'loading polymarket…', price: '—', vol: '', dir: 'flat' },
+// Curated baseline shown on first paint until the fetch returns. These
+// are evergreen markets that are usually live; even if the real fetch
+// fails entirely the strip stays meaningful instead of empty. Numbers
+// are illustrative — the live fetch overwrites them within a second.
+const FALLBACK_TICKER: TickerItem[] = [
+  { name: 'btc all-time high in 2026', outcome: null, price: '0.78', vol: '$2.4m', dir: 'up' },
+  { name: 'fed cuts rates by july', outcome: null, price: '0.42', vol: '$1.1m', dir: 'flat' },
+  { name: 'recession in 2026', outcome: null, price: '0.21', vol: '$680k', dir: 'down' },
+  { name: '2028 dem nominee', outcome: 'newsom', price: '0.31', vol: '$910k', dir: 'flat' },
+  { name: 'tsmc 2nm yields by q2', outcome: null, price: '0.61', vol: '$240k', dir: 'up' },
+  { name: 'ucl winner 2025-26', outcome: 'real madrid', price: '0.27', vol: '$1.6m', dir: 'down' },
+  { name: 'nba mvp 2026', outcome: 'jokic', price: '0.45', vol: '$540k', dir: 'flat' },
+  { name: 'iran-us deal by year end', outcome: null, price: '0.17', vol: '$320k', dir: 'down' },
 ];
+
+const TICKER_CACHE_KEY = 'pm-copilot:ticker-cache:v2';
+const TICKER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Categories we sample for the ticker. Mixed so the strip doesn't feel like
 // a single-vertical scroll — politics + crypto + sports + geopolitics is
@@ -66,6 +94,11 @@ function shortTitle(s: string): string {
   return t.length > 36 ? t.slice(0, 35) + '…' : t;
 }
 
+function shortLabel(s: string): string {
+  const t = s.trim().toLowerCase();
+  return t.length > 18 ? t.slice(0, 17) + '…' : t;
+}
+
 function fmtVol(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v) || v <= 0) return '';
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}m`;
@@ -73,14 +106,80 @@ function fmtVol(v: number | null | undefined): string {
   return `$${Math.round(v)}`;
 }
 
+/** Read cached ticker items if present and not stale. Returns null on
+ *  miss or parse error. Lets repeat visitors see real markets instantly
+ *  while the network refresh runs in the background. */
+function readTickerCache(): TickerItem[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(TICKER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { savedAt?: number; items?: TickerItem[] };
+    if (!parsed || typeof parsed.savedAt !== 'number') return null;
+    if (Date.now() - parsed.savedAt > TICKER_CACHE_TTL_MS) return null;
+    if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
+    return parsed.items;
+  } catch {
+    return null;
+  }
+}
+
+function writeTickerCache(items: TickerItem[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      TICKER_CACHE_KEY,
+      JSON.stringify({ savedAt: Date.now(), items }),
+    );
+  } catch {
+    // quota / storage disabled — fine, we just don't cache this run
+  }
+}
+
 // Light type for the /api/events response shape we actually consume here.
 type ApiEventsResponse = {
   events?: Array<{
     title?: string;
     volume24hr?: number;
+    isMultiOutcome?: boolean;
     outcomes?: Array<{ label?: string; yes?: number; volume24hr?: number }>;
   }>;
 };
+
+/** Pull a TickerItem out of one event. Returns null if the event has no
+ *  outcome with a meaningful YES price (we treat anything ≤ 0.01 as
+ *  effectively zero — those are dead candidates in multi-outcome races
+ *  and rendering them as "0.00" makes the ticker look broken). */
+function eventToTickerItem(ev: ApiEventsResponse['events'] extends (infer T)[] | undefined ? T : never): TickerItem | null {
+  if (!ev || !ev.title) return null;
+  const outcomes = Array.isArray(ev.outcomes) ? ev.outcomes : [];
+  // Pick the highest-YES outcome with a real price. Filter out 0% / sub-1%
+  // candidates so multi-outcome events show the actual leader, not a
+  // dead candidate listed first.
+  const ranked = outcomes
+    .filter((o) => typeof o.yes === 'number' && o.yes > 0.01)
+    .sort((a, b) => (b.yes as number) - (a.yes as number));
+  const top = ranked[0];
+  if (!top || typeof top.yes !== 'number') return null;
+  const price = top.yes.toFixed(2);
+  const vol = fmtVol(ev.volume24hr ?? top.volume24hr ?? null);
+  const dir: 'up' | 'down' | 'flat' =
+    top.yes >= 0.55 ? 'up' : top.yes <= 0.45 ? 'down' : 'flat';
+  // Outcome label: only show for genuine multi-outcome events. Binary
+  // markets have a label like "Yes" / "No" / outcome=question, which is
+  // redundant with the title.
+  const isBinary = outcomes.length <= 2 || ev.isMultiOutcome === false;
+  const lbl = top.label ? top.label.trim() : '';
+  const showOutcome =
+    !isBinary && lbl !== '' && !/^yes$/i.test(lbl) && !/^no$/i.test(lbl);
+  return {
+    name: shortTitle(ev.title),
+    outcome: showOutcome ? shortLabel(lbl) : null,
+    price,
+    vol,
+    dir,
+  };
+}
 
 const AGENTS: Array<[string, string, string, string]> = [
   ['01', 'book.agent', '[book-1a]', 'polymarket CLOB. mid, spread, depth at ±5¢, slippage for $10k/$50k/$100k.'],
@@ -105,55 +204,64 @@ export function LandingFlow({
   const [connectError, setConnectError] = useState<string | null>(null);
   const [handle, setHandle] = useState('');
   const handleInputRef = useRef<HTMLInputElement | null>(null);
-  const [tickerItems, setTickerItems] = useState<TickerItem[]>(STUB_TICKER);
+  // Lazy-init from cache so repeat visitors see real markets on first
+  // paint. New visitors see the curated FALLBACK_TICKER until the network
+  // returns (usually <1s on a warm server cache).
+  const [tickerItems, setTickerItems] = useState<TickerItem[]>(
+    () => readTickerCache() ?? FALLBACK_TICKER,
+  );
 
-  // Fetch trending Polymarket markets for the ticker. We hit /api/events
-  // (the same endpoint the LeftRail uses) for a few categories in parallel,
-  // pick the highest-volume event from each, and render the top outcome.
-  // Cached server-side so this is cheap. Fails silently — if the network
-  // is dead we keep the "loading…" stub which is still readable.
+  // Fetch trending Polymarket markets for the ticker. Same /api/events
+  // endpoint the LeftRail uses, so the server-side cache is shared and
+  // warm. Each category fires in parallel and we render whichever comes
+  // back first instead of waiting for all four — the ticker updates
+  // incrementally as data lands, no perceptible "loading" state.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const fetches = TICKER_CATEGORIES.map(async (cat) => {
-          const r = await fetch(`/api/events?category=${cat}&limit=8&mode=contested`);
-          if (!r.ok) return [];
-          const j = (await r.json()) as ApiEventsResponse;
-          return Array.isArray(j.events) ? j.events : [];
-        });
-        const lists = await Promise.all(fetches);
-        if (cancelled) return;
+    const collected: Array<Array<NonNullable<ApiEventsResponse['events']>[number]>> = [];
 
-        const items: TickerItem[] = [];
-        // Round-robin across categories so the ticker doesn't show six
-        // crypto markets in a row even if crypto has the highest volumes.
-        const maxLen = Math.max(...lists.map((l) => l.length), 0);
-        for (let i = 0; i < maxLen && items.length < 16; i++) {
-          for (const list of lists) {
-            const ev = list[i];
-            if (!ev || !ev.title) continue;
-            const top = ev.outcomes?.find((o) => typeof o.yes === 'number');
-            if (!top || typeof top.yes !== 'number') continue;
-            const price = top.yes.toFixed(2);
-            const vol = fmtVol(ev.volume24hr ?? top.volume24hr);
-            // Heuristic dir: > 0.55 trending YES, < 0.45 trending NO,
-            // middle = flat. Not a real delta but adds visual variety
-            // matching the original ticker's column shape. Real delta
-            // would need price-history per market — too expensive for
-            // a marketing strip.
-            const dir: 'up' | 'down' | 'flat' =
-              top.yes >= 0.55 ? 'up' : top.yes <= 0.45 ? 'down' : 'flat';
-            items.push({ name: shortTitle(ev.title), price, vol, dir });
-            if (items.length >= 16) break;
+    TICKER_CATEGORIES.forEach((cat, idx) => {
+      // Each category fetches independently and updates state as soon as
+      // it lands. This makes the ticker FEEL instant: by the time the
+      // user's eye moves from the headline to the strip, real markets
+      // have already swapped in. Round-robin merge runs on every update.
+      collected[idx] = [];
+      void (async () => {
+        try {
+          const r = await fetch(`/api/events?category=${cat}&limit=8&mode=contested`);
+          if (!r.ok || cancelled) return;
+          const j = (await r.json()) as ApiEventsResponse;
+          collected[idx] = Array.isArray(j.events) ? j.events : [];
+          if (cancelled) return;
+
+          // Round-robin merge. By selecting the leader from each category
+          // before moving to the second-place market, the strip always
+          // surfaces the most-traded event from each vertical, even when
+          // one category dominates by volume.
+          const items: TickerItem[] = [];
+          const maxLen = Math.max(...collected.map((l) => l.length), 0);
+          for (let i = 0; i < maxLen && items.length < 16; i++) {
+            for (const list of collected) {
+              const ev = list[i];
+              if (!ev) continue;
+              const item = eventToTickerItem(ev);
+              if (!item) continue;
+              items.push(item);
+              if (items.length >= 16) break;
+            }
           }
+          if (items.length > 0) {
+            setTickerItems(items);
+            writeTickerCache(items);
+          }
+        } catch {
+          // network/json failure — keep whatever items already landed
+          // (or the fallback). No toast, no error UI: the strip is
+          // marketing decoration, not a blocking state.
         }
-        if (items.length > 0) setTickerItems(items);
-      } catch {
-        // network/json failure — keep the stub; the rest of the page
-        // is unaffected, no toast needed.
-      }
-    })();
+      })();
+    });
+
     return () => { cancelled = true; };
   }, []);
 
@@ -291,6 +399,7 @@ export function LandingFlow({
           {[...tickerItems, ...tickerItems].map((it, i) => (
             <span key={i} className="lf-ticker-item mono">
               <span className="name">{it.name}</span>
+              {it.outcome && <span className="outcome">{it.outcome}</span>}
               <span className={`price ${it.dir}`}>{it.price}</span>
               {it.vol && <span className="vol">{it.vol}</span>}
               <span className="sep-pipe">|</span>

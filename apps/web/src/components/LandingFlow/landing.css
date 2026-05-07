@@ -75,12 +75,23 @@
   align-items: center;
   height: 100%;
   white-space: nowrap;
-  padding-left: 100%;
-  /* 45s feels live without inducing motion sickness. The track loop
-   * is `[items, items]`, so 45s means a single cycle of items takes
-   * ~22s to traverse the viewport — fast enough that you see fresh
-   * content every glance, slow enough to read. */
-  animation: lf-tick 45s linear infinite;
+  /* Seamless marquee: the React component renders the items list THREE
+   * TIMES in a row. The animation slides the track left by exactly
+   * 1/3 of its width — at which point the second copy of the items has
+   * moved into where the first copy started. Snapping back to 0%
+   * therefore produces no visible jump. No padding-left: that creates
+   * the viewport-width gap users were seeing.
+   *
+   * Why 3x and not 2x: when the total items are short (a category
+   * fetched empty) two copies might not exceed the viewport width and
+   * you'd see dead space mid-loop. Three copies is the cheapest hedge
+   * that guarantees the strip is always longer than the screen.
+   *
+   * Speed: 60s per full cycle of one copy traversing the viewport.
+   * The animation runs the track at 1/3 width per 60s effectively,
+   * so a single market scrolls past in ~20s — fast enough to feel
+   * live, slow enough to read. */
+  animation: lf-tick 60s linear infinite;
   font-size: 11px;
 }
 .lf-ticker-item { display: inline-flex; gap: 8px; align-items: baseline; }
@@ -104,7 +115,13 @@
 .lf-ticker-item .price.flat { color: var(--text); }
 .lf-ticker-item .vol { color: var(--text-muted); font-feature-settings: 'tnum' 1; font-size: 10px; }
 .lf-ticker-item .sep-pipe { color: var(--border-strong); }
-@keyframes lf-tick { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+/* Slide one third of the track. Track = [items, items, items], so -33.333%
+ * lands exactly one copy further along. Loop snap is invisible because
+ * the second copy is identical to the first. */
+@keyframes lf-tick {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-33.333%, 0, 0); }
+}
 
 /* stage primitive */
 .lf-stage {

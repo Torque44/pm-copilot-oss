@@ -402,11 +402,14 @@ export function LandingFlow({
         </span>
       </div>
 
-      {/* ticker tape — rolling horizontally. Markets are real, pulled
-          from /api/events for politics+crypto+sports+geopolitics. */}
+      {/* ticker tape — seamless rolling marquee. Items are rendered three
+          times in the track; the CSS animation translates by -33.333%
+          per cycle so the loop snap is invisible (second copy is now
+          where the first copy started). Markets pulled from /api/events
+          for politics+crypto+sports+geopolitics. */}
       <div className="lf-ticker">
         <div className="lf-ticker-track">
-          {[...tickerItems, ...tickerItems].map((it, i) => (
+          {[...tickerItems, ...tickerItems, ...tickerItems].map((it, i) => (
             <span key={i} className="lf-ticker-item mono">
               <span className="name">{it.name}</span>
               {it.outcome && <span className="outcome">{it.outcome}</span>}

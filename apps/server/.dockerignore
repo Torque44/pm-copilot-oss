@@ -1,0 +1,23 @@
+# Skip everything Docker doesn't need to see during build. Smaller build
+# context = faster `docker build` and smaller image.
+
+node_modules/
+**/node_modules/
+.cache/
+**/.cache/
+dist/
+**/dist/
+
+# Build artefacts + logs from local dev
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Frontend build — the backend image doesn't serve the SPA in the
+# cf-azure split (Cloudflare Pages does that).
+apps/web/
+
+# Plans + design docs aren't needed in the runtime image.
+.claude/
+docs/

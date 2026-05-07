@@ -26,7 +26,6 @@ import {
   getEventsListHandler,
   getEventByIdHandler,
 } from './routes/markets.js';
-import { eventsHandler } from './routes/events.js';
 import { loadSnapshot, installShutdownHooks, flush } from './persist.js';
 import { hydrate as hydrateCache, clear as clearCache } from './cache.js';
 import { hydrate as hydrateGrounding } from './groundingStore.js';
@@ -94,7 +93,10 @@ async function main() {
   app.post('/api/ask', askHandler);
   app.get('/api/events', getEventsListHandler);
   app.get('/api/event', getEventByIdHandler);
-  app.get('/api/event-stream', eventsHandler);
+
+  // /api/event-stream (long-lived SSE relay) was removed in the
+  // cf-azure-rewrite. The deploy story doesn't include long-lived
+  // streams and no client surface consumed it.
 
   // ---- Admin: force flush + clear caches ----
   app.post('/api/admin/flush', async (req, res) => {

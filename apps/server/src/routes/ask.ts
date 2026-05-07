@@ -1,9 +1,14 @@
-// POST /api/ask  — ASKB-style streaming Q&A grounded in the loaded market.
-// Body: { marketId: string, question: string }
-// Response: SSE of AskEvent
+// POST /api/ask  — ASKB-style Q&A grounded in the loaded market.
+// Body:     { market: MarketMeta, question: string }
+// Response: { events: AskEvent[], complete: boolean }
+//
+// History note: this route used to stream Server-Sent Events as the agents
+// progressed. The cf-azure-rewrite (May 2026) dropped SSE in favour of a
+// single synchronous JSON response. The supervisor still does the same
+// work — it just emits into an in-memory array now and we return the array
+// in one HTTP response.
 
 import type { Request, Response } from 'express';
-import { openSse } from '@pm-copilot/core/sse';
 import { runAsk, type AskEvent } from '@pm-copilot/core/agents/ask';
 import { readGrounding, rememberGrounding } from '../groundingStore.js';
 import { runMarketAgent } from '@pm-copilot/core/agents/market';
@@ -11,6 +16,15 @@ import { runHoldersAgent } from '@pm-copilot/core/agents/holders';
 import { runNewsAgent } from '@pm-copilot/core/agents/news';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import type { MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent } from '@pm-copilot/core';
+
+/** Response shape returned by POST /api/ask. The client iterates the
+ *  events to build the chat message; an `ask:done` envelope holds the
+ *  final structured answer (sections + citations). `complete: false`
+ *  means the run errored partway through. */
+export type AskResponse = {
+  events: AskEvent[];
+  complete: boolean;
+};
 
 /** Validate the body's market shape just enough to trust it for grounding fetches. */
 function parseMarket(body: unknown): MarketMeta | null {
@@ -82,9 +96,13 @@ export async function askHandler(req: Request, res: Response) {
     return;
   }
 
-  const sse = openSse(res);
-  const emit = (ev: AskEvent) => sse.send(ev);
+  // Collect every emitted event into an array. The final ask:done envelope
+  // (or ask:error if it failed) holds the structured answer the client
+  // renders in the chat panel.
+  const events: AskEvent[] = [];
+  const emit = (ev: AskEvent) => { events.push(ev); };
 
+  let complete = true;
   try {
     const grounding = await ensureGrounding(market, emit);
     // Pull in the bundled stub tweets so questions about "vetted X handles
@@ -100,8 +118,10 @@ export async function askHandler(req: Request, res: Response) {
     await runAsk(market, { ...grounding, tweets }, question, emit);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';
-    sse.send({ t: 'ask:error', error: msg, elapsedMs: 0 });
-  } finally {
-    sse.close();
+    events.push({ t: 'ask:error', error: msg, elapsedMs: 0 });
+    complete = false;
   }
+
+  const body: AskResponse = { events, complete };
+  res.json(body);
 }

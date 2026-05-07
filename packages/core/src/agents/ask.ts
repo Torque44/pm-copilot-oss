@@ -346,7 +346,9 @@ function orderOf(c: Claim): number {
  *  Bare punctuation, JSON syntax fragments, and quote characters are
  *  cleaned up so the body reads as prose.
  */
-function salvageSectionedClaims(
+// Exported for unit tests (`packages/core/src/agents/ask.test.ts`).
+// Internal callers within ask.ts treat this as a private helper.
+export function salvageSectionedClaims(
   raw: string,
   registry: Map<string, Citation>,
 ): Claim[] {

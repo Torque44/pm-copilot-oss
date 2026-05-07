@@ -1,0 +1,33 @@
+# Railway service config for the pm-copilot backend.
+#
+# Frontend (apps/web) deploys separately to Cloudflare Pages — Railway only
+# hosts the Express + agent supervisor service from apps/server/.
+#
+# What lives here:
+#   - Build config: use the existing Dockerfile at apps/server/Dockerfile
+#   - Health check + restart policy
+#   - Single replica (anthropic-cc OAuth state is per-instance, can't horizontally scale)
+#
+# What lives in the Railway dashboard / CLI (NOT in this file):
+#   - Volume attachment (5 GB, mount path /var/data)
+#   - Environment variables (CACHE_DIR, BRIEF_CACHE_TTL_MS, CORS_ORIGIN, optional API keys)
+#   - GitHub branch tracking (auto-deploy on push to cf-azure-rewrite, then main after merge)
+#
+# See docs/RAILWAY_DEPLOY.md for the full setup runbook.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/server/Dockerfile"
+
+[deploy]
+# /api/health returns 200 with { ok: true, ... } when the server is up.
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+
+# Restart on crash but don't loop forever — five attempts gives transient
+# upstream failures a fair shot before the deploy is marked failed.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Single replica — see file header comment.
+numReplicas = 1

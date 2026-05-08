@@ -592,11 +592,18 @@ export function App() {
   // setting the wallet in stage 2 would immediately flip the gate and
   // unmount the flow, skipping the Twitter screen entirely.
   if (!auth.signedIn) {
+    // Pass the auth functions directly (they're already useCallback'd
+    // inside useAuth, so the references are stable across renders).
+    // Earlier this site had inline arrows, which created a fresh function
+    // every App render — LandingFlow's handoff useEffect deps included
+    // `onHandoffComplete`, so each parent re-render was clearing +
+    // restarting the 700ms interval, leaving the user stuck on
+    // "priming agents." indefinitely.
     return (
       <LandingFlow
-        onConnectWallet={(addr) => auth.setWallet(addr)}
-        onSubmitHandle={(h) => auth.setXHandle(h)}
-        onHandoffComplete={() => auth.completeOnboarding()}
+        onConnectWallet={auth.setWallet}
+        onSubmitHandle={auth.setXHandle}
+        onHandoffComplete={auth.completeOnboarding}
       />
     );
   }

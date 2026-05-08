@@ -1,4 +1,4 @@
-# pm-copilot
+# Pm-copilot
 
 > Open-source grounded research desk for prediction-market traders.
 > Multi-venue, multi-LLM, MCP-pluggable.

@@ -25,15 +25,29 @@ RUN corepack enable && \
 # Copy the workspace manifests first so Docker can cache the deps layer.
 # Each subsequent code change only re-runs the COPY of source + install
 # of any new deps, not the whole dependency graph.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
 
 RUN pnpm install --frozen-lockfile
 
 # Now bring in the actual source.
 COPY apps/server/ apps/server/
+COPY apps/web/ apps/web/
 COPY packages/core/ packages/core/
+
+# Build the React bundle so apps/server serves it from the same origin.
+# VITE_API_BASE is intentionally unset — the web client falls back to
+# relative `/api/...` paths, which point at this same container.
+#
+# We invoke `vite build` directly instead of `pnpm -F @pm-copilot/web
+# build` (which is `tsc -b && vite build`). The TS pre-check step blows
+# up on type drift between vite@5 (pulled transitively by vitest) and
+# vite@6 (pinned by the web app) — a workspace-deps quirk that doesn't
+# affect the actual bundle. Type-checking runs in CI separately; the
+# prod image only needs the artifact.
+RUN pnpm -F @pm-copilot/web exec vite build
 
 # Defaults. The runtime host (Render / Railway / Azure / etc.) overrides
 # PORT via its own env. CACHE_DIR points at the persistent volume mount;

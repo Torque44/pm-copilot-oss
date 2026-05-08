@@ -9,8 +9,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./agents": "./src/agents/index.ts",
+    "./agents/*": "./src/agents/*.ts",
     "./providers": "./src/providers/index.ts",
+    "./providers/*": "./src/providers/*.ts",
     "./mcp": "./src/mcp/registry.ts",
+    "./mcp/loaders/*": "./src/mcp/loaders/*.ts",
     "./feeds/polymarket": "./src/feeds/polymarket.ts",
     "./types": "./src/types.ts",
     "./sse": "./src/sse.ts"

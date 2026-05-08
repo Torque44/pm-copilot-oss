@@ -2,17 +2,20 @@
 // GET /api/brief?marketId=<gamma market id>     → brief a specific market
 // GET /api/brief?marketId=...&force=1           → ignore cache, re-run agents
 //
-// Returns a JSON response containing the full event log from the supervisor
-// run. Clients reduce the event array into a BriefShape via the same reducer
-// they used during the SSE era (apps/web/src/hooks/useBrief.ts:reduce).
+// Streams the supervisor's event log as NDJSON: one JSON envelope per line,
+// `Content-Type: application/x-ndjson`. The market envelope ships within ~2s
+// of the request, then each agent event flushes as soon as the supervisor
+// emits it, then a final `brief:complete` envelope. Clients incrementally
+// reduce the stream into a BriefShape via the same reducer they used during
+// the SSE era (apps/web/src/hooks/useBrief.ts:reduce).
 //
-// History note: this route used to stream Server-Sent Events as agents
-// completed. The cf-azure-rewrite (May 2026) dropped SSE because (a) the
-// brief isn't usable until synthesis completes anyway, so progressive
-// streaming was visual filler, and (b) it constrained the deploy story —
-// every host had to handle long-lived event streams. The supervisor still
-// runs the seven agents in parallel server-side; we just collect every
-// emitted event into an array here and return it in one HTTP response.
+// History note: this route used to stream Server-Sent Events. The cf-azure
+// rewrite (May 2026) replaced it with a synchronous JSON response, but the
+// resulting "20s blank screen on cold load" was unshippable for a public
+// demo. NDJSON gets the streaming UX back without re-introducing the
+// EventSource / heartbeat / `data:` framing of SSE — it's just a normal
+// HTTP response whose body happens to be one JSON document per line, which
+// every host (Azure Container Apps, Render, Fly, Railway) handles natively.
 
 import type { Request, Response } from 'express';
 import {
@@ -31,20 +34,11 @@ import { getCached, startRecording, type BriefEnvelope } from '../briefStore.js'
 
 const MARKET_TTL_MS = 5 * 60 * 1000;
 
-/** Response shape returned by GET /api/brief. The client iterates events
- *  through its existing reducer (`apps/web/src/hooks/useBrief.ts:reduce`)
- *  to build the BriefShape it renders. `complete: true` means the
- *  supervisor finished cleanly; `false` means it crashed or timed out
- *  and the events array contains a partial run plus an error envelope. */
-export type BriefResponse = {
-  /** Full event log: market envelope + per-agent start/done/error +
-   *  brief:section / cite / brief:complete envelopes. */
-  events: BriefEnvelope[];
-  /** True if the brief finished without an error envelope. */
-  complete: boolean;
-  /** When the response was cached vs freshly run. Present on cache hit. */
-  cache?: { source: 'memory'; ageMs: number };
-};
+/** Cache-meta envelope written as the very first NDJSON line on a cache HIT
+ *  so the client knows the stream came from the in-memory store rather than
+ *  a fresh supervisor run. */
+type CacheEnvelope = { t: 'cache'; source: 'memory'; ageMs: number };
+type StreamEnvelope = BriefEnvelope | CacheEnvelope;
 
 function parseCategory(raw: unknown): Category {
   const v = String(raw ?? '');
@@ -101,20 +95,32 @@ export async function briefHandler(req: Request, res: Response) {
   const category = parseCategory(req.query.category);
   const force = req.query.force === '1' || req.query.force === 'true';
 
+  // Set up the NDJSON streaming response. Each emit becomes one JSON line.
+  // X-Accel-Buffering=no disables nginx buffering if a proxy is in front
+  // (Azure Container Apps' ingress is fine without it but we set it
+  // defensively for any future deploy target).
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const writeLine = (env: StreamEnvelope) => {
+    if (res.writableEnded) return;
+    res.write(JSON.stringify(env) + '\n');
+  };
+
   // Fast path: if we already have a recent, complete brief for this marketId,
-  // return the stored event log instead of re-running the agent pipeline.
+  // stream the stored event log instead of re-running the agent pipeline.
+  // Cache hits feel instantaneous (one TCP round trip's worth of writes).
   if (marketId && !force) {
     const cachedBrief = getCached(marketId);
     if (cachedBrief) {
       const ageMs = Date.now() - cachedBrief.savedAt;
       const ageS = Math.round(ageMs / 1000);
       console.info(`[brief] cache HIT ${marketId} (age ${ageS}s, ${cachedBrief.events.length} events)`);
-      const body: BriefResponse = {
-        events: cachedBrief.events,
-        complete: true,
-        cache: { source: 'memory', ageMs },
-      };
-      res.json(body);
+      writeLine({ t: 'cache', source: 'memory', ageMs });
+      for (const ev of cachedBrief.events) writeLine(ev);
+      res.end();
       return;
     }
     console.info(`[brief] cache MISS ${marketId} — running fresh`);
@@ -128,38 +134,34 @@ export async function briefHandler(req: Request, res: Response) {
       ? await resolveMarketById(marketId)
       : await resolveTopMarket(category);
   } catch (err: unknown) {
-    res.status(500).json({
-      events: [{ t: 'error', error: `resolveMarket failed: ${errMsg(err)}` } as BriefEnvelope],
-      complete: false,
-    } satisfies BriefResponse);
+    writeLine({ t: 'error', error: `resolveMarket failed: ${errMsg(err)}` });
+    res.end();
     return;
   }
   if (!market) {
-    res.status(404).json({
-      events: [{
-        t: 'error',
-        error: marketId ? `market ${marketId} not found` : `no active ${category} market found`,
-      } as BriefEnvelope],
-      complete: false,
-    } satisfies BriefResponse);
+    writeLine({
+      t: 'error',
+      error: marketId ? `market ${marketId} not found` : `no active ${category} market found`,
+    });
+    res.end();
     return;
   }
 
-  // Collect every event the supervisor emits into a single array. We also
-  // record each event into the per-market brief store so the next request
-  // for this market gets the cache HIT path above.
+  // Stream the market envelope immediately — this is the key UX win. The
+  // client renders the market panel (title, prices, end date, criteria) at
+  // ~2s while the supervisor's seven agents run for the next ~13s. No more
+  // 20s blank screen.
   const record = startRecording(market.marketId);
-  const events: BriefEnvelope[] = [];
   const marketEv: BriefEnvelope = { t: 'market', market };
   record(marketEv);
-  events.push(marketEv);
+  writeLine(marketEv);
 
+  // Hook supervisor emit → record (for cache) + writeLine (for the wire).
   const emit = (ev: AgentEvent) => {
     record(ev);
-    events.push(ev);
+    writeLine(ev);
   };
 
-  let complete = true;
   try {
     // Per HANDOFF.md §Task C: build per-agent provider routing from BYOK
     // headers (or env-var fallbacks) and thread it through the supervisor.
@@ -173,12 +175,10 @@ export async function briefHandler(req: Request, res: Response) {
   } catch (err: unknown) {
     const errEv: BriefEnvelope = { t: 'error', error: errMsg(err) || 'supervisor crashed' };
     record(errEv);
-    events.push(errEv);
-    complete = false;
+    writeLine(errEv);
   }
 
-  const body: BriefResponse = { events, complete };
-  res.json(body);
+  res.end();
 }
 
 function errMsg(err: unknown): string {

@@ -6,7 +6,7 @@
 // plus a couple of meta envelopes ('market', 'cache'). We tolerate the
 // superset and only key on `t`.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type {
   AgentStatus,
   BookRow,
@@ -21,7 +21,7 @@ import type {
   Market,
   NewsItem,
 } from '../types';
-import { apiJSON } from '../lib/client';
+import { apiFetch } from '../lib/client';
 import { formatRelativeDuration, fmtMoney } from '../lib/format';
 
 // Keys we track for agent status. The supervisor today emits market/holders/
@@ -378,41 +378,75 @@ function reduce(events: BriefEventLike[]): BriefShape {
   };
 }
 
-/** Lifecycle state for a brief fetch. Maps roughly to the old SSE
- *  states but folded into a simpler shape since there's no more
- *  long-lived stream — just a single GET that runs ~30-60s. */
+/** Lifecycle state for a brief fetch. 'loading' starts the moment the
+ *  request fires and stays until the supervisor emits brief:complete.
+ *  Streaming is in-band: each NDJSON line we read updates `brief`
+ *  incrementally, so the UI fills in as agents finish. */
 export type BriefLoadState = 'idle' | 'loading' | 'ready' | 'error';
-
-/** Server response shape for GET /api/brief. The server constructs this
- *  by collecting every supervisor event into an array; the client runs
- *  the same `reduce()` reducer it always did to turn the array into a
- *  BriefShape. Mirrors `BriefResponse` in apps/server/src/routes/brief.ts. */
-type BriefApiResponse = {
-  events: BriefEventLike[];
-  complete: boolean;
-  cache?: { source: string; ageMs: number };
-};
 
 const EMPTY_BRIEF: BriefShape = reduce([]);
 
 export type UseBriefResult = {
   brief: BriefShape;
-  /** Replaces the old `sseState`. 'loading' covers the entire ~30-60s
-   *  fetch since there's no progressive streaming anymore. */
+  /** 'loading' until the stream produces a brief:complete envelope. The
+   *  brief object updates incrementally during loading — the right rail
+   *  watches `brief.agents` and the workbench watches `brief.sections`. */
   loadState: BriefLoadState;
-  /** Surface any error from the fetch path (network / non-200). */
+  /** Surface any error from the fetch path (network / non-200 / supervisor). */
   error: string | null;
-  /** Force a refetch (the equivalent of the old `reconnect`). Useful
-   *  for the "retry" affordance in the workbench panel. */
+  /** Force a refetch — useful for the workbench retry affordance. */
   reconnect: () => void;
 };
+
+/** Pump an NDJSON ReadableStream of BriefEventLike envelopes through the
+ *  reducer, calling `onUpdate` after each line so React can re-render the
+ *  shape as it grows. Returns the final array of events for terminal-state
+ *  classification (was `brief:complete` seen? was there an error envelope?). */
+async function readNdjsonStream(
+  stream: ReadableStream<Uint8Array>,
+  onEvent: (events: BriefEventLike[]) => void,
+  isCancelled: () => boolean,
+): Promise<BriefEventLike[]> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const events: BriefEventLike[] = [];
+  let buffer = '';
+
+  const tryParse = (line: string) => {
+    if (!line) return;
+    try {
+      const env = JSON.parse(line) as BriefEventLike;
+      events.push(env);
+      onEvent(events);
+    } catch {
+      // Tolerate partial / malformed lines. The supervisor never emits
+      // partial JSON — this branch only fires if a network proxy mangled
+      // the stream, in which case we'd rather drop the line than crash.
+    }
+  };
+
+  while (!isCancelled()) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      tryParse(line);
+    }
+  }
+  // Flush any trailing partial line that didn't end in '\n' (rare but
+  // possible if the server crashed mid-write).
+  if (buffer.trim()) tryParse(buffer.trim());
+  return events;
+}
 
 export function useBrief(marketId: string | null): UseBriefResult {
   const [brief, setBrief] = useState<BriefShape>(EMPTY_BRIEF);
   const [loadState, setLoadState] = useState<BriefLoadState>('idle');
   const [error, setError] = useState<string | null>(null);
-  // Bumping `nonce` triggers a refetch via the effect below. Same role
-  // the SSE hook's reconnect-counter played.
+  // Bumping `nonce` triggers a refetch via the effect below.
   const [nonce, setNonce] = useState(0);
 
   const reconnect = useCallback(() => {
@@ -428,36 +462,69 @@ export function useBrief(marketId: string | null): UseBriefResult {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setBrief(EMPTY_BRIEF);
     setLoadState('loading');
     setError(null);
 
     (async () => {
       try {
-        const res = await apiJSON<BriefApiResponse>(
+        const res = await apiFetch(
           `/api/brief?marketId=${encodeURIComponent(marketId)}`,
+          { signal: controller.signal },
         );
         if (cancelled) return;
-        const events = Array.isArray(res.events) ? res.events : [];
-        setBrief(reduce(events));
-        setLoadState(res.complete ? 'ready' : 'error');
-        if (!res.complete) {
-          // Surface the first error envelope's message if the server
-          // marked this run incomplete.
-          const errEv = events.find((e) => (e as { t?: string }).t === 'error') as
-            | { t: 'error'; error?: string }
-            | undefined;
-          setError(errEv?.error ?? 'brief did not complete');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        }
+        if (!res.body) {
+          throw new Error('brief response had no body');
+        }
+
+        const events = await readNdjsonStream(
+          res.body,
+          (evts) => {
+            if (cancelled) return;
+            // Re-run the reducer over the accumulated events. n is small
+            // (~20-50 envelopes per brief) so the O(n²) total cost is
+            // negligible and the reducer stays pure / replayable.
+            setBrief(reduce(evts));
+          },
+          () => cancelled,
+        );
+
+        if (cancelled) return;
+        const completeEv = events.find(
+          (e) => (e as { t?: string }).t === 'brief:complete',
+        );
+        const errorEv = events.find(
+          (e) => (e as { t?: string }).t === 'error',
+        ) as { error?: string } | undefined;
+
+        if (completeEv) {
+          setLoadState('ready');
+        } else if (errorEv) {
+          setLoadState('error');
+          setError(errorEv.error ?? 'brief did not complete');
+        } else {
+          setLoadState('error');
+          setError('brief stream ended without completion');
         }
       } catch (err) {
         if (cancelled) return;
+        // AbortError fires on unmount / nonce-bump and is expected — don't
+        // surface it to the user as a real failure.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
         setLoadState('error');
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [marketId, nonce]);
 
   return { brief, loadState, error, reconnect };

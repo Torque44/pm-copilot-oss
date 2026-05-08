@@ -202,39 +202,46 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
     evidenceClaimSummary: upstreamSummary,
   };
   const thesisProvider = routing?.primary ?? null;
-  const thesisR = await runOne('thesis', () =>
+
+  // ---- Wave 2: thesis + synthesis run in parallel ----
+  // Synthesis only consumes market/holders/news section outputs from Wave 1
+  // (see runSynthesis call below — no thesis input). Thesis only consumes the
+  // merged Wave 1 citations. Neither depends on the other, so we fan them out
+  // together and shave ~5s off the cold-load wall-clock.
+  const synthStart = Date.now();
+  const thesisP = runOne('thesis', () =>
     runThesisAgent(ctx, thesisProvider, thesisInput),
   );
-
-  // ---- Synthesis ----
-  const synthStart = Date.now();
-  try {
-    const synth = await runSynthesis(
-      {
-        market,
-        market_section: marketR.output,
-        holders_section: holdersR.output,
-        news_section: newsR.output,
-      },
-      ctx,
-      primaryProvider,
-    );
-    emit({
-      t: 'agent:done',
-      agent: 'synthesis',
-      elapsedMs: synth.elapsedMs,
-      output: synth.output,
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'synthesis failed';
-    emit({
-      t: 'agent:error',
-      agent: 'synthesis',
-      error: msg,
-      elapsedMs: Date.now() - synthStart,
-    });
-    emit({ t: 'error', error: msg });
-  }
+  const synthesisP = (async () => {
+    try {
+      const synth = await runSynthesis(
+        {
+          market,
+          market_section: marketR.output,
+          holders_section: holdersR.output,
+          news_section: newsR.output,
+        },
+        ctx,
+        primaryProvider,
+      );
+      emit({
+        t: 'agent:done',
+        agent: 'synthesis',
+        elapsedMs: synth.elapsedMs,
+        output: synth.output,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'synthesis failed';
+      emit({
+        t: 'agent:error',
+        agent: 'synthesis',
+        error: msg,
+        elapsedMs: Date.now() - synthStart,
+      });
+      emit({ t: 'error', error: msg });
+    }
+  })();
+  const [thesisR] = await Promise.all([thesisP, synthesisP]);
 
   // Thesis result is emitted via runOne above; nothing else to do.
   void thesisR;

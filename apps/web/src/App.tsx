@@ -466,17 +466,32 @@ export function App() {
   // (stored as `pm-copilot:setup-skipped` in localStorage when they pick the
   // "use local claude code" path). This way new users land on the picker;
   // returning users with a key (or who skipped) go straight to the desk.
+  //
+  // Server-configured fallback: if /api/health/providers reports an env-
+  // baked primary (e.g. OPENAI_API_KEY in Container Apps secrets), treat
+  // the deploy as already "free for everyone" — auto-skip setup so users
+  // land straight on the workbench. They can still open setup later to
+  // BYOK their own key.
   useEffect(() => {
     if (providerLoading) return;
     if (typeof window === 'undefined') return;
     const skipped = window.localStorage.getItem('pm-copilot:setup-skipped') === '1';
     const noKey = !providerConfig.hasPrimaryKey;
-    if (noKey && !skipped && route.name !== 'setup') {
+    const env = providerHealthHook.health?.env;
+    const serverHasPrimary = !!(env && (env.openai || env.anthropic || env.google || env.xai));
+    if (noKey && !skipped && !serverHasPrimary && route.name !== 'setup') {
       navigate({ name: 'setup' });
+    } else if (noKey && !skipped && serverHasPrimary) {
+      // Persist the auto-skip so subsequent loads bypass the setup gate
+      // even before the providers probe returns. If we're currently parked
+      // on /setup (because the probe hadn't returned yet on first paint),
+      // also bounce home so the user doesn't see the setup screen flash.
+      window.localStorage.setItem('pm-copilot:setup-skipped', '1');
+      if (route.name === 'setup') navigate({ name: 'home' });
     } else if (!noKey && route.name === 'setup') {
       navigate({ name: 'home' });
     }
-  }, [providerLoading, providerConfig.hasPrimaryKey, route.name, navigate]);
+  }, [providerLoading, providerConfig.hasPrimaryKey, providerHealthHook.health, route.name, navigate]);
 
   // Auto-promote claude-code to primary when:
   //   1. The local subprocess is reachable (health check passed), AND
@@ -867,6 +882,7 @@ export function App() {
           claudeCodeReachable={
             providerHealthHook.health?.checks?.['claude-code']?.ok ?? undefined
           }
+          envProviders={providerHealthHook.health?.env}
           onRemove={(slot) => {
             void clearKey(slot);
           }}

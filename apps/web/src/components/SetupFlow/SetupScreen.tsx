@@ -21,6 +21,10 @@ export interface SetupScreenProps {
    *  this should also persist anthropic-cc as the primary provider so the
    *  tile renders connected on next open. */
   onUseClaudeCode?: () => void;
+  /** Called when the user clicks a "✓ server (free)" tile — i.e. opts to
+   *  use the server-baked key for that provider. App wires this to the
+   *  same onSkip handler (marks setup-skipped, closes, navigates home). */
+  onUseServer?: () => void;
   /** Currently-configured providers, drives the "✓ connected" tile state. */
   configured: {
     primary: ProviderName | null;
@@ -30,6 +34,10 @@ export interface SetupScreenProps {
   /** Live claude code reachability — when false the claude-code tile shows
    *  ⚠ unreachable instead of ✓ connected. */
   claudeCodeReachable?: boolean;
+  /** Server-side env keys reported by /api/health/providers. When set, the
+   *  matching tile shows a "server-configured (free)" badge so visitors
+   *  know the hosted deploy ships with that provider built-in. */
+  envProviders?: Record<string, boolean> | undefined;
   /** Remove a configured key. Called when the user clicks "remove" on a
    *  connected tile. */
   onRemove?: (slot: Slot) => void;
@@ -45,8 +53,10 @@ export function SetupScreen({
   onConfigured,
   onSkip,
   onUseClaudeCode,
+  onUseServer,
   configured,
   claudeCodeReachable,
+  envProviders,
   onRemove,
   requireChoice = false,
 }: SetupScreenProps) {
@@ -99,8 +109,10 @@ export function SetupScreen({
         <ProviderPicker
           configured={configured}
           {...(claudeCodeReachable !== undefined ? { claudeCodeReachable } : {})}
+          {...(envProviders ? { envProviders } : {})}
           onConfigured={onConfigured}
           onUseClaudeCode={onUseClaudeCode ?? onSkip}
+          onUseServer={onUseServer ?? onSkip}
           {...(onRemove ? { onRemove } : {})}
         />
         <footer className="setup-foot mono">

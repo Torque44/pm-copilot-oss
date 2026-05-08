@@ -29,8 +29,16 @@ export interface ProviderPickerProps {
   /** Live claude-code subprocess reachability — drives the green dot on
    *  the claude-code tile without forcing a manual probe. */
   claudeCodeReachable?: boolean;
+  /** Server-side env keys reported by /api/health/providers — when a tile's
+   *  provider has a server-baked key, render a "server (free)" badge so
+   *  users know they can use that provider without pasting a key. */
+  envProviders?: Record<string, boolean> | undefined;
   onConfigured?: (info: { provider: ProviderName; key: string; slot?: Slot }) => void;
   onUseClaudeCode?: () => void;
+  /** Called when the user clicks a server-configured tile (i.e. takes the
+   *  free server-baked key path). App.tsx wires this to onSetupSkip which
+   *  marks setup-skipped=1, closes the modal, and navigates home. */
+  onUseServer?: () => void;
   onRemove?: (slot: Slot) => void;
 }
 
@@ -123,29 +131,49 @@ function isTileConfigured(tile: TileDef, configured: ProviderPickerProps['config
 export function ProviderPicker({
   configured,
   claudeCodeReachable,
+  envProviders,
   onConfigured,
   onUseClaudeCode,
+  onUseServer,
   onRemove,
 }: ProviderPickerProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // The hosted deploy may have env-baked keys for one or more providers.
+  // Render a "server (free)" badge on those tiles so users know they don't
+  // need to paste a key. They can still expand the tile to BYOK their own.
+  const isServerConfigured = (tile: TileDef): boolean => {
+    if (!envProviders || tile.slot !== 'primary') return false;
+    if (!tile.provider) return false;
+    return envProviders[tile.provider] === true;
+  };
 
   return (
     <div className="provider-picker">
       <div className="provider-tile-grid">
         {TILES.map((tile) => {
           const isConfigured = isTileConfigured(tile, configured);
+          const isServer = !isConfigured && isServerConfigured(tile);
           const isExpanded = expandedId === tile.id;
 
           return (
             <div
               key={tile.id}
-              className={`provider-tile ${isConfigured ? 'connected' : ''} ${isExpanded ? 'expanded' : ''}`}
+              className={`provider-tile ${isConfigured ? 'connected' : ''} ${isServer ? 'server' : ''} ${isExpanded ? 'expanded' : ''}`}
             >
               <button
                 type="button"
                 className="provider-tile-head"
                 onClick={() => {
                   if (isConfigured) return; // connected tiles handle their own action
+                  // Server-configured tile click = "use the server's key".
+                  // Calls onUseServer (App wires it to onSetupSkip), which
+                  // marks setup-skipped=1 and navigates home. The user can
+                  // still BYOK via the small "paste own" link below.
+                  if (isServer && onUseServer) {
+                    onUseServer();
+                    return;
+                  }
                   setExpandedId(isExpanded ? null : tile.id);
                 }}
               >
@@ -166,9 +194,29 @@ export function ProviderPicker({
                         : '✓ connected'}
                     </span>
                   )}
+                  {isServer && (
+                    <span className="provider-tile-badge mono ok">
+                      ✓ server (free)
+                    </span>
+                  )}
                 </div>
-                <div className="provider-tile-hint mono">{tile.hint}</div>
+                <div className="provider-tile-hint mono">
+                  {isServer ? 'this hosted deploy ships with a key — click to use it free' : tile.hint}
+                </div>
               </button>
+
+              {isServer && !isExpanded && (
+                <button
+                  type="button"
+                  className="provider-tile-byok mono"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedId(tile.id);
+                  }}
+                >
+                  paste your own key instead →
+                </button>
+              )}
 
               {isConfigured && tile.id !== 'claude-code' && onRemove && (
                 <button

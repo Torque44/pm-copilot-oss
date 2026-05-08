@@ -275,6 +275,18 @@
   cursor: pointer;
 }
 .provider-tile-remove:hover { color: #ef4444; border-color: rgba(239, 68, 68, 0.5); }
+.provider-tile-byok {
+  align-self: flex-start;
+  margin: 0 14px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted, #999);
+  font-size: 11px;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.provider-tile-byok:hover { color: #fff; }
 .provider-tile-body {
   padding: 0 14px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);

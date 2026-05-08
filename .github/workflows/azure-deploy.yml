@@ -1,0 +1,111 @@
+# Auto-deploy pm-copilot to Azure Container Apps on push to main.
+#
+# Auth uses GitHub OIDC federated identity — no long-lived secrets in the
+# repo. The Azure-side setup is a one-off:
+#
+#   az ad app create --display-name pm-copilot-github-actions
+#   az ad sp create --id <appId>
+#   az role assignment create \
+#     --assignee-object-id <spObjectId> \
+#     --assignee-principal-type ServicePrincipal \
+#     --role "AcrPush" \
+#     --scope "/subscriptions/<sub>/resourceGroups/pm-copilot/providers/Microsoft.ContainerRegistry/registries/pmcopilotacr84ed30"
+#   az role assignment create \
+#     --assignee-object-id <spObjectId> \
+#     --assignee-principal-type ServicePrincipal \
+#     --role "Container Apps Contributor" \
+#     --scope "/subscriptions/<sub>/resourceGroups/pm-copilot/providers/Microsoft.App/containerApps/pm-copilot"
+#   az ad app federated-credential create --id <appId> --parameters '{
+#     "name": "github-torque44-main",
+#     "issuer": "https://token.actions.githubusercontent.com",
+#     "subject": "repo:Torque44/pm-copilot-oss:ref:refs/heads/main",
+#     "audiences": ["api://AzureADTokenExchange"]
+#   }'
+#
+# Then add three repository VARIABLES (not secrets — these are public IDs):
+#   AZURE_CLIENT_ID         (the AD app's appId)
+#   AZURE_TENANT_ID         (`az account show --query tenantId -o tsv`)
+#   AZURE_SUBSCRIPTION_ID   (`az account show --query id -o tsv`)
+#
+# Container App existing env vars (PROVIDER, OPENAI_*, CACHE_DIR, etc.) and
+# the openai-api-key secret are preserved across deploys — this workflow
+# only swaps the image, not the spec.
+
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # required for OIDC token exchange with Azure
+  contents: read
+
+env:
+  AZURE_RG: pm-copilot
+  ACR_NAME: pmcopilotacr84ed30
+  CONTAINER_APP: pm-copilot
+  IMAGE_NAME: pm-copilot
+
+concurrency:
+  # One deploy at a time — newer pushes cancel pending older ones to avoid
+  # mid-air image-tag races.
+  group: azure-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC, no secrets)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build image in ACR (cloud build, no Docker on runner)
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_SHA::8}"
+          az acr build \
+            --registry "$ACR_NAME" \
+            --file apps/server/Dockerfile \
+            --image "$IMAGE_NAME:$TAG" \
+            --image "$IMAGE_NAME:latest" \
+            .
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Roll Container App revision (update by digest)
+        run: |
+          set -euo pipefail
+          DIGEST=$(az acr repository show \
+            --name "$ACR_NAME" \
+            --image "$IMAGE_NAME:$IMAGE_TAG" \
+            --query digest -o tsv)
+          echo "Rolling to digest: $DIGEST"
+          az containerapp update \
+            --name "$CONTAINER_APP" \
+            --resource-group "$AZURE_RG" \
+            --image "$ACR_NAME.azurecr.io/$IMAGE_NAME@$DIGEST"
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show \
+            --name "$CONTAINER_APP" --resource-group "$AZURE_RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "FQDN: https://$FQDN"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 6
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 5 "https://$FQDN/api/health" || echo "000")
+            echo "[${i}0s] /api/health -> $CODE"
+            if [ "$CODE" = "200" ]; then exit 0; fi
+          done
+          echo "::error::health check did not turn 200 within 60s"
+          exit 1

@@ -40,7 +40,18 @@ export function byokProvider(headers: BYOKHeaders): AgentRouting {
   const perplexityKey = headers.perplexityKey || process.env['PERPLEXITY_API_KEY'] || null;
   const news = perplexityKey ? makePerplexityProvider(perplexityKey) : primary;
 
-  const xaiKey = headers.xaiKey || process.env['XAI_API_KEY'] || null;
+  // Sentiment requires xAI (live X search). Resolve in priority order:
+  //   1. Explicit `xaiKey` from the "xai (sentiment only)" setup tile.
+  //   2. The primary key, IF the user picked "xai (primary)" — that tile's
+  //      copy says "primary reasoning + sentiment" so the same key has to
+  //      serve both roles. Without this fallback the tile's promise was a lie
+  //      (sentiment dot stuck on `pending` forever despite "✓ connected").
+  //   3. Server-side env var (self-host mode).
+  let xaiKey: string | null = headers.xaiKey ?? null;
+  if (!xaiKey && (primaryName === 'xai' || primaryName === 'grok') && headers.primaryKey) {
+    xaiKey = headers.primaryKey;
+  }
+  if (!xaiKey) xaiKey = process.env['XAI_API_KEY'] || null;
   const sentiment = xaiKey ? makeXAIProvider(xaiKey) : null;
 
   return { primary, news, sentiment };

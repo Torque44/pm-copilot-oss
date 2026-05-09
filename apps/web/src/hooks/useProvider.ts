@@ -185,11 +185,19 @@ function isConnected(
   }
 }
 
-/** Compute the orchestrator: explicit override beats auto-rank. */
+/** Compute the orchestrator: explicit override beats auto-rank.
+ *
+ *  An override is honored even when the user has no CLIENT-stored key for
+ *  the provider — a hosted deploy may serve the request from a server-side
+ *  env var (e.g. OPENAI_API_KEY in Container Apps secrets). Validation
+ *  lives further down the stack: if neither client nor server key is
+ *  available, the request fails with a clear error and the user can pick
+ *  a different provider. Auto-rank still requires a client-side connection
+ *  so a fresh user with no keys gets `primary: null` and the setup gate. */
 function computePrimary(
   slots: Awaited<ReturnType<typeof readAllSlots>>,
 ): { provider: ProviderName | null; isExplicit: boolean } {
-  if (slots.override && isConnected(slots.override, slots)) {
+  if (slots.override) {
     return { provider: slots.override, isExplicit: true };
   }
   for (const p of ORCHESTRATOR_RANK) {

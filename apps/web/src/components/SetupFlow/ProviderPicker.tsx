@@ -119,9 +119,17 @@ export function ProviderPicker({
           const isConfigured = isTileConfigured(tile, configured);
           const isServer = !isConfigured && isServerConfigured(tile);
           const isExpanded = expandedId === tile.id;
-          const isPrimary = isConfigured && configured.primary === tile.provider;
+          // Primary status is independent of how the key is sourced — a
+          // server-(free) tile can be the orchestrator (override is honored
+          // and the server uses its env var). So check `configured.primary`
+          // directly, not just client-side configuration.
+          const isPrimary = configured.primary === tile.provider;
+          // "use as primary" surfaces on any primary-eligible tile that
+          // has a usable credential — either client-stored OR a server env
+          // key. perplexity is excluded (sub-role only).
           const canSetPrimary =
-            isConfigured && tile.primaryEligible && !isPrimary && onSetPrimary;
+            tile.primaryEligible && !isPrimary && (isConfigured || isServer)
+            && Boolean(onSetPrimary);
 
           return (
             <div

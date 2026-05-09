@@ -285,7 +285,16 @@ function thesisFromSection(
 // ---------- main app ----------
 
 export function App() {
-  const { config: providerConfig, loading: providerLoading, setKey, setUseClaudeCode, clearKey } = useProvider();
+  const {
+    config: providerConfig,
+    loading: providerLoading,
+    setKey,
+    setUseClaudeCode,
+    clearKey,
+    setPrimaryOverride,
+  } = useProvider();
+  // Derived: any provider connected (primary computed) → user has set up.
+  const hasPrimary = Boolean(providerConfig.primary);
   const providerHealthHook = useProviderHealth();
   const { route, navigate } = useRoute();
   // Wallet + X handle session. Gates the desk behind the LandingFlow
@@ -476,7 +485,7 @@ export function App() {
     if (providerLoading) return;
     if (typeof window === 'undefined') return;
     const skipped = window.localStorage.getItem('pm-copilot:setup-skipped') === '1';
-    const noKey = !providerConfig.hasPrimaryKey;
+    const noKey = !hasPrimary;
     const env = providerHealthHook.health?.env;
     const serverHasPrimary = !!(env && (env.openai || env.anthropic || env.google || env.xai));
     if (noKey && !skipped && !serverHasPrimary && route.name !== 'setup') {
@@ -491,7 +500,7 @@ export function App() {
     } else if (!noKey && route.name === 'setup') {
       navigate({ name: 'home' });
     }
-  }, [providerLoading, providerConfig.hasPrimaryKey, providerHealthHook.health, route.name, navigate]);
+  }, [providerLoading, hasPrimary, providerHealthHook.health, route.name, navigate]);
 
   // Auto-promote claude-code to primary when:
   //   1. The local subprocess is reachable (health check passed), AND
@@ -627,35 +636,24 @@ export function App() {
   // also opens it; saving from URL-mode also navigates back to home so the
   // address bar matches.
   const showSetup = setupOpen || route.name === 'setup';
-  const onSetupSave = async (info: {
-    provider: ProviderName;
-    key: string;
-    slot?: 'primary' | 'perplexity' | 'xai';
-  }) => {
-    // Prefer the explicit slot from ProviderPicker (lets users put xai in
-    // the primary slot for reasoning, distinct from xai-as-sentiment-only).
-    // Fallback heuristic for the simple flow: provider name → conventional slot.
-    const slot: 'primary' | 'perplexity' | 'xai' =
-      info.slot ??
-      (info.provider === 'perplexity' ? 'perplexity' :
-       info.provider === 'xai' ? 'xai' :
-       'primary');
-    await setKey(slot, info.provider, info.key);
+  const onSetupSave = async (info: { provider: ProviderName; key: string }) => {
+    // Schema v2: each provider has its own key slot, so a paste only writes
+    // to that one slot — no overwrite of other providers. The orchestrator
+    // (primary) is computed by auto-rank; the user can override per-tile
+    // via the "use as primary" button.
+    await setKey(info.provider, info.key);
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('pm-copilot:setup-skipped');
     }
     // Close behavior depends on entry path:
     //  - Adjustment (providers button → setupOpen=true): close on any save.
-    //    The user opened the modal explicitly to add ONE key, not to set up
-    //    the whole stack.
-    //  - First-time gate (route.name='setup'): close only when the primary
-    //    is configured; saving xai/perplexity alone keeps it open so they
-    //    pick a primary too.
+    //  - First-time gate (route.name='setup'): close once any primary-
+    //    eligible provider is connected (perplexity-only keeps it open).
     if (setupOpen) {
       setSetupOpen(false);
       return;
     }
-    if (slot === 'primary' && route.name === 'setup') {
+    if (info.provider !== 'perplexity' && route.name === 'setup') {
       navigate({ name: 'home' });
     }
   };
@@ -874,22 +872,17 @@ export function App() {
           onConfigured={onSetupSave}
           onSkip={onSetupSkip}
           onUseClaudeCode={() => { void onUseClaudeCode(); }}
-          configured={{
-            primary: providerConfig.primary,
-            perplexity: providerConfig.hasPerplexity,
-            xai: providerConfig.hasXai,
-          }}
+          configured={providerConfig}
           claudeCodeReachable={
             providerHealthHook.health?.checks?.['claude-code']?.ok ?? undefined
           }
           envProviders={providerHealthHook.health?.env}
-          onRemove={(slot) => {
-            void clearKey(slot);
-          }}
+          onRemove={(provider) => { void clearKey(provider); }}
+          onSetPrimary={(provider) => { void setPrimaryOverride(provider); }}
           // First-load gate (route='setup' + nothing configured): force a
           // choice. Right-rail providers overlay (setupOpen=true) is freely
           // dismissible because the workbench is already usable.
-          requireChoice={route.name === 'setup' && !providerConfig.hasPrimaryKey}
+          requireChoice={route.name === 'setup' && !hasPrimary}
         />
       )}
     </div>

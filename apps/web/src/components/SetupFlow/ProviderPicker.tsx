@@ -1,131 +1,96 @@
 // ProviderPicker — every provider visible as its own tile with live status.
 //
-// Replaces the previous "two big cards + advanced drawer" layout. The user
-// asked for direct access to all providers and to hide tiles for providers
-// already configured — instead of hiding them entirely, we show a compact
-// "✓ connected" state with a remove button, so re-keying is one click.
+// Multiple keys can be configured at once; each provider has its own storage
+// slot in cryptoStorage. The orchestrator (the one that drives synthesis +
+// ask routing) is computed: explicit override beats auto-rank
+// (claude > gemini > openai > xai). Each connected tile shows a "PRIMARY"
+// badge when it's the active orchestrator and a "use as primary" button
+// when it's connected but isn't currently primary.
 //
-// Slots a tile can target:
-//   primary     — drives reasoning + brief synthesis + ask
-//   perplexity  — news enrichment (used by newsAgent when present)
-//   xai         — sentiment tab (also acceptable as primary; surfaced as
-//                 two separate tiles so the user picks intent at paste time)
+// Slot semantics:
+//   primary candidates  — anthropic-cc / anthropic / google / openai / xai
+//   sub-role: news      — perplexity (always secondary, never primary)
+//   sub-role: sentiment — xai key is reused for sentiment automatically
+//                         (no separate "xai sentiment-only" tile anymore)
 
 import { useState } from 'react';
 import { KeyTester } from './KeyTester';
 import { ClaudeCodeStatus } from './ClaudeCodeStatus';
 import type { ProviderName } from '../../types';
 
-type Slot = 'primary' | 'perplexity' | 'xai';
-
 export interface ProviderPickerProps {
-  /** Which slots are already configured. Tiles for these render in
-   *  "connected" mode with a remove button. */
+  /** Per-provider configured flags + the computed primary. */
   configured: {
     primary: ProviderName | null;
-    perplexity: boolean;
-    xai: boolean;
+    primaryIsExplicit: boolean;
+    hasAnthropic: boolean;
+    hasAnthropicCC: boolean;
+    hasGoogle: boolean;
+    hasOpenAI: boolean;
+    hasXai: boolean;
+    hasPerplexity: boolean;
   };
   /** Live claude-code subprocess reachability — drives the green dot on
    *  the claude-code tile without forcing a manual probe. */
   claudeCodeReachable?: boolean;
-  /** Server-side env keys reported by /api/health/providers — when a tile's
-   *  provider has a server-baked key, render a "server (free)" badge so
-   *  users know they can use that provider without pasting a key. */
+  /** Server-side env keys reported by /api/health/providers. */
   envProviders?: Record<string, boolean> | undefined;
-  onConfigured?: (info: { provider: ProviderName; key: string; slot?: Slot }) => void;
+  onConfigured?: (info: { provider: ProviderName; key: string }) => void;
   onUseClaudeCode?: () => void;
-  /** Called when the user clicks a server-configured tile (i.e. takes the
-   *  free server-baked key path). App.tsx wires this to onSetupSkip which
-   *  marks setup-skipped=1, closes the modal, and navigates home. */
+  /** Click on a server-(free) tile = take the bundled key path. */
   onUseServer?: () => void;
-  onRemove?: (slot: Slot) => void;
+  onRemove?: (provider: ProviderName) => void;
+  /** Set this provider as the explicit primary (overrides auto-rank). */
+  onSetPrimary?: (provider: ProviderName) => void;
 }
 
 type TileDef = {
-  /** Stable id for keying + which-tile-is-expanded tracking. */
   id: string;
-  provider: ProviderName | null;
-  slot: Slot;
+  provider: ProviderName;
   /** Header label shown on the tile. */
   label: string;
-  /** Subhead (one-liner explaining the slot). */
+  /** Subhead (one-liner). */
   hint: string;
-  /** Variant — drives the input UI. 'subprocess' renders ClaudeCodeStatus,
-   *  'paste' renders KeyTester, 'multi' is for tiles that need a second
-   *  click before showing the paste form (none currently). */
+  /** Drives the input UI. */
   variant: 'subprocess' | 'paste';
+  /** Whether this tile is a primary candidate. perplexity is sub-role only. */
+  primaryEligible: boolean;
 };
 
 const TILES: TileDef[] = [
-  {
-    id: 'claude-code',
-    provider: 'anthropic-cc',
-    slot: 'primary',
-    label: 'claude code',
+  { id: 'claude-code', provider: 'anthropic-cc', label: 'claude code',
     hint: 'use your local claude code session — no key paste needed',
-    variant: 'subprocess',
-  },
-  {
-    id: 'anthropic',
-    provider: 'anthropic',
-    slot: 'primary',
-    label: 'anthropic api key',
+    variant: 'subprocess', primaryEligible: true },
+  { id: 'anthropic', provider: 'anthropic', label: 'anthropic api key',
     hint: 'paste a key — claude opus / sonnet for grounding + brief',
-    variant: 'paste',
-  },
-  {
-    id: 'openai',
-    provider: 'openai',
-    slot: 'primary',
-    label: 'openai',
-    hint: 'gpt-5 / o-series · use as primary',
-    variant: 'paste',
-  },
-  {
-    id: 'google',
-    provider: 'google',
-    slot: 'primary',
-    label: 'google gemini',
-    hint: 'gemini-2.5-pro · use as primary',
-    variant: 'paste',
-  },
-  {
-    id: 'xai-primary',
-    provider: 'xai',
-    slot: 'primary',
-    label: 'xai (primary)',
-    hint: 'grok-3 · primary reasoning + sentiment',
-    variant: 'paste',
-  },
-  {
-    id: 'perplexity',
-    provider: 'perplexity',
-    slot: 'perplexity',
-    label: 'perplexity',
-    hint: 'sonar · improves news (secondary)',
-    variant: 'paste',
-  },
-  {
-    id: 'xai-sentiment',
-    provider: 'xai',
-    slot: 'xai',
-    label: 'xai (sentiment only)',
-    hint: 'grok · sentiment tab only — primary stays as-is',
-    variant: 'paste',
-  },
+    variant: 'paste', primaryEligible: true },
+  { id: 'google', provider: 'google', label: 'google gemini',
+    hint: 'gemini-2.5-pro — top-tier reasoning',
+    variant: 'paste', primaryEligible: true },
+  { id: 'openai', provider: 'openai', label: 'openai',
+    hint: 'gpt-5 / o-series',
+    variant: 'paste', primaryEligible: true },
+  { id: 'xai', provider: 'xai', label: 'xai (grok)',
+    hint: 'grok-3 with live X + web search — also powers sentiment',
+    variant: 'paste', primaryEligible: true },
+  { id: 'perplexity', provider: 'perplexity', label: 'perplexity',
+    hint: 'sonar — boosts news (sub-role, never primary)',
+    variant: 'paste', primaryEligible: false },
 ];
 
-function isTileConfigured(tile: TileDef, configured: ProviderPickerProps['configured']): boolean {
-  if (tile.slot === 'primary' && tile.provider !== 'anthropic-cc') {
-    return configured.primary === tile.provider;
+function isTileConfigured(
+  tile: TileDef,
+  c: ProviderPickerProps['configured'],
+): boolean {
+  switch (tile.provider) {
+    case 'anthropic-cc': return c.hasAnthropicCC;
+    case 'anthropic':    return c.hasAnthropic;
+    case 'google':       return c.hasGoogle;
+    case 'openai':       return c.hasOpenAI;
+    case 'xai':          return c.hasXai;
+    case 'perplexity':   return c.hasPerplexity;
+    default: return false;
   }
-  if (tile.id === 'claude-code') {
-    return configured.primary === 'anthropic-cc';
-  }
-  if (tile.slot === 'perplexity') return configured.perplexity;
-  if (tile.slot === 'xai') return configured.xai;
-  return false;
 }
 
 export function ProviderPicker({
@@ -136,15 +101,14 @@ export function ProviderPicker({
   onUseClaudeCode,
   onUseServer,
   onRemove,
+  onSetPrimary,
 }: ProviderPickerProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // The hosted deploy may have env-baked keys for one or more providers.
-  // Render a "server (free)" badge on those tiles so users know they don't
-  // need to paste a key. They can still expand the tile to BYOK their own.
+  // Render a "server (free)" badge on those tiles.
   const isServerConfigured = (tile: TileDef): boolean => {
-    if (!envProviders || tile.slot !== 'primary') return false;
-    if (!tile.provider) return false;
+    if (!envProviders || !tile.primaryEligible) return false;
     return envProviders[tile.provider] === true;
   };
 
@@ -155,49 +119,41 @@ export function ProviderPicker({
           const isConfigured = isTileConfigured(tile, configured);
           const isServer = !isConfigured && isServerConfigured(tile);
           const isExpanded = expandedId === tile.id;
+          const isPrimary = isConfigured && configured.primary === tile.provider;
+          const canSetPrimary =
+            isConfigured && tile.primaryEligible && !isPrimary && onSetPrimary;
 
           return (
             <div
               key={tile.id}
-              className={`provider-tile ${isConfigured ? 'connected' : ''} ${isServer ? 'server' : ''} ${isExpanded ? 'expanded' : ''}`}
+              className={`provider-tile ${isConfigured ? 'connected' : ''} ${isServer ? 'server' : ''} ${isExpanded ? 'expanded' : ''} ${isPrimary ? 'is-primary' : ''}`}
             >
               <button
                 type="button"
                 className="provider-tile-head"
                 onClick={() => {
-                  if (isConfigured) return; // connected tiles handle their own action
-                  // Server-configured tile click = "use the server's key".
-                  // Calls onUseServer (App wires it to onSetupSkip), which
-                  // marks setup-skipped=1 and navigates home. The user can
-                  // still BYOK via the small "paste own" link below.
-                  if (isServer && onUseServer) {
-                    onUseServer();
-                    return;
-                  }
+                  if (isConfigured) return;
+                  if (isServer && onUseServer) { onUseServer(); return; }
                   setExpandedId(isExpanded ? null : tile.id);
                 }}
               >
                 <div className="provider-tile-row">
                   <span className="provider-tile-label">{tile.label}</span>
-                  {isConfigured && (
-                    <span
-                      className={`provider-tile-badge mono ${
-                        tile.id === 'claude-code'
-                          ? claudeCodeReachable === false
-                            ? 'err'
-                            : 'ok'
-                          : 'ok'
-                      }`}
-                    >
+                  {isPrimary && (
+                    <span className="provider-tile-badge mono ok" title="orchestrator: drives synthesis + ask routing">
+                      ★ primary
+                    </span>
+                  )}
+                  {isConfigured && !isPrimary && (
+                    <span className={`provider-tile-badge mono ${
+                      tile.id === 'claude-code' && claudeCodeReachable === false ? 'err' : 'ok'
+                    }`}>
                       {tile.id === 'claude-code' && claudeCodeReachable === false
-                        ? '⚠ unreachable'
-                        : '✓ connected'}
+                        ? '⚠ unreachable' : '✓ connected'}
                     </span>
                   )}
                   {isServer && (
-                    <span className="provider-tile-badge mono ok">
-                      ✓ server (free)
-                    </span>
+                    <span className="provider-tile-badge mono ok">✓ server (free)</span>
                   )}
                 </div>
                 <div className="provider-tile-hint mono">
@@ -209,12 +165,20 @@ export function ProviderPicker({
                 <button
                   type="button"
                   className="provider-tile-byok mono"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpandedId(tile.id);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); setExpandedId(tile.id); }}
                 >
                   paste your own key instead →
+                </button>
+              )}
+
+              {canSetPrimary && (
+                <button
+                  type="button"
+                  className="provider-tile-set-primary mono"
+                  onClick={(e) => { e.stopPropagation(); onSetPrimary?.(tile.provider); }}
+                  title="make this the orchestrator (overrides auto-rank)"
+                >
+                  use as primary
                 </button>
               )}
 
@@ -222,10 +186,7 @@ export function ProviderPicker({
                 <button
                   type="button"
                   className="provider-tile-remove mono"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(tile.slot);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onRemove(tile.provider); }}
                   title="remove this key"
                 >
                   remove
@@ -241,17 +202,11 @@ export function ProviderPicker({
                 </div>
               )}
 
-              {isExpanded && !isConfigured && tile.variant === 'paste' && tile.provider && (
+              {isExpanded && !isConfigured && tile.variant === 'paste' && (
                 <div className="provider-tile-body">
                   <KeyTester
                     provider={tile.provider}
-                    onSuccess={(info) =>
-                      onConfigured?.({
-                        provider: info.provider,
-                        key: info.key,
-                        slot: tile.slot,
-                      })
-                    }
+                    onSuccess={(info) => onConfigured?.({ provider: info.provider, key: info.key })}
                   />
                 </div>
               )}

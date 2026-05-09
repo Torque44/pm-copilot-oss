@@ -14,10 +14,35 @@
 import type { ProviderName } from '../types';
 import { getSecret } from './cryptoStorage';
 
-const SECRET_KEY_PRIMARY = 'byok:primary';
-const SECRET_KEY_PRIMARY_PROVIDER = 'byok:primary:provider';
-const SECRET_KEY_PERPLEXITY = 'byok:perplexity';
-const SECRET_KEY_XAI = 'byok:xai';
+// Per-provider key slots (schema v2 — see useProvider.ts). The header builder
+// reads all of them, applies the orchestrator rank to pick the primary, and
+// always surfaces xAI separately so the server-side routing can fan it into
+// both routing.primary and routing.sentiment when xAI is the chosen primary.
+const KEY_ANTHROPIC = 'byok:key:anthropic';
+const KEY_GOOGLE = 'byok:key:google';
+const KEY_OPENAI = 'byok:key:openai';
+const KEY_XAI = 'byok:key:xai';
+const KEY_PERPLEXITY = 'byok:perplexity';
+const CC_ENABLED = 'byok:cc-enabled';
+const PRIMARY_OVERRIDE = 'byok:primary:override';
+
+/** Orchestrator rank — when no explicit override, the highest-tier connected
+ *  provider on this list becomes primary. Mirrors the rank in useProvider.ts. */
+const ORCHESTRATOR_RANK: readonly ProviderName[] = [
+  'anthropic-cc', 'anthropic', 'google', 'openai', 'xai',
+];
+
+function providerKeySlot(p: ProviderName): string | null {
+  switch (p) {
+    case 'anthropic': return KEY_ANTHROPIC;
+    case 'google':    return KEY_GOOGLE;
+    case 'openai':    return KEY_OPENAI;
+    case 'xai':       return KEY_XAI;
+    case 'anthropic-cc':
+    case 'perplexity':
+    default:          return null;
+  }
+}
 
 export type ApiRequestOpts = RequestInit & { skipBYOK?: boolean };
 
@@ -34,14 +59,50 @@ function isApiError(x: unknown): x is ApiError {
 async function loadByokHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   try {
-    const [primary, primaryProvider, perplexity, xai] = await Promise.all([
-      getSecret(SECRET_KEY_PRIMARY),
-      getSecret(SECRET_KEY_PRIMARY_PROVIDER),
-      getSecret(SECRET_KEY_PERPLEXITY),
-      getSecret(SECRET_KEY_XAI),
+    const [
+      anthropic, google, openai, xai, perplexity, ccEnabled, override,
+    ] = await Promise.all([
+      getSecret(KEY_ANTHROPIC),
+      getSecret(KEY_GOOGLE),
+      getSecret(KEY_OPENAI),
+      getSecret(KEY_XAI),
+      getSecret(KEY_PERPLEXITY),
+      getSecret(CC_ENABLED),
+      getSecret(PRIMARY_OVERRIDE),
     ]);
-    if (primary) headers['x-llm-key'] = primary;
-    if (primaryProvider) headers['x-llm-provider'] = primaryProvider;
+    const isProvider = (s: unknown): s is ProviderName =>
+      s === 'anthropic' || s === 'anthropic-cc' || s === 'openai' ||
+      s === 'google' || s === 'xai' || s === 'perplexity';
+    const connected = (p: ProviderName): string | null => {
+      switch (p) {
+        case 'anthropic-cc': return ccEnabled === '1' ? '' : null;
+        case 'anthropic':    return anthropic ?? null;
+        case 'google':       return google ?? null;
+        case 'openai':       return openai ?? null;
+        case 'xai':          return xai ?? null;
+        case 'perplexity':   return perplexity ?? null;
+        default: return null;
+      }
+    };
+    // Pick primary: explicit override (if connected) beats auto-rank.
+    let chosen: ProviderName | null = null;
+    if (isProvider(override) && connected(override) !== null) {
+      chosen = override;
+    } else {
+      for (const p of ORCHESTRATOR_RANK) {
+        if (connected(p) !== null) { chosen = p; break; }
+      }
+    }
+    if (chosen) {
+      headers['x-llm-provider'] = chosen;
+      // Subprocess primary has no key — the server detects the
+      // 'anthropic-cc' marker and routes via the local Claude Code CLI.
+      const slot = providerKeySlot(chosen);
+      const k = slot ? connected(chosen) : null;
+      if (k) headers['x-llm-key'] = k;
+    }
+    // Sub-role keys travel independently. xAI is sent even when it's also
+    // the primary so the server's routing.sentiment slot lights up.
     if (perplexity) headers['x-perplexity-key'] = perplexity;
     if (xai) headers['x-xai-key'] = xai;
   } catch {

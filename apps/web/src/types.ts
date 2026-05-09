@@ -239,13 +239,26 @@ export type BriefShape = {
 };
 
 /** Provider config exposed by useProvider. Plaintext keys are intentionally
- *  NOT in this object — call getKeys() for them. */
+ *  NOT in this object — call getKeys() for them.
+ *
+ *  Each connected provider has its own per-provider key slot, so multiple
+ *  providers can be configured at once. The orchestrator (`primary`) is
+ *  computed: explicit override beats auto-rank
+ *  (anthropic-cc > anthropic > google > openai > xai). */
 export type ProviderConfig = {
+  /** Computed orchestrator — null if no provider is configured. */
   primary: ProviderName | null;
-  hasPrimaryKey: boolean;
-  hasPerplexity: boolean;
+  /** True if the user explicitly picked the primary (vs auto-rank winning). */
+  primaryIsExplicit: boolean;
+  hasAnthropic: boolean;
+  hasAnthropicCC: boolean;
+  hasGoogle: boolean;
+  hasOpenAI: boolean;
   hasXai: boolean;
+  hasPerplexity: boolean;
 };
 
-/** Slots used by useProvider / cryptoStorage for BYOK key-at-rest. */
+/** Slots used by useProvider / cryptoStorage for BYOK key-at-rest.
+ *  Kept around for type compatibility — current code uses provider names
+ *  directly when reading/writing per-provider key slots. */
 export type ProviderSlot = 'primary' | 'perplexity' | 'xai';

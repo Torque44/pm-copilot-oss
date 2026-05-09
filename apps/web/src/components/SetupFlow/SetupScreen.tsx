@@ -4,48 +4,29 @@
 
 import { useEffect } from 'react';
 import { ProviderPicker } from './ProviderPicker';
-import type { ProviderName } from '../../types';
-
-type Slot = 'primary' | 'perplexity' | 'xai';
+import type { ProviderConfig, ProviderName } from '../../types';
 
 export interface SetupScreenProps {
-  onConfigured: (info: {
-    provider: ProviderName;
-    key: string;
-    /** Optional explicit slot override. When omitted App.tsx falls back to
-     *  its provider-name heuristic. */
-    slot?: Slot;
-  }) => void;
+  onConfigured: (info: { provider: ProviderName; key: string }) => void;
   onSkip?: () => void;
   /** Called when the user picks the claude-code tile. Distinct from onSkip:
    *  this should also persist anthropic-cc as the primary provider so the
    *  tile renders connected on next open. */
   onUseClaudeCode?: () => void;
-  /** Called when the user clicks a "✓ server (free)" tile — i.e. opts to
-   *  use the server-baked key for that provider. App wires this to the
-   *  same onSkip handler (marks setup-skipped, closes, navigates home). */
+  /** Called when the user clicks a "✓ server (free)" tile. */
   onUseServer?: () => void;
-  /** Currently-configured providers, drives the "✓ connected" tile state. */
-  configured: {
-    primary: ProviderName | null;
-    perplexity: boolean;
-    xai: boolean;
-  };
+  /** Per-provider configured flags + computed primary. Drives tile state. */
+  configured: ProviderConfig;
   /** Live claude code reachability — when false the claude-code tile shows
    *  ⚠ unreachable instead of ✓ connected. */
   claudeCodeReachable?: boolean;
-  /** Server-side env keys reported by /api/health/providers. When set, the
-   *  matching tile shows a "server-configured (free)" badge so visitors
-   *  know the hosted deploy ships with that provider built-in. */
+  /** Server-side env keys reported by /api/health/providers. */
   envProviders?: Record<string, boolean> | undefined;
-  /** Remove a configured key. Called when the user clicks "remove" on a
-   *  connected tile. */
-  onRemove?: (slot: Slot) => void;
-  /** When true, Esc and backdrop click are treated as no-ops if nothing is
-   *  configured yet — forces the user to make an explicit choice (paste a
-   *  key, pick a tile, or click "use local claude code") instead of silently
-   *  setting setup-skipped=1 from a stray keystroke. The first-load gate
-   *  passes this; the right-rail "providers" overlay does not. */
+  /** Remove a configured provider's key. */
+  onRemove?: (provider: ProviderName) => void;
+  /** Set this provider as the explicit primary (overrides auto-rank). */
+  onSetPrimary?: (provider: ProviderName) => void;
+  /** When true, Esc and backdrop click are no-ops if nothing is configured. */
   requireChoice?: boolean;
 }
 
@@ -58,10 +39,11 @@ export function SetupScreen({
   claudeCodeReachable,
   envProviders,
   onRemove,
+  onSetPrimary,
   requireChoice = false,
 }: SetupScreenProps) {
   const anyConfigured =
-    !!configured.primary || configured.perplexity || configured.xai;
+    !!configured.primary || configured.hasPerplexity;
   // First-time gate (requireChoice + nothing configured): Esc and backdrop
   // are inert. Otherwise they soft-close the overlay. This prevents an
   // accidental Esc from permanently parking a new user in a half-broken
@@ -114,6 +96,7 @@ export function SetupScreen({
           onUseClaudeCode={onUseClaudeCode ?? onSkip}
           onUseServer={onUseServer ?? onSkip}
           {...(onRemove ? { onRemove } : {})}
+          {...(onSetPrimary ? { onSetPrimary } : {})}
         />
         <footer className="setup-foot mono">
           esc to close · keys never leave this browser

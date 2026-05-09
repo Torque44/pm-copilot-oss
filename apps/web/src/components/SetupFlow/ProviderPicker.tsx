@@ -179,26 +179,29 @@ export function ProviderPicker({
                 </button>
               )}
 
-              {canSetPrimary && (
-                <button
-                  type="button"
-                  className="provider-tile-set-primary mono"
-                  onClick={(e) => { e.stopPropagation(); onSetPrimary?.(tile.provider); }}
-                  title="make this the orchestrator (overrides auto-rank)"
-                >
-                  use as primary
-                </button>
-              )}
-
-              {isConfigured && tile.id !== 'claude-code' && onRemove && (
-                <button
-                  type="button"
-                  className="provider-tile-remove mono"
-                  onClick={(e) => { e.stopPropagation(); onRemove(tile.provider); }}
-                  title="remove this key"
-                >
-                  remove
-                </button>
+              {(canSetPrimary || (isConfigured && tile.id !== 'claude-code' && onRemove)) && (
+                <div className="provider-tile-actions">
+                  {canSetPrimary && (
+                    <button
+                      type="button"
+                      className="provider-tile-set-primary mono"
+                      onClick={(e) => { e.stopPropagation(); onSetPrimary?.(tile.provider); }}
+                      title="make this the orchestrator (overrides auto-rank)"
+                    >
+                      use as primary
+                    </button>
+                  )}
+                  {isConfigured && tile.id !== 'claude-code' && onRemove && (
+                    <button
+                      type="button"
+                      className="provider-tile-remove mono"
+                      onClick={(e) => { e.stopPropagation(); onRemove(tile.provider); }}
+                      title="remove this key"
+                    >
+                      remove
+                    </button>
+                  )}
+                </div>
               )}
 
               {isExpanded && !isConfigured && tile.variant === 'subprocess' && onUseClaudeCode && (

@@ -15,7 +15,10 @@ import { runMarketAgent } from '@pm-copilot/core/agents/market';
 import { runHoldersAgent } from '@pm-copilot/core/agents/holders';
 import { runNewsAgent } from '@pm-copilot/core/agents/news';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
-import type { MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent } from '@pm-copilot/core';
+import { byokProvider } from '@pm-copilot/core/providers/byok';
+import type {
+  MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent, LLMProvider,
+} from '@pm-copilot/core';
 
 /** Response shape returned by POST /api/ask. The client iterates the
  *  events to build the chat message; an `ask:done` envelope holds the
@@ -115,7 +118,20 @@ export async function askHandler(req: Request, res: Response) {
       url: t.url,
       createdAt: t.createdAt,
     }));
-    await runAsk(market, { ...grounding, tweets }, question, emit);
+    // Pick the best provider for ask: prefer a web-search-capable one so we
+    // can answer factual questions whose data isn't already in the brief
+    // grounding ("how did Antonelli win the last race"). Priority:
+    //   1. perplexity (when user adds a Perplexity key — native web search)
+    //   2. xAI / Grok (the user's own setup — live_search is auto-enabled in
+    //      runAsk via the webSearch capability flag)
+    //   3. primary (OpenAI today — answers from grounding only, honest about
+    //      data gaps when grounding doesn't cover the question)
+    const routing = byokProvider(req.byok ?? {});
+    let askProvider: LLMProvider | null = null;
+    if (routing.news.capabilities?.webSearch) askProvider = routing.news;          // perplexity
+    else if (routing.sentiment?.capabilities?.webSearch) askProvider = routing.sentiment; // xai
+    // else fall through to primary via getProvider() inside runAsk
+    await runAsk(market, { ...grounding, tweets }, question, emit, askProvider);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';
     events.push({ t: 'ask:error', error: msg, elapsedMs: 0 });

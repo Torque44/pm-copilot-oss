@@ -7,7 +7,7 @@
 // same click-to-rail interaction.
 
 import { getProvider } from '../providers/index';
-import { extractJson } from '../providers/types';
+import { extractJson, type LLMProvider } from '../providers/types';
 import type {
   BookGrounding,
   Citation,
@@ -38,61 +38,72 @@ export type AskAnswer = {
   citations: Citation[];         // fresh citation set minted for the answer
 };
 
-const SYS = `You are PM Copilot answering a single prediction-market question over a specific binary market.
+const SYS = `You are PM Copilot — a research assistant for Polymarket traders. You answer the user's specific question about a binary prediction market grounded in the supplied evidence.
 
 You are given:
-- The market's metadata (title, end date, current YES/NO price, 24h volume)
-- The live orderbook (top bids/asks, spread, depth at ±5¢, slippage for $10k/$50k/$100k)
-- The top holders (address, side, size, concentration statistics)
-- The 72-hour news catalyst set (headline + source + URL + snippet, with publish timestamps where available)
-- The recent price-history time series for the YES token (24h of hourly bars when available, ISO timestamps + cents)
-- Recent tweets from vetted X handles (handle + excerpt + URL + timestamp), pre-filtered for relevance to this market
+- Market metadata (title, prices, end date, criteria)
+- The live orderbook (top bids/asks, spread, depth, slippage)
+- Top holders (wallet positions, sizes, concentration statistics)
+- Recent news catalysts (headlines + sources + timestamps when available)
+- Recent price-history (hourly bars over ~24h)
+- Recent KOL tweets from vetted X handles (when any surfaced)
 
-Your answer MUST be a structured trader brief, broken into labeled sections. People are betting real money — they need to see WHO is positioned, WHY, the supporting evidence, AND the underlying thesis from each side.
+CORE RULE: match your answer to the question's shape. A narrow question gets a narrow answer. A broad question gets a structured read. Never pad a one-line question into a six-section brief.
 
-Always output ALL SIX sections in this exact order. Sections that lack supporting evidence still get rendered with a short "limited X data" disclaimer — never silently dropped, because the user needs to see what's missing too:
+═══════════════════════════════════════════════════════════
+HOW TO RESPOND BASED ON QUESTION TYPE
+═══════════════════════════════════════════════════════════
 
-1. **Numbers** — current price, recent move, spread, depth/slippage, volume context. Cite [book-stats], [book-1a], [book-1b], [price-history]. (Always available — orderbook is mandatory grounding.)
-2. **Holders** — who is positioned which way and how concentrated. Cite [whale-N], [whale-stats]. (Almost always available; if zero holders, say so.)
-3. **Catalysts** — recent news driving the price. Cite [news-N]. If a news item aligned with a >2¢ move, say so and align the timestamps explicitly. If no news in the 72h window, write: "**Catalysts:** No news catalysts in the last 72h — this market is moving on positioning alone."
-4. **Sentiment** — what vetted X voices are saying. Cite [kol-N]. If no tweets in grounding, write: "**Sentiment:** No vetted-handle tweets surfaced for this market in the last 14 days."
-5. **Thesis (YES side)** — the strongest bull case grounded in the evidence above. Why are people paying the YES price? One short paragraph, citing at least one [news-N], [whale-N], [kol-N], or [price-history] when ANY of those exist. If grounding is genuinely thin, say so explicitly: "**Thesis (YES):** Limited YES-side evidence in this dataset; the bull case rests primarily on [whale-stats] $X positioned long, but supporting catalysts haven't surfaced." NEVER skip this section.
-6. **Thesis (NO side)** — the strongest bear case, same rules. The two thesis claims should not contradict the data — they should each take the strongest available reading. NEVER skip this section.
+▸ NARROW question — specific, factual, scoped.
+  Examples: "what's the spread?", "who is the biggest YES holder?", "any recent news about X?", "how did Antonelli win the last race?", "what's the implied yield?"
 
-Each claim is a SEPARATE entry in the JSON \`claims\` array. The \`text\` field MUST start with a markdown bold section label — exactly one of:
-\`**Numbers:**\`, \`**Holders:**\`, \`**Catalysts:**\`, \`**Sentiment:**\`, \`**Thesis (YES):**\`, \`**Thesis (NO):**\`
-followed by a space and the claim body. Example:
-\`**Numbers:** YES at 47¢, dropped 5¢ in 2h after [news-2] [price-history]. Spread 1.0¢, $50k slippage 1.4¢ [book-stats].\`
+  → Reply with ONE claim. 1-3 sentences. Direct answer. NO section label. Cite from grounding when relevant.
 
-Citation pill labels (use verbatim, wrapped in square brackets, inside the text):
-- [book-stats]                 → mid, spread, depth, slippage as a whole
-- [book-1b], [book-1a], etc.   → top-N bid/ask levels
-- [whale-N]                    → holder row N (1-indexed)
-- [whale-stats]                → aggregate concentration / side-bias
-- [news-N]                     → news item N (1-indexed)
-- [kol-N]                      → tweet N (1-indexed) from a vetted X handle
-- [price-history]              → recent time-series claims
+  Example output:
+  {"claims":[{"text":"The biggest YES position is GGWPGL at $19.9k, while the largest NO is anoin123 at $13.4k [whale-1] [whale-3]. Top-5 concentration is 38% [whale-stats].","citations":["whale-1","whale-3","whale-stats"]}]}
 
-Hard rules:
-- Each claim's body ≤ 60 words after the section label. Be punchy, lead with the number or the fact.
-- The "citations" array must list every pill label that appears in the "text", deduped, in order of appearance.
-- Disclaimer-only sections (e.g. "no news catalysts in last 72h") have an empty citations array — that's acceptable. Substantive sections must cite.
-- All six sections render even when the user's question is narrow ("who is the biggest NO whale?"). Lead with the answer in the most relevant section, but still produce the rest so the trader has the full read.
-- The fallback "answer-not-available" path is one claim with no section label and no citations — used only when the grounding is empty enough that the model cannot ground any of the six sections.
-- Return JSON — NOTHING else. No prose wrapper, no fences, no preamble.
+▸ BROAD question — strategic, multi-faceted, asks for an overall read.
+  Examples: "what's your read on this market?", "should I buy YES?", "give me the full brief", "summarize this market"
+
+  → Reply with up to 6 labeled sections. Skip sections that genuinely don't add value. Each section starts with one of these exact labels:
+    \`**Numbers:**\`, \`**Holders:**\`, \`**Catalysts:**\`, \`**Sentiment:**\`, \`**Thesis (YES):**\`, \`**Thesis (NO):**\`
+
+  Each section is a SEPARATE entry in the claims array, each ≤ 60 words.
+
+▸ OUT-OF-GROUNDING question — the answer requires data we don't have (race results, weather, off-market specifics, anything not in book/holders/news/tweets).
+
+  → Reply with ONE claim. Be honest. Tell the user what the grounding actually contains and what they'd need. Don't fabricate.
+
+  Example output:
+  {"claims":[{"text":"I don't have race result data in this market's grounding — the news set covers Mercedes seat speculation and 2026 F1 rules [news-1] [news-2], not race-by-race results. For specific race outcomes, check F1.com or wait for live web search to be enabled in setup.","citations":["news-1","news-2"]}]}
+
+═══════════════════════════════════════════════════════════
+CITATION PILLS (use verbatim, inside [brackets], in the text)
+═══════════════════════════════════════════════════════════
+
+- [book-stats]                 mid, spread, depth, slippage (aggregate)
+- [book-1b], [book-1a], etc.   top-N bid/ask levels
+- [whale-N]                    holder row N (1-indexed)
+- [whale-stats]                aggregate concentration + side bias
+- [news-N]                     news item N (1-indexed)
+- [kol-N]                      tweet N (1-indexed) from a vetted X handle
+- [price-history]              recent time series
+
+═══════════════════════════════════════════════════════════
+HARD RULES
+═══════════════════════════════════════════════════════════
+
+- Match scope. Narrow question → 1 claim. Broad question → up to 6.
+- Cite ONLY from the supplied evidence. Don't invent citation IDs.
+- If grounding genuinely doesn't contain the answer, SAY SO. Don't bullshit a structured response that pretends to answer.
+- Be punchy. Lead with the number or the fact.
+- The "citations" array must list every pill ID that appears in "text", deduped.
+- Return JSON only — no prose wrapper, no markdown fences, no preamble.
 
 Return shape:
-{
-  "claims": [
-    { "text": "**Numbers:** ...", "citations": ["book-1a", "price-history"] },
-    { "text": "**Holders:** ...", "citations": ["whale-3", "whale-stats"] },
-    { "text": "**Catalysts:** ...", "citations": ["news-2", "news-5"] },
-    { "text": "**Thesis (YES):** ...", "citations": ["news-5", "whale-stats"] },
-    { "text": "**Thesis (NO):** ...", "citations": ["whale-3", "news-7"] }
-  ]
-}
+{ "claims": [ { "text": "...", "citations": ["pill-id-1", "pill-id-2"] }, ... ] }
 
-Be precise. Users making trades with real money read this. No filler words.`;
+Users are making trades with real money. Be precise. No filler.`;
 
 function describeBook(book: BookGrounding | null): string {
   if (!book) return 'Orderbook: unavailable.';
@@ -533,7 +544,12 @@ export async function runAsk(
   market: MarketMeta,
   grounding: AskGrounding,
   question: string,
-  emit: (ev: AskEvent) => void
+  emit: (ev: AskEvent) => void,
+  /** Optional provider override. When set (e.g. perplexity / xai-with-livesearch
+   *  routed in by the server's BYOK middleware), the ask LLM call goes through
+   *  this provider instead of the global default. Falls back to getProvider()
+   *  when omitted. */
+  provider?: LLMProvider | null,
 ): Promise<AskAnswer> {
   const started = Date.now();
   emit({ t: 'ask:start' });
@@ -565,20 +581,36 @@ QUESTION: ${question.trim()}
 
 Respond ONLY with the JSON object described in the system prompt.`;
 
-  // Reasoning tier so quality matches a research-desk answer.
-  // The contention problem with brief synthesis is solved by lane='ask',
-  // which runs in a dedicated 2-slot pool instead of queuing behind the
-  // 4-slot brief lane (Market+Holders+News+Synthesis).
-  // 120s timeout: subprocess startup + reasoning on long prompt can run 30-90s,
-  // bumped past 60s so a slow call doesn't dead-air the UI.
-  const res = await getProvider().complete(prompt, {
+  // Pick the provider. If the caller threaded through routing.ask (e.g. xAI
+  // with live search, or Perplexity once configured), use that. Otherwise
+  // fall back to the global default (currently the primary provider).
+  const llm = provider ?? getProvider();
+
+  // Enable xAI live_search when the provider supports it. Other providers
+  // (OpenAI Chat Completions, Anthropic) ignore this option harmlessly.
+  // Live search lets Grok answer factual questions whose data isn't already
+  // in the supplied grounding ("how did Antonelli win the last race") with
+  // real-time web/X results. The capability flag is the right gate — any
+  // future web-search-capable provider opts in by setting webSearch:true.
+  const askOpts: Parameters<typeof llm.complete>[1] = {
     tier: 'reasoning',
     systemPrompt: SYS,
     allowedTools: [],
     jsonOnly: true,
     timeoutMs: 120_000,
     lane: 'ask',
-  });
+  };
+  if (llm.capabilities?.webSearch) {
+    askOpts.liveSearch = {
+      mode: 'auto',
+      sources: ['x', 'web', 'news'],
+      fromDays: 14,
+      maxResults: 8,
+      returnCitations: true,
+    };
+  }
+
+  const res = await llm.complete(prompt, askOpts);
 
   type RawClaim = { text?: string; citations?: string[] };
   const parsed = res.ok ? extractJson<unknown>(res.text) : null;
@@ -664,50 +696,16 @@ Respond ONLY with the JSON object described in the system prompt.`;
     });
   }
 
-  // Section-completeness pass: even with the SYS prompt requiring all six
-  // sections, the model regularly drops 2-4 of them when grounding for that
-  // section is thin (no recent news → no Catalysts; no tweets → no Sentiment;
-  // narrow question → no Thesis). That makes the answer feel half-finished
-  // and — worse — a question like "what's the sentiment?" can come back
-  // without a Sentiment section, which is unacceptable.
-  //
-  // We enforce the contract in code: detect which sections the model
-  // returned and inject a labeled placeholder claim for any missing ones,
-  // in canonical order. The model's own claims keep their original order
-  // among themselves; placeholders fill the gaps. The fallback path
-  // (single un-sectioned claim, e.g. "Answer unavailable: …") is left
-  // alone — that's a different shape and the user shouldn't see fake
-  // sections wrapping a parse error.
-  const isFallback = claims.length === 1 && !SECTION_LABEL_RX.test(claims[0]!.text);
-  if (!isFallback) {
-    const present = new Set<CanonSection>();
-    for (const c of claims) {
-      const m = c.text.match(SECTION_LABEL_RX);
-      if (m) {
-        const canon = canonicalSection(m[1]!.trim());
-        if (canon) present.add(canon);
-      }
-    }
-    const missing = SECTION_ORDER.filter((s) => !present.has(s));
-    if (missing.length > 0) {
-      // Build placeholders. We can supply a citation for two of them when
-      // the upstream registry has the relevant data (book-stats for
-      // Numbers, whale-stats for Holders) so the disclaimer still has at
-      // least one anchored pill.
-      for (const sec of missing) {
-        const placeholder = buildSectionPlaceholder(sec, registry);
-        claims.push(placeholder.claim);
-        for (const cid of placeholder.claim.citations) {
-          const cit = registry.get(cid);
-          if (cit && !usedCitations.has(cid)) usedCitations.set(cid, cit);
-        }
-      }
-      // Re-sort claims by canonical section order so Numbers always comes
-      // first, Thesis (NO) always last. Claims without a recognised label
-      // (shouldn't exist after this pass, but be defensive) sort to the
-      // end in their original order.
-      claims.sort((a, b) => orderOf(a) - orderOf(b));
-    }
+  // Section ordering pass — only when the model returned MULTIPLE sectioned
+  // claims (a "broad" answer). We sort them in canonical order so the brief
+  // reads top-to-bottom: Numbers → Holders → Catalysts → Sentiment →
+  // Thesis (YES) → Thesis (NO). Single-claim answers (narrow questions or
+  // out-of-grounding disclaimers) are left untouched — that's the whole
+  // point of the new prompt: a one-line question gets a one-line answer,
+  // not six sections of padding.
+  const sectionedCount = claims.filter((c) => SECTION_LABEL_RX.test(c.text)).length;
+  if (sectionedCount > 1) {
+    claims.sort((a, b) => orderOf(a) - orderOf(b));
   }
 
   const answer: AskAnswer = {

@@ -25,12 +25,20 @@ function fmtElapsed(ms: number | undefined): string {
 export interface AgentListProps {
   states: AgentStatus[];
   details?: Array<BriefAgentDetail | undefined>;
+  /** Agent keys to suppress from the list. Used for `sentiment` when no
+   *  xAI provider is configured — without xAI the agent never fires, so
+   *  showing a permanently-"queued" dot reads as broken UX. Indexes in
+   *  `states` / `details` still correspond to the full AGENTS array; we
+   *  just skip the matching row at render time. */
+  hideAgents?: ReadonlyArray<string>;
 }
 
-export function AgentList({ states, details }: AgentListProps) {
+export function AgentList({ states, details, hideAgents }: AgentListProps) {
+  const hidden = hideAgents && hideAgents.length ? new Set(hideAgents) : null;
   return (
     <ul className="agent-list">
       {AGENTS.map((a, i) => {
+        if (hidden?.has(a.key)) return null;
         const status: AgentStatus = states[i] ?? 'pending';
         const detail = details?.[i];
         const elapsed = fmtElapsed(detail?.elapsedMs);

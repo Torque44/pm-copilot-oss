@@ -65,13 +65,28 @@ export function RightRail({
         .join(' · ')
     : 'subprocess';
 
+  // Sentiment requires xAI live-search to do anything useful (the agent
+  // pulls X-handle posts via Grok). Without an xAI key, the supervisor
+  // skips it entirely — so showing a permanently-queued sentiment dot
+  // reads as broken UX. Hide the row when no xAI is configured. The
+  // sentiment INDEX in agentStates is still 4 (matches AGENTS order); we
+  // also drop it from the done/total count so the header reads e.g.
+  // "5/6 done" not "5/7 done".
+  const hideSentiment = providerSummary ? !providerSummary.xai : false;
+  const hideAgents = hideSentiment ? ['sentiment' as const] : [];
+  const SENTIMENT_INDEX = 4;
+  const visibleStates = hideSentiment
+    ? agentStates.filter((_s, i) => i !== SENTIMENT_INDEX)
+    : agentStates;
+  const doneCount = visibleStates.filter((s) => s === 'done').length;
+
   return (
     <aside className="rail-right">
       <div className="rail-section">
         <div className="rail-section-title rail-section-title-row">
           <span>agents</span>
           <span className="rail-section-count mono">
-            {agentStates.filter((s) => s === 'done').length}/{agentStates.length} done
+            {doneCount}/{visibleStates.length} done
           </span>
           {onOpenSetup && (
             <button
@@ -84,7 +99,11 @@ export function RightRail({
             </button>
           )}
         </div>
-        <AgentList states={agentStates} {...(agentDetails ? { details: agentDetails } : {})} />
+        <AgentList
+          states={agentStates}
+          {...(agentDetails ? { details: agentDetails } : {})}
+          hideAgents={hideAgents}
+        />
         <div className="rail-providers-summary mono">{providerLine}</div>
         {providerHealth && (
           <ProviderHealth

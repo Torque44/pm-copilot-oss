@@ -89,21 +89,33 @@ export async function healthProvidersHandler(req: Request, res: Response) {
     routing.primary,
   );
 
-  // Always also probe Claude Code subprocess specifically — even if primary
-  // is something else, the user may want to know if subprocess auth is live
-  // for fallback. Skip if primary already IS subprocess (avoid double-probe).
+  // Probe Claude Code subprocess ONLY when the user's setup is actually
+  // anthropic-related. Showing a permanent "claude code: not reachable" red
+  // dot to a user who picked OpenAI as primary is just noise — they never
+  // installed the CLI, never logged in, and don't care. Three branches:
+  //
+  //   1. Primary IS the subprocess (anthropic-cc OR anthropic with no key):
+  //      alias the existing primary probe to 'claude-code' so the UI reads
+  //      under a stable key without re-probing.
+  //   2. Primary is anthropic via API key: explicitly probe subprocess so
+  //      the user sees whether their fallback path is live.
+  //   3. Primary is anything else (openai, xai, gemini, perplexity): skip
+  //      claude-code entirely. Don't probe, don't include in checks.
   const isPrimarySubprocess =
     (primaryName === 'anthropic' || primaryName === 'anthropic-cc') &&
     !req.byok?.primaryKey &&
     !process.env['ANTHROPIC_API_KEY'];
-  if (!isPrimarySubprocess) {
-    const subprocess = makeAnthropicProvider(null); // forces subprocess path
-    checks['claude-code'] = await probe(cacheKey('claude-code', undefined), subprocess);
-  } else {
-    // Primary IS subprocess — alias the result so the UI can read it under
-    // a stable key without double-probing.
+  const isPrimaryAnthropicApiKey =
+    (primaryName === 'anthropic' || primaryName === 'anthropic-cc') &&
+    !isPrimarySubprocess;
+  if (isPrimarySubprocess) {
     checks['claude-code'] = checks[primaryName]!;
+  } else if (isPrimaryAnthropicApiKey) {
+    const subprocess = makeAnthropicProvider(null);
+    checks['claude-code'] = await probe(cacheKey('claude-code', undefined), subprocess);
   }
+  // Else: primary is openai/xai/gemini/perplexity — claude-code is not
+  // surfaced. The right rail will only show the user's actual primary.
 
   res.json({
     primary: primaryName,

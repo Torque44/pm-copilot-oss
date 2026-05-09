@@ -56,14 +56,18 @@ export function RightRail({
 }: RightRailProps) {
   if (collapsed) return null;
 
+  // Dedupe so "xai (primary) + xai (sentiment-only)" reads as "xai", not "xai · xai".
+  // Order: primary first, then secondary helpers (perplexity → news, xai → sentiment).
   const providerLine = providerSummary
-    ? [
-        providerSummary.primary || 'subprocess',
-        providerSummary.perplexity ? 'perplexity' : null,
-        providerSummary.xai ? 'xai' : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')
+    ? Array.from(
+        new Set(
+          [
+            providerSummary.primary || 'subprocess',
+            providerSummary.perplexity ? 'perplexity' : null,
+            providerSummary.xai ? 'xai' : null,
+          ].filter((s): s is string => Boolean(s)),
+        ),
+      ).join(' · ')
     : 'subprocess';
 
   // Sentiment requires xAI live-search to do anything useful — without an

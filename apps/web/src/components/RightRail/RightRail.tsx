@@ -1,6 +1,7 @@
 // RightRail — context rail (280px). agents + watchlist + recents + positions.
 
 import { AgentList } from './AgentList';
+import { AGENTS } from './agents';
 import { WatchlistTab } from './WatchlistTab';
 import { PositionsTab } from './PositionsTab';
 import { ProviderHealth } from './ProviderHealth';
@@ -65,18 +66,17 @@ export function RightRail({
         .join(' · ')
     : 'subprocess';
 
-  // Sentiment requires xAI live-search to do anything useful (the agent
-  // pulls X-handle posts via Grok). Without an xAI key, the supervisor
-  // skips it entirely — so showing a permanently-queued sentiment dot
-  // reads as broken UX. Hide the row when no xAI is configured. The
-  // sentiment INDEX in agentStates is still 4 (matches AGENTS order); we
-  // also drop it from the done/total count so the header reads e.g.
-  // "5/6 done" not "5/7 done".
+  // Sentiment requires xAI live-search to do anything useful — without an
+  // xAI key the supervisor never starts the agent, and a permanently-queued
+  // dot reads as broken UX. Hide the row + drop it from the done/total
+  // count so the header reads "5/6 done" instead of "5/7 done". The
+  // hidden agent's index is derived from AGENTS so reordering doesn't
+  // silently desync the filter.
   const hideSentiment = providerSummary ? !providerSummary.xai : false;
   const hideAgents = hideSentiment ? ['sentiment' as const] : [];
-  const SENTIMENT_INDEX = 4;
+  const sentimentIndex = AGENTS.findIndex((a) => a.key === 'sentiment');
   const visibleStates = hideSentiment
-    ? agentStates.filter((_s, i) => i !== SENTIMENT_INDEX)
+    ? agentStates.filter((_s, i) => i !== sentimentIndex)
     : agentStates;
   const doneCount = visibleStates.filter((s) => s === 'done').length;
 

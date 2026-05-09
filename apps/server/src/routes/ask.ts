@@ -29,9 +29,9 @@ import { runMarketAgent } from '@pm-copilot/core/agents/market';
 import { runHoldersAgent } from '@pm-copilot/core/agents/holders';
 import { runNewsAgent } from '@pm-copilot/core/agents/news';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
-import { byokProvider } from '@pm-copilot/core/providers/byok';
+import { byokProvider, bestWebSearchProvider } from '@pm-copilot/core/providers/byok';
 import type {
-  MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent, LLMProvider,
+  MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent,
 } from '@pm-copilot/core';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -82,15 +82,15 @@ function isOffTopic(question: string): boolean {
 // ─────────────────────────────────────────────────────────────────────
 // Per-IP sliding-window rate limit.
 // ─────────────────────────────────────────────────────────────────────
-// 30 questions per IP per rolling hour. In-memory; a future scale-out
-// would need shared state (Redis), but for a single-replica Container
-// App this is fine. Map prevents unbounded growth via lazy cleanup on
-// every check call (entries with windows older than 2× window are
-// dropped). Behind Container Apps' ingress the real client IP is in
-// the `x-forwarded-for` header.
+// 30 questions per IP per rolling hour. In-memory; a future multi-replica
+// scale-out would need shared state (Redis), but for a single-replica
+// Container App this is fine. Behind Container Apps' ingress the real
+// client IP is in the `x-forwarded-for` header.
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;   // 1 hour
 const RATE_LIMIT_MAX_PER_WINDOW = 30;
+const RATE_LIMIT_SWEEP_EVERY = 200;            // sweep on every Nth insert
 const ipBuckets = new Map<string, number[]>(); // ip → [timestamps]
+let _sweepCounter = 0;
 
 function clientIp(req: Request): string {
   const xff = req.headers['x-forwarded-for'];
@@ -99,6 +99,15 @@ function clientIp(req: Request): string {
     if (first) return first.trim();
   }
   return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+/** Drop fully-expired buckets so the map can't grow without bound when
+ *  IPs visit a few times then disappear. Bounded cost — runs once every
+ *  RATE_LIMIT_SWEEP_EVERY inserts regardless of map size. */
+function sweepExpired(cutoff: number): void {
+  for (const [k, v] of ipBuckets) {
+    if (!v.some((t) => t > cutoff)) ipBuckets.delete(k);
+  }
 }
 
 function checkRateLimit(ip: string): { ok: boolean; remaining: number; retryAfterMs: number } {
@@ -115,13 +124,7 @@ function checkRateLimit(ip: string): { ok: boolean; remaining: number; retryAfte
   }
   stamps.push(now);
   ipBuckets.set(ip, stamps);
-  // Lazy cleanup: every 200 inserts, sweep the map for fully-expired
-  // entries so the map doesn't accumulate stale IPs forever.
-  if (stamps.length === 1 && ipBuckets.size > 1000) {
-    for (const [k, v] of ipBuckets) {
-      if (!v.some((t) => t > cutoff)) ipBuckets.delete(k);
-    }
-  }
+  if (++_sweepCounter % RATE_LIMIT_SWEEP_EVERY === 0) sweepExpired(cutoff);
   return {
     ok: true,
     remaining: RATE_LIMIT_MAX_PER_WINDOW - stamps.length,
@@ -267,19 +270,14 @@ export async function askHandler(req: Request, res: Response) {
       url: t.url,
       createdAt: t.createdAt,
     }));
-    // Pick the best provider for ask: prefer a web-search-capable one so we
-    // can answer factual questions whose data isn't already in the brief
-    // grounding ("how did Antonelli win the last race"). Priority:
-    //   1. perplexity (when user adds a Perplexity key — native web search)
-    //   2. xAI / Grok (the user's own setup — live_search is auto-enabled in
-    //      runAsk via the webSearch capability flag)
-    //   3. primary (OpenAI today — answers from grounding only, honest about
-    //      data gaps when grounding doesn't cover the question)
+    // Pick the best provider for ask: prefer a web-search-capable one so
+    // we can answer factual questions whose data isn't already in brief
+    // grounding ("how did Antonelli win the last race"). Falls back to
+    // the global default (routing.primary) inside runAsk when nothing
+    // web-search-capable is configured. See bestWebSearchProvider for the
+    // priority rules (perplexity > xai > null).
     const routing = byokProvider(req.byok ?? {});
-    let askProvider: LLMProvider | null = null;
-    if (routing.news.capabilities?.webSearch) askProvider = routing.news;          // perplexity
-    else if (routing.sentiment?.capabilities?.webSearch) askProvider = routing.sentiment; // xai
-    // else fall through to primary via getProvider() inside runAsk
+    const askProvider = bestWebSearchProvider(routing);
     await runAsk(market, { ...grounding, tweets }, question, emit, askProvider);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';

@@ -57,6 +57,21 @@ export function byokProvider(headers: BYOKHeaders): AgentRouting {
   return { primary, news, sentiment };
 }
 
+/** Pick the best provider for ad-hoc questions (used by the ask agent).
+ *  Priority: a web-search-capable provider if any are configured, else null
+ *  so the caller falls back to the routing.primary via getProvider().
+ *
+ *  Order matters: news (perplexity if user paid for it) wins over sentiment
+ *  (xai with live_search) — Perplexity Sonar is purpose-built for grounded
+ *  web answers and is faster for factual questions. xAI Grok is a strong
+ *  fallback when no Perplexity key is present.
+ */
+export function bestWebSearchProvider(routing: AgentRouting): LLMProvider | null {
+  if (routing.news.capabilities?.webSearch) return routing.news;
+  if (routing.sentiment?.capabilities?.webSearch) return routing.sentiment;
+  return null;
+}
+
 function makeOneProvider(name: string, apiKey?: string): LLMProvider {
   switch (name) {
     case 'anthropic':

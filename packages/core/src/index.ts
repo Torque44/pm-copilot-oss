@@ -15,7 +15,7 @@ export type { LLMProvider, ProviderName, CompleteOpts, CompleteResult } from './
 export { registry as mcpRegistry } from './mcp/registry';
 export type { DataFeed, MCPServerConfig } from './mcp/types';
 // `openSse` removed in the cf-azure-rewrite — backend no longer streams.
-export { byokProvider, type AgentRouting } from './providers/byok';
+export { byokProvider, bestWebSearchProvider, type AgentRouting } from './providers/byok';
 export { makeAnthropicProvider } from './providers/anthropic';
 export { makeOpenAIProvider } from './providers/openai';
 export { makeGoogleProvider } from './providers/google';

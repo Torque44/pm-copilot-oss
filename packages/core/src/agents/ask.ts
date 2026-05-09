@@ -435,63 +435,6 @@ export function salvageSectionedClaims(
   return claims;
 }
 
-/** Build a labeled disclaimer claim for a section the model dropped. We
- *  cite stats pills when they're available in the registry so the
- *  placeholder still has something for the trader to inspect; if not,
- *  the citations array is empty (which the UI permits for disclaimer
- *  rows specifically — substantive sections still must cite). */
-function buildSectionPlaceholder(
-  sec: CanonSection,
-  registry: Map<string, Citation>,
-): { claim: Claim } {
-  const label = sectionLabel(sec);
-  const cite = (id: string): string[] => (registry.has(id) ? [id] : []);
-  switch (sec) {
-    case 'numbers':
-      return {
-        claim: {
-          text: `${label} live orderbook and price history are in the market panel above.`,
-          citations: cite('book-stats'),
-        },
-      };
-    case 'holders':
-      return {
-        claim: {
-          text: `${label} see the holders panel for full positioning. top-5 concentration and side bias come from [whale-stats] when available.`,
-          citations: cite('whale-stats'),
-        },
-      };
-    case 'catalysts':
-      return {
-        claim: {
-          text: `${label} no news catalysts in the last 72h. this market is moving on positioning alone.`,
-          citations: [],
-        },
-      };
-    case 'sentiment':
-      return {
-        claim: {
-          text: `${label} no vetted-handle X posts surfaced for this market this run. configure xAI live search in setup, or check the sentiment tab for a deeper sweep.`,
-          citations: [],
-        },
-      };
-    case 'thesis-yes':
-      return {
-        claim: {
-          text: `${label} the bull case wasn't synthesised this run. the YES-side evidence in the brief was thin. re-ask with a narrower YES-focused prompt for a sharper read.`,
-          citations: [],
-        },
-      };
-    case 'thesis-no':
-      return {
-        claim: {
-          text: `${label} the bear case wasn't synthesised this run, same reason. a targeted "what would kill the YES thesis" question gets a sharper answer.`,
-          citations: [],
-        },
-      };
-  }
-}
-
 /**
  * Fast-path: deterministic answers for the most common demo questions.
  * These never call the LLM, so they CANNOT time out. Returns null if the

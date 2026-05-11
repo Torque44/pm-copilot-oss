@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { byokHeader } from './middleware/byokHeader.js';
+import { adminAuth } from './middleware/adminAuth.js';
 import { positionsHandler } from './routes/positions.js';
 import { profileHandler } from './routes/profile.js';
 import { authTestHandler } from './routes/auth-test.js';
@@ -58,6 +59,11 @@ const WEB_DIST = (() => {
 async function main() {
   const app = express();
 
+  // Trust one upstream proxy (Azure Container Apps ingress) so req.ip
+  // reflects the real client IP instead of the proxy's. Required for
+  // per-IP rate limiting on auth-test / brief / ask to be accurate.
+  app.set('trust proxy', 1);
+
   // CORS: in dev the web app runs on a different port (5173) and needs
   // explicit origin allowance. In production the web app is served from
   // the same origin as the api, so we still allow the same-host request.
@@ -101,7 +107,8 @@ async function main() {
   // streams and no client surface consumed it.
 
   // ---- Admin: force flush + clear caches ----
-  app.post('/api/admin/flush', async (req, res) => {
+  // Gated by X-Admin-Token header; ADMIN_TOKEN env must be set in prod.
+  app.post('/api/admin/flush', adminAuth, async (req, res) => {
     clearCache();
     const marketId = typeof req.query['marketId'] === 'string' ? req.query['marketId'] : null;
     if (marketId) invalidateBrief(marketId);

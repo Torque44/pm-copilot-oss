@@ -138,16 +138,32 @@ function buildBrief(
   allCitations: Citation[],
   validIds: Set<string>
 ): Brief {
+  // Same inline-pill regex Chat.tsx uses; we mirror it server-side so a
+  // hallucinated [news-999] in claim text gets its brackets stripped before
+  // it ever reaches the UI.
+  const INLINE_PILL_RE = /\[([a-z0-9]+(?:[·-][a-z0-9]+)*)\]/gi;
+  const canonId = (raw: string): string =>
+    raw.replace(/[\[\]]/g, '').trim().replace(/·/g, '-').toLowerCase();
+  const scrubText = (text: string): string =>
+    text.replace(INLINE_PILL_RE, (match, raw: string) => {
+      const id = canonId(raw);
+      return validIds.has(id) ? `[${id}]` : raw;
+    });
+
   const normaliseSection = (claims: Claim[] | undefined, fallback: Claim[]): Claim[] => {
     if (!Array.isArray(claims) || !claims.length) return fallback;
-    const mapped = claims.map(c => ({
-      text: String(c.text ?? '').trim(),
-      citations: Array.isArray(c.citations)
-        ? Array.from(new Set(c.citations
-          .map(id => String(id).replace(/[\[\]]/g, '').trim())
-          .filter(id => validIds.has(id))))
-        : [],
-    })).filter(c => c.text.length > 0);
+    const mapped = claims.map(c => {
+      const rawText = String(c.text ?? '').trim();
+      const text = scrubText(rawText);
+      return {
+        text,
+        citations: Array.isArray(c.citations)
+          ? Array.from(new Set(c.citations
+            .map(id => String(id).replace(/[\[\]]/g, '').trim())
+            .filter(id => validIds.has(id))))
+          : [],
+      };
+    }).filter(c => c.text.length > 0);
     // If the LLM returned claims but every single one had empty text (rare), fall back.
     return mapped.length ? mapped : fallback;
   };

@@ -316,6 +316,35 @@ function canonPillId(raw: string): string {
     .toLowerCase();
 }
 
+// Matches any `[id]`-shaped token in claim text. Same shape Chat.tsx uses
+// for inline pill rendering; we mirror it here so server-side scrubbing
+// catches everything that would otherwise render as a pill in the UI.
+const INLINE_PILL_RE = /\[([a-z0-9]+(?:[·-][a-z0-9]+)*)\]/gi;
+
+/** Strip brackets around any [id] whose canonical id isn't a real evidence
+ *  row. The id text stays (so prose still reads), but Chat.tsx's CITE_RX
+ *  (which requires brackets) no longer matches it and the fake pill is gone. */
+function scrubInlineCitations(text: string, registry: Map<string, Citation>): string {
+  return text.replace(INLINE_PILL_RE, (match, raw: string) => {
+    const id = canonPillId(raw);
+    return registry.has(id) ? `[${id}]` : raw;
+  });
+}
+
+/** Pull every real evidence-row id mentioned in `text`. Used to back-fill
+ *  the answer's `citations` array from in-text pills the model wrote but
+ *  forgot to declare. */
+function extractValidPillIds(text: string, registry: Map<string, Citation>): string[] {
+  const ids: string[] = [];
+  INLINE_PILL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = INLINE_PILL_RE.exec(text)) !== null) {
+    const id = canonPillId(m[1]!);
+    if (registry.has(id) && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 // ---------- Section enforcement helpers ----------
 // The Chat UI renders one block per claim, keyed off the markdown bold
 // section label at the start of each claim's text. We enforce a fixed set
@@ -613,11 +642,24 @@ Respond ONLY with the JSON object described in the system prompt.`;
 
   for (const rc of rawClaims) {
     if (!rc || typeof rc.text !== 'string') continue;
-    const text = rc.text.trim();
-    if (!text) continue;
-    const citations = Array.isArray(rc.citations)
-      ? Array.from(new Set(rc.citations.map(canonPillId))).filter((id) => registry.has(id))
+    const rawText = rc.text.trim();
+    if (!rawText) continue;
+
+    // SCRUB: strip any [id] token in the body whose id isn't a real evidence
+    // row in the registry. The model can hallucinate [news-999] in prose
+    // even when the citations array is allowlist-filtered; without scrubbing,
+    // Chat.tsx's pill regex still renders those as authoritative-looking
+    // pills. We replace the brackets with bare text so the prose still
+    // reads naturally but no fake pill ever reaches the UI.
+    const text = scrubInlineCitations(rawText, registry);
+
+    // Re-derive the citations array from surviving in-text pills + any
+    // explicit citations the model attached (still allowlist-filtered).
+    const declared = Array.isArray(rc.citations)
+      ? rc.citations.map(canonPillId).filter((id) => registry.has(id))
       : [];
+    const inText = extractValidPillIds(text, registry);
+    const citations = Array.from(new Set([...declared, ...inText]));
     for (const cid of citations) {
       const cit = registry.get(cid);
       if (cit && !usedCitations.has(cid)) usedCitations.set(cid, cit);

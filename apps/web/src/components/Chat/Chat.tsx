@@ -55,7 +55,13 @@ function parseBlocks(content: string): Block[] {
 
 // Render the body with `[cite-id]` tokens inlined as pill spans. Returns a
 // flat array of (string | element) so React can render mixed content.
-function renderBody(body: string, key: string): Array<string | ReactElement> {
+//
+// `validIds` (when supplied) gates pill rendering: only ids that exist in
+// the message's validated citation set become pills; unrecognized ids are
+// rendered as plain text. Server-side scrubbing already strips fake pills
+// from claim text, but this client-side guard catches anything that slips
+// through (cached pre-fix responses, future agent shapes, etc).
+function renderBody(body: string, key: string, validIds?: Set<string>): Array<string | ReactElement> {
   const out: Array<string | ReactElement> = [];
   CITE_RX.lastIndex = 0;
   let lastIdx = 0;
@@ -64,11 +70,18 @@ function renderBody(body: string, key: string): Array<string | ReactElement> {
   while ((m = CITE_RX.exec(body)) !== null) {
     if (m.index > lastIdx) out.push(body.slice(lastIdx, m.index));
     const id = m[1]!.toLowerCase();
-    out.push(
-      <span key={`${key}-cite-${n}`} className="cite-pill mono inline">
-        [{id}]
-      </span>,
-    );
+    const isValid = !validIds || validIds.has(id);
+    if (isValid) {
+      out.push(
+        <span key={`${key}-cite-${n}`} className="cite-pill mono inline">
+          [{id}]
+        </span>,
+      );
+    } else {
+      // Unknown id — render the original bracketed text as plain prose so
+      // the reader still sees what the model wrote, but no pill renders.
+      out.push(m[0]);
+    }
     lastIdx = m.index + m[0].length;
     n += 1;
   }
@@ -147,11 +160,16 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
             // ("Answer unavailable: …") don't get an awkward empty header.
             const blocks = parseBlocks(m.content);
             const flat = blocks.length <= 1 && (!blocks[0] || !blocks[0].header);
+            // Validated pill ids for THIS message — server-stamped citations
+            // array. renderBody gates pill rendering against this set so an
+            // LLM-hallucinated [news-999] in the prose can never render as
+            // an authoritative-looking pill on the client.
+            const validIds = new Set((m.citations ?? []).map((c) => c.toLowerCase()));
             if (flat) {
               return (
                 <div key={i} className="chat-msg ai">
                   <div className="chat-flat">
-                    {renderBody(m.content, `${i}-flat`)}
+                    {renderBody(m.content, `${i}-flat`, validIds)}
                   </div>
                   {m.citations && m.citations.length > 0 && (
                     <div className="chat-cite-row">
@@ -171,7 +189,7 @@ export function Chat({ messages, onSend, busy = false }: ChatProps) {
                       <div className="chat-section-head mono">{b.header}</div>
                     )}
                     <div className="chat-section-body">
-                      {renderBody(b.body, `${i}-${j}`)}
+                      {renderBody(b.body, `${i}-${j}`, validIds)}
                     </div>
                   </div>
                 ))}

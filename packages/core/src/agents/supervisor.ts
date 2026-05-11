@@ -25,6 +25,21 @@ import type {
   NewsGrounding,
 } from './types';
 import type { LLMProvider } from '../providers/types';
+
+/** Strip control bytes and obvious prompt-injection markers from untrusted
+ *  text (market titles arrive verbatim from Polymarket Gamma — not attacker-
+ *  controlled today, but cheap to defend). Caps length to 280 chars so an
+ *  oversized title can't blow out the system prompt budget. */
+function sanitizeUntrustedText(s: string): string {
+  return s
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, ' ')
+    .replace(/\b(ignore|disregard|forget)\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)\b/gi, '[redacted]')
+    .replace(/\bsystem\s+prompt\b/gi, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 280);
+}
 import { runMarketAgent } from './market';
 import { runHoldersAgent } from './holders';
 import { runNewsAgent } from './news';
@@ -72,7 +87,15 @@ export type SupervisorOpts = {
 };
 
 export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
-  const { market, emit, rememberGrounding, routing, tweets, searcher } = opts;
+  const { market: rawMarket, emit, rememberGrounding, routing, tweets, searcher } = opts;
+
+  // Sanitize the title once and pass the cleaned market to every downstream
+  // agent. Other fields (numeric prices, ISO dates, marketId) don't need
+  // sanitization — they go through narrow parsers.
+  const market: MarketMeta = {
+    ...rawMarket,
+    title: sanitizeUntrustedText(rawMarket.title || ''),
+  };
 
   const sentimentEnabled = Boolean(routing?.sentiment);
 

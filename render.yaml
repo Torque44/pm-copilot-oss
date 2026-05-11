@@ -43,9 +43,13 @@ services:
       - key: NODE_ENV
         value: production
       # Same-origin in production so the public deploy URL works without
-      # any configuration. Override only if you split web + api hosts.
+      # any configuration. The server allows requests with no Origin header
+      # (curl, same-origin fetch) automatically; this allowlist only matters
+      # for split-host or preview deploys. Wildcard '*' is rejected by the
+      # server to prevent a misconfigured env from widening cost-bearing API
+      # exposure to any third-party origin.
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://pmcopilot.wtf,http://localhost:5173"
       # Cache directory must live on the persistent disk so restarts
       # rehydrate the brief snapshots instead of cold-starting every time.
       - key: CACHE_DIR

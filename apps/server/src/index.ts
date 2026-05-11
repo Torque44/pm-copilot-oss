@@ -40,7 +40,15 @@ import { hydrate as hydrateBriefs, invalidateBrief } from './briefStore.js';
 // and then fail to bind because Vite already owns that port.
 const _rawPort = Number(process.env['SERVER_PORT'] || process.env['PORT'] || 8787);
 const PORT = _rawPort === 5173 ? 8787 : _rawPort;
-const CORS_ORIGIN = process.env['CORS_ORIGIN'] || 'http://localhost:5173';
+// CORS_ORIGIN accepts a comma-separated allowlist or a single origin.
+// Wildcard '*' is treated as the same-origin / unconfigured-fallback case
+// since the production deploy serves the web bundle from the api host
+// (CORS is a no-op there), and any explicit list is preferred for safety.
+const CORS_ORIGIN_RAW = process.env['CORS_ORIGIN'] || 'http://localhost:5173';
+const CORS_ALLOWLIST = CORS_ORIGIN_RAW
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 const NODE_ENV = process.env['NODE_ENV'] || 'development';
 const IS_PROD = NODE_ENV === 'production';
 
@@ -67,9 +75,23 @@ async function main() {
 
   // CORS: in dev the web app runs on a different port (5173) and needs
   // explicit origin allowance. In production the web app is served from
-  // the same origin as the api, so we still allow the same-host request.
-  // CORS_ORIGIN can be set to a public URL for split-host deployments.
-  app.use(cors({ origin: CORS_ORIGIN, credentials: false }));
+  // the same origin as the api, so CORS is a no-op for first-party traffic.
+  // CORS_ORIGIN may be a comma-separated allowlist for split-host or
+  // multi-environment deploys; '*' is rejected to prevent a misconfigured
+  // env from widening API exposure to any third-party origin.
+  app.use(cors({
+    origin: (origin, cb) => {
+      // No Origin header (same-origin / curl / health checks) → allow.
+      if (!origin) return cb(null, true);
+      // Explicit wildcard rejected — would let any page on the internet
+      // call cost-bearing API routes when env or claude-code session auth
+      // is active server-side. Use an allowlist instead.
+      if (CORS_ALLOWLIST.includes('*')) return cb(null, false);
+      if (CORS_ALLOWLIST.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: false,
+  }));
   app.use(express.json({ limit: '1mb' }));
   app.use(byokHeader);
 
@@ -88,7 +110,11 @@ async function main() {
   // 10 per minute per IP: enough headroom to validate 4 provider keys
   // without forcing a coffee break, tight enough to deny key probing.
   app.post('/api/auth/test', rateLimit({ windowMs: 60_000, max: 10, bucket: 'auth-test' }), authTestHandler);
-  app.get('/api/health/providers', healthProvidersHandler);
+  // Health-providers triggers a real LLM probe under the hood (it costs
+  // an LLM call per uncached provider). 20/min is well above the right-rail's
+  // refresh cadence and well below what a script could use to mass-probe
+  // BYOK keys.
+  app.get('/api/health/providers', rateLimit({ windowMs: 60_000, max: 20, bucket: 'health-providers' }), healthProvidersHandler);
 
   // ---- New beta routes ----
   app.get('/api/positions', positionsHandler);
@@ -172,7 +198,7 @@ async function main() {
 
   app.listen(PORT, () => {
     console.info(`[pm-copilot] server listening on http://localhost:${PORT}`);
-    console.info(`[pm-copilot] cors origin: ${CORS_ORIGIN}`);
+    console.info(`[pm-copilot] cors origin: ${CORS_ALLOWLIST.join(', ') || '(none — same-origin only)'}`);
   });
 }
 

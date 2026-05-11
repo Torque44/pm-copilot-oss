@@ -24,6 +24,7 @@
 //   thrash + cold-start the subprocess on every focus change.
 
 import type { Request, Response } from 'express';
+import { createHash, randomBytes } from 'node:crypto';
 import { byokProvider } from '@pm-copilot/core/providers/byok';
 import { makeAnthropicProvider } from '@pm-copilot/core';
 
@@ -52,20 +53,39 @@ const SUCCESS_CACHE_TTL_MS = 90_000;      // skip re-probe after a recent green
 type CacheEntry = { at: number; result: ProviderProbe };
 const probeCache = new Map<string, CacheEntry>();
 
+// Server-local salt that lives only for the process lifetime. Combining it
+// with the BYOK key under HMAC-style SHA-256 means the cache key cannot be
+// reversed to the raw key bytes even if process memory is dumped — and the
+// salt rotates every restart so cache keys can't be precomputed offline.
+const PROBE_SALT = randomBytes(32);
+
 function cacheKey(name: string, byokKey: string | undefined): string {
   // Paste-key users have a different "real" provider than env-var users —
   // bucket them separately so a green probe for one key isn't reused
-  // for another.
-  return `${name}::${byokKey ? byokKey.slice(0, 12) : 'env'}`;
+  // for another. The 'env' branch is a fixed label since the env-var
+  // provider is the same for all callers of this process.
+  if (!byokKey) return `${name}::env`;
+  const digest = createHash('sha256')
+    .update(PROBE_SALT)
+    .update(byokKey)
+    .digest('hex')
+    .slice(0, 16);
+  return `${name}::${digest}`;
 }
+
+// Cache negative (ok=false) probe results too, briefly, so a wave of failing
+// retries doesn't hammer the provider while the key is rate-limited or wrong.
+const FAILURE_CACHE_TTL_MS = 15_000;
 
 async function probe(
   key: string,
   provider: ReturnType<typeof byokProvider>['primary'],
 ): Promise<ProviderProbe> {
   const cached = probeCache.get(key);
-  if (cached && cached.result.ok && Date.now() - cached.at < SUCCESS_CACHE_TTL_MS) {
-    return cached.result;
+  if (cached) {
+    const age = Date.now() - cached.at;
+    if (cached.result.ok && age < SUCCESS_CACHE_TTL_MS) return cached.result;
+    if (!cached.result.ok && age < FAILURE_CACHE_TTL_MS) return cached.result;
   }
   const t0 = Date.now();
   try {

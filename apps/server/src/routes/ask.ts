@@ -252,7 +252,9 @@ export async function askHandler(req: Request, res: Response) {
   // Returns a canned single-claim refusal in the ask response shape so
   // the client renders it as a normal chat reply instead of a 4xx error.
   if (isOffTopic(question)) {
-    console.info(`[ask] off-topic blocked from ${req.ip || 'unknown'}: ${question.slice(0, 80)}`);
+    // Log occurrence only — never include the question text itself, per
+    // the no-LLM-content-in-logs policy.
+    console.info(`[ask] off-topic blocked from ${req.ip || 'unknown'}`);
     const events: AskEvent[] = [
       { t: 'ask:start' },
       {

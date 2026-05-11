@@ -119,11 +119,14 @@ Write the thesis brief.`;
   });
 
   if (!passOne.ok || !passOne.text) {
-    const sample = (passOne.text || '').replace(/\s+/g, ' ').slice(0, 300);
     const errMsg = passOne.error || '';
-    console.warn(
-      `[thesis] pass-1 failed for "${input.marketTitle}" (${errMsg || 'no text'}): ${sample}`,
-    );
+    const cls = /401|403|unauthor|invalid.*key/i.test(errMsg) ? 'auth'
+      : /timeout|aborted/i.test(errMsg) ? 'timeout'
+      : /429|rate.*limit|quota/i.test(errMsg) ? 'rate-limit'
+      : /credit balance|insufficient/i.test(errMsg) ? 'credit'
+      : /claude-code|Not logged in|Please run/i.test(errMsg) ? 'cc-not-signed-in'
+      : errMsg ? 'provider-error' : 'no-text';
+    console.warn(`[thesis] pass-1 failed class=${cls}`);
     const isAuth = /claude-code|Not logged in|Please run \/login|API key|credit balance/i.test(errMsg);
     return {
       agent: 'thesis',
@@ -177,8 +180,7 @@ valid_citation_ids: ${[...validIds].slice(0, 30).join(', ') || '(none)'}`;
   }
 
   if (!parsed?.topClaim || parsed.subClaims!.length === 0) {
-    const sample = analysis.replace(/\s+/g, ' ').slice(0, 300);
-    console.warn(`[thesis] both passes failed for "${input.marketTitle}": ${sample}`);
+    console.warn(`[thesis] both passes failed to extract structure`);
     return {
       agent: 'thesis',
       output: {

@@ -234,11 +234,15 @@ Surface 3-5 representative takes that capture the conversation.`;
   }
 
   if (claims.length === 0) {
-    // Log the raw output so we can debug refusals/empty searches.
-    const sample = (res.text || '').replace(/\s+/g, ' ').slice(0, 300);
-    console.warn(
-      `[sentiment] empty result for "${input.marketTitle}" (${res.ok ? 'ok' : 'err: ' + res.error}, ${Date.now() - started}ms): ${sample}`,
-    );
+    // Log occurrence + error class only — never the market title or raw
+    // model text (repo policy).
+    const errMsg = res.error || '';
+    const cls = res.ok ? 'empty'
+      : /401|403|unauthor|invalid.*key/i.test(errMsg) ? 'auth'
+      : /timeout|aborted/i.test(errMsg) ? 'timeout'
+      : /429|rate.*limit|quota/i.test(errMsg) ? 'rate-limit'
+      : 'provider-error';
+    console.warn(`[sentiment] empty result class=${cls} elapsed=${Date.now() - started}ms`);
     return {
       agent: 'sentiment',
       output: {

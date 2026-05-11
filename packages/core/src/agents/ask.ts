@@ -698,7 +698,10 @@ Respond ONLY with the JSON object described in the system prompt.`;
     const fence = fallback.match(/```(?:json|markdown)?\s*([\s\S]*?)\s*```/i);
     if (fence && fence[1]) fallback = fence[1].trim();
     if (/^[\[{]/.test(fallback)) {
-      console.error('[ask] unparseable JSON-shaped output:', fallback.slice(0, 600));
+      // Log occurrence only — the raw model output is NOT included per the
+      // no-LLM-content-in-logs policy. Length is logged so we can correlate
+      // with provider-side request sizes during debugging.
+      console.error(`[ask] unparseable JSON-shaped output len=${fallback.length}`);
       // Show the raw output anyway — it usually contains useful prose
       // even when the JSON wrapper is broken. Better to give the user
       // the model's actual words than a cryptic "malformed JSON" line.

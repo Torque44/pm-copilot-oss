@@ -26,6 +26,18 @@ import type {
   SectionOut,
 } from './types';
 
+/** Bucket a provider error into a short categorical hint for logging.
+ *  Avoids leaking raw model text or vendor message strings into server logs. */
+function errorClass(raw: string | undefined): string {
+  if (!raw) return 'unknown';
+  if (/401|403|unauthor|invalid.*key/i.test(raw)) return 'auth';
+  if (/timeout|aborted/i.test(raw)) return 'timeout';
+  if (/429|rate.*limit|quota/i.test(raw)) return 'rate-limit';
+  if (/credit balance|insufficient/i.test(raw)) return 'credit';
+  if (/claude-code|Not logged in|Please run/i.test(raw)) return 'cc-not-signed-in';
+  return 'provider-error';
+}
+
 function buildSystemPrompt(allowedDomains: string[], hint: string): string {
   return `You are a research analyst building a fast briefing for a prediction-market trader. The trader needs context: what's the question really about, what's happened recently, and what's coming up that could move the market.
 
@@ -199,17 +211,15 @@ specified in the system prompt.`;
   const webItemCount = items.filter((it) => it.from === 'web' && it.url).length;
   const allTraining = items.length > 0 && webItemCount === 0;
   if (allTraining && allowedTools.includes('WebSearch')) {
-    console.warn(`[news] live_search returned no web items for "${market.title}" — fell back to training data`);
+    console.warn(`[news] live_search returned no web items for market=${market.marketId} — training fallback`);
   }
 
-  // Debug visibility: when we fail to extract anything useful, log the raw
-  // text so we can tell whether the model declined, hit a rate limit, or
-  // simply returned `{items:[],claims:[]}` after a real (empty) web search.
+  // Debug visibility: log occurrence + error class only. Repo policy is no
+  // request bodies, market titles, or model output in server logs. The market
+  // is still identifiable from the request log line via marketId.
   if (items.length === 0 && rawClaims.length === 0) {
-    const sample = (res.text || '').replace(/\s+/g, ' ').slice(0, 400);
-    console.warn(
-      `[news] empty result for "${market.title}" (${res.ok ? 'ok' : 'err: ' + res.error}): ${sample}`,
-    );
+    const errClass = !res.ok ? errorClass(res.error) : 'empty';
+    console.warn(`[news] empty result for market=${market.marketId} class=${errClass}`);
   }
 
   const grounding: NewsGrounding = background

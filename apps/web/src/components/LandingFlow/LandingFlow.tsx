@@ -211,6 +211,16 @@ export function LandingFlow({
   const [addr, setAddr] = useState('');
   const [addrError, setAddrError] = useState<string | null>(null);
   const [handle, setHandle] = useState('');
+  // Landing command-row input — accepts either a Polymarket URL (resolves +
+  // navigates to the market view bypassing sign-in, since the workbench
+  // already lets signed-out users read shared market links) OR routes to
+  // the wallet sign-in modal when empty. Fixes the UX bug where the static
+  // "paste polymarket url" placeholder led users to click "open desk" and
+  // then get confused by the wallet-paste modal that asks for "polymarket
+  // address" (which meant wallet, not URL).
+  const [heroInput, setHeroInput] = useState('');
+  const [heroBusy, setHeroBusy] = useState(false);
+  const [heroError, setHeroError] = useState<string | null>(null);
   // Server-side verifier state for the X handle input — debounced existence
   // check via /api/verify-handle. 'idle' before user types, 'checking' while
   // the request is in flight, 'ok' / 'notfound' / 'unknown' after it returns.
@@ -325,11 +335,64 @@ export function LandingFlow({
     return;
   }, [stage]);
 
-  const onSubmitAddr = (e: FormEvent) => {
+  // Resolve a Polymarket URL → marketId via /api/resolve, then hard-nav
+  // to /m/<id>. Returns true on success. Used by both the landing command-
+  // row and the auth modal so users can paste either a URL or a wallet in
+  // either place and end up where they expect.
+  const resolveAndNavigate = async (url: string): Promise<boolean> => {
+    try {
+      const r = await fetch(`/api/resolve?url=${encodeURIComponent(url)}`);
+      if (!r.ok) return false;
+      const j = (await r.json()) as { marketId?: string };
+      if (!j.marketId) return false;
+      window.location.href = `/m/${encodeURIComponent(j.marketId)}`;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const looksLikePolymarketUrl = (s: string): boolean =>
+    /polymarket\.com\/(event|markets)\//i.test(s);
+
+  // Landing hero command-row submit. If the input is a Polymarket URL,
+  // resolve and navigate directly (skipping the auth modal entirely —
+  // signed-out users can read shared markets, sign in is for positions).
+  // Empty input → open the sign-in modal. Anything else → inline error.
+  const onSubmitHero = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = heroInput.trim();
+    if (!trimmed) {
+      setHeroError(null);
+      setStage('auth-paste');
+      return;
+    }
+    if (looksLikePolymarketUrl(trimmed)) {
+      setHeroError(null);
+      setHeroBusy(true);
+      const ok = await resolveAndNavigate(trimmed);
+      setHeroBusy(false);
+      if (!ok) setHeroError('couldn\'t resolve that polymarket link. check the URL or try a different market.');
+      return;
+    }
+    setHeroError('paste a polymarket.com URL, or leave empty and press enter to sign in.');
+  };
+
+  const onSubmitAddr = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = addr.trim();
+    // Auth modal also accepts a Polymarket URL — users who reach this
+    // modal after clicking a "paste polymarket URL" CTA naturally try
+    // pasting the URL they just copied. Route them to the market instead
+    // of rejecting with "not a valid 0x address".
+    if (looksLikePolymarketUrl(trimmed)) {
+      setAddrError(null);
+      const ok = await resolveAndNavigate(trimmed);
+      if (!ok) setAddrError('couldn\'t resolve that polymarket link. check the URL or paste a wallet address (0x…) to sign in.');
+      return;
+    }
     if (!isPlausibleEvmAddress(trimmed)) {
-      setAddrError('that doesn\'t look like a valid 0x address.');
+      setAddrError('paste a wallet address (0x…) to sign in, or a polymarket.com URL to browse a market.');
       return;
     }
     setAddrError(null);
@@ -450,17 +513,25 @@ export function LandingFlow({
                 vetted x sentiment, resolved comparables, and thesis paths. every claim
                 has to point back to a source id already produced upstream.
               </p>
-              <div className="command-row" role="button" tabIndex={0}
-                onClick={() => setStage('auth-paste')}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStage('auth-paste'); }}>
+              <form className="command-row" onSubmit={onSubmitHero}>
                 <div className="command-input mono">
                   <span className="prompt">&gt;</span>
-                  <span className="placeholder">https://polymarket.com/event/&lt;market&gt;</span>
+                  <input
+                    type="text"
+                    className="command-input-field mono"
+                    placeholder="https://polymarket.com/event/<market>"
+                    value={heroInput}
+                    onChange={(e) => { setHeroInput(e.target.value); setHeroError(null); }}
+                    spellCheck={false}
+                    autoComplete="off"
+                    aria-label="paste a polymarket URL or press enter to sign in"
+                  />
                 </div>
-                <button type="button" className="mono" onClick={(e) => { e.stopPropagation(); setStage('auth-paste'); }}>
-                  open desk
+                <button type="submit" className="mono" disabled={heroBusy}>
+                  {heroBusy ? 'resolving…' : heroInput.trim() ? 'open market →' : 'sign in →'}
                 </button>
-              </div>
+              </form>
+              {heroError && <div className="command-error mono">{heroError}</div>}
               <div className="hero-meta mono">
                 <span>no order placement</span>
                 <span>no wallet signing</span>
@@ -611,18 +682,22 @@ export function LandingFlow({
               </div>
               <div className="cta-panel mono">
                 <div className="domain">pmcopilot.wtf</div>
-                <div
-                  className="cta-row-real"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setStage('auth-paste')}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStage('auth-paste'); }}
-                >
-                  <span>&gt; paste polymarket url</span>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setStage('auth-paste'); }}>
-                    open desk
+                <form className="cta-row-real" onSubmit={onSubmitHero}>
+                  <span className="cta-prompt">&gt;</span>
+                  <input
+                    type="text"
+                    className="cta-input mono"
+                    placeholder="paste polymarket url or press enter to sign in"
+                    value={heroInput}
+                    onChange={(e) => { setHeroInput(e.target.value); setHeroError(null); }}
+                    spellCheck={false}
+                    autoComplete="off"
+                    aria-label="paste a polymarket URL or press enter to sign in"
+                  />
+                  <button type="submit" disabled={heroBusy}>
+                    {heroBusy ? 'resolving…' : heroInput.trim() ? 'open market →' : 'sign in →'}
                   </button>
-                </div>
+                </form>
                 <div className="cta-checks">
                   <span>no orders</span>
                   <span>no signing</span>
@@ -651,21 +726,21 @@ export function LandingFlow({
               <img src="/mark.svg" alt="pm" className="auth-pm-logo" width={33} height={16} />
             </div>
             <div className="head-text">
-              <div className="head-title">paste your polymarket address</div>
-              <div className="head-sub mono">read-only. no signing, no spending.</div>
+              <div className="head-title">sign in to pmcopilot</div>
+              <div className="head-sub mono">paste your wallet · read-only · no signing, no spending</div>
             </div>
             <button className="head-x" onClick={() => setStage('landing')} aria-label="close">✕</button>
           </div>
 
           <form className="lf-modal-body" onSubmit={onSubmitAddr}>
             <div className="modal-label mono">
-              paste your active polymarket address
+              paste your polymarket wallet address (0x…) to read your positions
             </div>
             <div className="addr-row">
               <input
                 type="text"
                 className="addr-input mono"
-                placeholder="0x…"
+                placeholder="0x…  or paste a polymarket.com URL to browse a market"
                 value={addr}
                 onChange={(e) => { setAddr(e.target.value); setAddrError(null); }}
                 spellCheck={false}
@@ -676,8 +751,10 @@ export function LandingFlow({
             </div>
             {addrError && <div className="addr-error mono">{addrError}</div>}
             <div className="addr-hint mono">
-              we read positions for this address only. no signing, no spending,
+              we read positions for this wallet only. no signing, no spending,
               no permissions requested. <b>tradeable execution lands in v2 — this is v1.</b>
+              <br />
+              <span className="addr-hint-aside">or paste a polymarket market URL to browse the brief without signing in.</span>
             </div>
           </form>
 

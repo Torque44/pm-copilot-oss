@@ -105,13 +105,15 @@ ${[...validIds].slice(0, 30).join(', ') || '(none)'}
 
 Write the thesis brief.`;
 
-  // 150s timeout: reasoning tier on the Claude Code subprocess (or any
-  // reasoning model) routinely takes 60-120s for thesis-shape prompts,
-  // especially on contested markets with long evidence summaries. 90s left
-  // a thin margin and produced spurious failures; 150s matches the headroom
-  // the ask agent already uses for the same model.
+  // Tier downshift (May 2026): pass-1 used to run on 'reasoning' which mapped
+  // to gpt-5 / grok-3 / claude-sonnet at 60-120s. That was the wall-clock
+  // bottleneck for every brief — wave-2 took ~65s on OpenAI because thesis
+  // dominated. 'fast' (gpt-5-mini / grok-3-mini) handles the causal-claim-tree
+  // shape just fine for the trader use case; quality loss is minor and the
+  // brief feels 3x more responsive. Timeout stays at 150s for headroom on the
+  // rare slow run.
   const passOne = await provider.complete(analysisPrompt, {
-    tier: 'reasoning',
+    tier: 'fast',
     systemPrompt: ANALYSIS_SYS,
     timeoutMs: 150_000,
   });

@@ -31,6 +31,11 @@ registerProducer(() => {
   return { cache: out };
 });
 
+// Cap singleflight at 30s. If a loader hangs past this, the in-flight slot
+// frees up and the next caller fires a fresh loader — better to retry than
+// pile up indefinite waiters.
+const INFLIGHT_TIMEOUT_MS = 30_000;
+
 export async function cached<T>(
   key: string,
   ttlMs: number,
@@ -45,7 +50,12 @@ export async function cached<T>(
 
   const p = (async () => {
     try {
-      const value = await loader();
+      const value = await Promise.race([
+        loader(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`cache loader timeout after ${INFLIGHT_TIMEOUT_MS}ms`)), INFLIGHT_TIMEOUT_MS),
+        ),
+      ]);
       store.set(key, { value, expiresAt: Date.now() + ttlMs });
       markDirty();
       return value;

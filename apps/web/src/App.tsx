@@ -610,19 +610,21 @@ export function App() {
     );
   }
 
-  // Auth gate. signedIn = wallet set AND onboardingComplete. The
-  // separate onboardingComplete flag keeps LandingFlow mounted across
-  // all 4 stages (landing → wallet → twitter → handoff). Without it,
-  // setting the wallet in stage 2 would immediately flip the gate and
-  // unmount the flow, skipping the Twitter screen entirely.
-  if (!auth.signedIn) {
-    // Pass the auth functions directly (they're already useCallback'd
-    // inside useAuth, so the references are stable across renders).
-    // Earlier this site had inline arrows, which created a fresh function
-    // every App render — LandingFlow's handoff useEffect deps included
-    // `onHandoffComplete`, so each parent re-render was clearing +
-    // restarting the 700ms interval, leaving the user stuck on
-    // "priming agents." indefinitely.
+  // Auth gate — only blocks the unauthenticated visitor when they're on
+  // the home / setup route. Deep links to a specific market (/m/:id) and
+  // events (/event/:id) bypass the gate: shared links must "just work"
+  // for the recipient or the product can't go viral. Sign-in becomes
+  // optional — readers see the market and the brief; only the chat
+  // (ask) and the positions tab require it.
+  //
+  // Pass the auth functions directly (already useCallback'd inside
+  // useAuth, so references are stable across renders). Earlier site had
+  // inline arrows, which created a fresh function every App render —
+  // LandingFlow's handoff useEffect deps included `onHandoffComplete`,
+  // so each parent re-render was clearing + restarting the 700ms
+  // interval, leaving the user stuck on "priming agents." indefinitely.
+  const requiresAuth = route.name === 'home' || route.name === 'setup' || route.name === 'settings';
+  if (!auth.signedIn && requiresAuth) {
     return (
       <LandingFlow
         onConnectWallet={auth.setWallet}

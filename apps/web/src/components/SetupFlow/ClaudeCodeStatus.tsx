@@ -15,7 +15,7 @@ import { apiJSON } from '../../lib/client';
 
 const LOGIN_CMD = 'claude /login';
 
-type Probe = { ok: boolean; ms: number; model?: string; error?: string };
+type Probe = { ok: boolean; ms: number; error?: string };
 type ProbeResp = { primary: string; checks: Record<string, Probe> };
 
 export interface ClaudeCodeStatusProps {
@@ -73,7 +73,7 @@ export function ClaudeCodeStatus({ onConnected, onSwitchToApiKey }: ClaudeCodeSt
             <span className="cc-status-dot ok" />
             <span className="cc-status-name mono">connected</span>
             <span className="cc-status-meta mono muted">
-              {probe.model ?? 'subprocess'} · {probe.ms}ms
+              subprocess · {probe.ms}ms
             </span>
           </div>
           <button

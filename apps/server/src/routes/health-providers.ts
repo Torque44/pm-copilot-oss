@@ -30,9 +30,21 @@ import { makeAnthropicProvider } from '@pm-copilot/core';
 type ProviderProbe = {
   ok: boolean;
   ms: number;
-  model?: string;
   error?: string;
 };
+
+/** Drop model names, API URLs, and internal stack traces from probe errors;
+ *  return a short categorical hint so the right rail can show "auth failed"
+ *  vs "timed out" without leaking provider implementation detail. */
+function sanitizeProviderError(raw: string | undefined): string {
+  if (!raw) return 'unknown';
+  if (/401|403|unauthor|invalid.*key/i.test(raw)) return 'auth failed — check key';
+  if (/timeout|aborted/i.test(raw)) return 'timed out';
+  if (/429|rate.*limit|quota/i.test(raw)) return 'rate limited';
+  if (/credit balance|insufficient/i.test(raw)) return 'out of credit';
+  if (/Not logged in|claude-code|Please run/i.test(raw)) return 'claude code not signed in';
+  return 'provider error';
+}
 
 const PROBE_TIMEOUT_MS = 30_000;          // tolerate subprocess cold start
 const SUCCESS_CACHE_TTL_MS = 90_000;      // skip re-probe after a recent green
@@ -63,15 +75,16 @@ async function probe(
       timeoutMs: PROBE_TIMEOUT_MS,
     });
     const result: ProviderProbe = r.ok
-      ? { ok: true, ms: r.elapsedMs, model: r.model }
-      : { ok: false, ms: r.elapsedMs, error: r.error || 'unknown' };
+      ? { ok: true, ms: r.elapsedMs }
+      : { ok: false, ms: r.elapsedMs, error: sanitizeProviderError(r.error) };
     probeCache.set(key, { at: Date.now(), result });
     return result;
   } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
     const result: ProviderProbe = {
       ok: false,
       ms: Date.now() - t0,
-      error: err instanceof Error ? err.message : String(err),
+      error: sanitizeProviderError(raw),
     };
     probeCache.set(key, { at: Date.now(), result });
     return result;

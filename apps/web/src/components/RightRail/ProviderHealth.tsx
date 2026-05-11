@@ -65,7 +65,7 @@ export function ProviderHealth({ health, loading, error, lastCheckedAt, onRechec
         const cls = c.ok ? 'ok' : 'err';
         const label = k === 'claude-code' ? 'claude code' : k;
         return (
-          <div key={k} className="provider-health-row" title={c.ok ? `${c.model ?? 'ok'} · ${c.ms}ms` : c.error}>
+          <div key={k} className="provider-health-row" title={c.ok ? `connected · ${c.ms}ms` : c.error}>
             <span className={`provider-health-dot ${cls}`} />
             <span className="provider-health-name mono">{label}</span>
             <span className="provider-health-status mono muted">

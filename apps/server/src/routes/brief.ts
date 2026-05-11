@@ -153,7 +153,10 @@ export async function briefHandler(req: Request, res: Response) {
       ? await resolveMarketById(marketId)
       : await resolveTopMarket(category);
   } catch (err: unknown) {
-    writeLine({ t: 'error', error: `resolveMarket failed: ${errMsg(err)}` });
+    const internal = errMsg(err);
+    // Log full error server-side, return a generic message to the client.
+    console.warn(`[brief] resolveMarket failed for ${marketId ?? category}: ${internal}`);
+    writeLine({ t: 'error', error: 'failed to resolve market — try again or paste a different URL' });
     res.end();
     return;
   }
@@ -197,7 +200,9 @@ export async function briefHandler(req: Request, res: Response) {
     const searcher = getExaSearcher();
     await runSupervisor({ market, emit, rememberGrounding, routing, tweets, searcher });
   } catch (err: unknown) {
-    const errEv: BriefEnvelope = { t: 'error', error: errMsg(err) || 'supervisor crashed' };
+    const internal = errMsg(err) || 'supervisor crashed';
+    console.warn(`[brief] supervisor crashed for ${market.marketId}: ${internal}`);
+    const errEv: BriefEnvelope = { t: 'error', error: 'brief generation failed — try again or pick a different market' };
     record(errEv);
     writeLine(errEv);
   }

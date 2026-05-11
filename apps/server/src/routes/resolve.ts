@@ -40,6 +40,10 @@ export async function resolveHandler(req: Request, res: Response) {
     res.status(400).json({ error: 'missing url query param' });
     return;
   }
+  if (raw.length > 1024) {
+    res.status(400).json({ error: 'url too long (max 1024 chars)' });
+    return;
+  }
 
   const { eventSlug, marketSlug } = extractSlugs(raw);
   if (!eventSlug && !marketSlug) {

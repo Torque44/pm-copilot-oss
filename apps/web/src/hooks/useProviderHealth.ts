@@ -8,7 +8,9 @@ import { apiJSON } from '../lib/client';
 export type ProviderProbeResult = {
   ok: boolean;
   ms: number;
-  model?: string;
+  // model identifier no longer returned by /api/health/providers — server
+  // returns a categorical error code instead so model names don't leak
+  // through the public probe response.
   error?: string;
 };
 

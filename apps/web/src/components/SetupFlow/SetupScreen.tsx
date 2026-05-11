@@ -26,6 +26,8 @@ export interface SetupScreenProps {
   onRemove?: (provider: ProviderName) => void;
   /** Set this provider as the explicit primary (overrides auto-rank). */
   onSetPrimary?: (provider: ProviderName) => void;
+  /** Clear the primary override so auto-rank takes over. */
+  onClearPrimary?: () => void;
   /** When true, Esc and backdrop click are no-ops if nothing is configured. */
   requireChoice?: boolean;
 }
@@ -40,6 +42,7 @@ export function SetupScreen({
   envProviders,
   onRemove,
   onSetPrimary,
+  onClearPrimary,
   requireChoice = false,
 }: SetupScreenProps) {
   const anyConfigured =
@@ -97,6 +100,7 @@ export function SetupScreen({
           onUseServer={onUseServer ?? onSkip}
           {...(onRemove ? { onRemove } : {})}
           {...(onSetPrimary ? { onSetPrimary } : {})}
+          {...(onClearPrimary ? { onClearPrimary } : {})}
         />
         <footer className="setup-foot mono">
           esc to close · keys never leave this browser

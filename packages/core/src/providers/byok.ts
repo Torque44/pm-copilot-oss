@@ -33,8 +33,24 @@ export type AgentRouting = {
  * Called once per /api/brief or /api/ask request. Result lives only for the
  * lifetime of the request — no server-side persistence.
  */
+/** Auto-detect a primary provider name from server env vars, applied as the
+ *  last-resort default when neither headers.primary nor process.env.PROVIDER
+ *  is set. Matches the client-side orchestrator rank so behaviour is
+ *  consistent on both sides. Without this, a hosted deploy with only
+ *  OPENAI_API_KEY set (and no explicit PROVIDER var) would silently default
+ *  to 'anthropic' and fail every request — a real footgun for future
+ *  redeploys. */
+function sniffEnvPrimary(): string | null {
+  if (process.env['ANTHROPIC_API_KEY']) return 'anthropic';
+  if (process.env['GOOGLE_API_KEY'] || process.env['GEMINI_API_KEY']) return 'google';
+  if (process.env['OPENAI_API_KEY']) return 'openai';
+  if (process.env['XAI_API_KEY']) return 'xai';
+  return null;
+}
+
 export function byokProvider(headers: BYOKHeaders): AgentRouting {
-  const primaryName = headers.primary || process.env['PROVIDER'] || 'anthropic';
+  const primaryName =
+    headers.primary || process.env['PROVIDER'] || sniffEnvPrimary() || 'anthropic';
   const primary = makeOneProvider(primaryName, headers.primaryKey);
 
   const perplexityKey = headers.perplexityKey || process.env['PERPLEXITY_API_KEY'] || null;

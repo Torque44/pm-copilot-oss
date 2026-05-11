@@ -879,6 +879,7 @@ export function App() {
           envProviders={providerHealthHook.health?.env}
           onRemove={(provider) => { void clearKey(provider); }}
           onSetPrimary={(provider) => { void setPrimaryOverride(provider); }}
+          onClearPrimary={() => { void setPrimaryOverride(null); }}
           // First-load gate (route='setup' + nothing configured): force a
           // choice. Right-rail providers overlay (setupOpen=true) is freely
           // dismissible because the workbench is already usable.

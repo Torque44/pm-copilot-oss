@@ -42,6 +42,8 @@ export interface ProviderPickerProps {
   onRemove?: (provider: ProviderName) => void;
   /** Set this provider as the explicit primary (overrides auto-rank). */
   onSetPrimary?: (provider: ProviderName) => void;
+  /** Clear the explicit primary override so auto-rank takes over. */
+  onClearPrimary?: () => void;
 }
 
 type TileDef = {
@@ -102,6 +104,7 @@ export function ProviderPicker({
   onUseServer,
   onRemove,
   onSetPrimary,
+  onClearPrimary,
 }: ProviderPickerProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -225,6 +228,18 @@ export function ProviderPicker({
           );
         })}
       </div>
+      {configured.primaryIsExplicit && onClearPrimary && (
+        <div className="provider-picker-footer">
+          <button
+            type="button"
+            className="provider-picker-reset mono"
+            onClick={onClearPrimary}
+            title="clear the explicit primary so auto-rank picks (claude > gemini > openai > xai)"
+          >
+            reset primary to auto-rank
+          </button>
+        </div>
+      )}
     </div>
   );
 }

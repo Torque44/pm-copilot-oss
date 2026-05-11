@@ -9,6 +9,7 @@
 import { feed as feedFor } from '../mcp/registry';
 import { getProvider } from '../providers/index';
 import { extractJson, type LLMProvider } from '../providers/types';
+import type { Searcher, SearchHit } from '../providers/exa';
 import {
   classifyMarket,
   isAllowlisted,
@@ -94,6 +95,7 @@ async function fromUserFeed(
 export async function runNewsAgent(
   ctx: AgentContext,
   provider?: LLMProvider,
+  searcher?: Searcher | null,
 ): Promise<AgentResult> {
   const started = Date.now();
   const { market, emit } = ctx;
@@ -127,10 +129,15 @@ export async function runNewsAgent(
     };
   }
 
-  // 2) Provider-driven web search path. Only providers whose capability flag
-  //    advertises web search will get a useful result here; others gracefully
-  //    return "no catalysts."
+  // 2) If the news provider has native web search (Perplexity), use it
+  //    directly — user-paid-for-key always wins. If not (OpenAI etc.) AND
+  //    an Exa searcher is available, route through Exa + the provider for
+  //    synthesis. Else, fall through to the legacy "ask the LLM, it'll
+  //    hallucinate from training data" path which is what we had before.
   const newsProvider = provider ?? getProvider();
+  if (!newsProvider.capabilities.webSearch && searcher) {
+    return runNewsViaExa(ctx, started, newsProvider, searcher);
+  }
   const allowedTools = newsProvider.capabilities.webSearch ? ['WebSearch'] : [];
 
   // Route by market sub-category to the curated source profile so the model
@@ -250,5 +257,167 @@ specified in the system prompt.`;
     grounding,
     elapsedMs: Date.now() - started,
     ...(res.ok ? {} : { error: res.error }),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Exa-backed path: search-then-synthesise.
+// ─────────────────────────────────────────────────────────────────────
+// Used when the news provider doesn't have native web search (OpenAI,
+// Anthropic via API, Google) AND an Exa searcher is configured on the
+// server. The flow:
+//   1. Exa search with the market title + a recency window (72h news).
+//   2. Filter hits through the same denylist + sub-category allowlist
+//      the legacy path uses, so citation provenance is identical.
+//   3. Pass the cleaned hits to the LLM as STRUCTURED grounding, ask
+//      for {background, claims}. The model doesn't need to "search" —
+//      it summarises supplied evidence.
+//   4. Build citations from the Exa hits (1:1 with the news·N IDs).
+async function runNewsViaExa(
+  ctx: AgentContext,
+  started: number,
+  newsProvider: LLMProvider,
+  searcher: Searcher,
+): Promise<AgentResult> {
+  const { market, emit } = ctx;
+  const sub = classifyMarket(market.category ?? '', market.title);
+  const profile = profileFor(sub);
+
+  // Query construction: "{title} news" + (when known) the sub-category
+  // shorthand. Exa's auto type does well with natural-language queries.
+  const query = `${market.title} — recent news, scheduled events, background context`;
+
+  let hits: SearchHit[] = [];
+  let searchError: string | null = null;
+  try {
+    hits = await searcher.search(query, {
+      numResults: 10,
+      // 30-day window mirrors the prompt's "last 30 days" framing. Tighter
+      // windows starve the model on niche markets.
+      recencyHours: 24 * 30,
+      category: 'news',
+      withFullText: false,
+    });
+  } catch (err) {
+    searchError = err instanceof Error ? err.message : 'exa search failed';
+  }
+
+  // Filter through denylist + per-sub-category allowlist (same provenance
+  // contract as the legacy path).
+  const filtered = hits.filter((h) => !isDenylisted(h.url)).slice(0, 10);
+  const items: NewsItem[] = filtered.map((h) => {
+    const item: NewsItem = {
+      headline: h.title,
+      source: h.domain,
+      url: h.url,
+      publishedAt: h.publishedDate ?? '',
+      snippet: h.snippet,
+      relevance: h.score > 0.7 ? 'high' : h.score > 0.4 ? 'med' : 'low',
+      from: 'web',
+    };
+    if (!isAllowlisted(sub, h.url)) item.unverified = true;
+    return item;
+  });
+
+  // Synthesis pass: give the model the cleaned hits + ask for background
+  // and 3-4 claims that cite specific news·N indexes. This is the same
+  // claims/background shape the legacy path produces, but the model is
+  // working from supplied evidence rather than hallucinated knowledge.
+  let claims: Claim[] = [];
+  let background = '';
+  if (items.length) {
+    const evidence = items.map((it, i) => {
+      const date = it.publishedAt ? ` (${it.publishedAt.slice(0, 10)})` : '';
+      return `[news·${i + 1}] ${it.source}${date} — ${it.headline}\n    ${it.snippet}`;
+    }).join('\n');
+    const sysPrompt = `You summarise pre-fetched news evidence for a prediction-market trader. The evidence is real and dated; do NOT fabricate. Use ONLY the supplied [news·N] indexes as citations.
+
+Allowed citation pills: ${items.map((_, i) => `[news·${i + 1}]`).join(' ')}
+
+Return JSON ONLY (no fences) with:
+{
+  "background": "<1-2 sentences explaining what this market is asking about, grounded in the evidence>",
+  "claims": [
+    { "text": "<concise observation [news·N]>", "citations": ["news·N"] }
+  ]
+}
+
+Target 3-4 claims. Each cites at least one [news·N] from the supplied list. Keep claims neutral; let the trader form their own view.`;
+
+    const userPrompt = `Market: "${market.title}"
+Resolves by: ${market.endDate ?? 'unknown'}
+Current YES: ${market.yes != null ? (market.yes * 100).toFixed(1) + '¢' : 'n/a'}
+
+Evidence (pre-fetched from Exa, deny-listed for trader-grade sources):
+${evidence}
+
+Build the briefing JSON.`;
+
+    const res = await newsProvider.complete(userPrompt, {
+      tier: 'fast',
+      systemPrompt: sysPrompt,
+      jsonOnly: true,
+      timeoutMs: 60_000,
+    });
+    if (res.ok) {
+      const parsed = extractJson<NewsResp>(res.text);
+      if (parsed) {
+        background = typeof parsed.background === 'string' ? parsed.background : '';
+        const validIds = new Set(items.map((_, i) => `news·${i + 1}`));
+        claims = (Array.isArray(parsed.claims) ? parsed.claims : [])
+          .map((c) => {
+            const ids = Array.isArray(c.citations) ? c.citations : [];
+            const remapped = ids
+              .map((id) => String(id).replace(/[\[\]]/g, '').trim())
+              .filter((id) => validIds.has(id));
+            return { text: String(c.text ?? '').trim(), citations: remapped };
+          })
+          .filter((c) => c.text.length > 0)
+          .slice(0, 4);
+      }
+    } else {
+      // Synthesis failed — keep the items so the news panel still has
+      // something to show, but generate one-liner claims directly from
+      // headlines.
+      claims = items.slice(0, 3).map((it, i) => ({
+        text: `${it.headline} (${it.source}).`,
+        citations: [`news·${i + 1}`],
+      }));
+    }
+  }
+
+  if (!claims.length) {
+    claims = items.length
+      ? items.slice(0, 3).map((it, i) => ({
+          text: `${it.headline} (${it.source}).`,
+          citations: [`news·${i + 1}`],
+        }))
+      : [{
+          text: searchError
+            ? `news search failed: ${searchError.slice(0, 160)}`
+            : 'no recent catalysts surfaced — the underlying topic may be too niche or breaking for current sources.',
+          citations: [],
+        }];
+  }
+
+  const grounding: NewsGrounding = background
+    ? { kind: 'news', items, background }
+    : { kind: 'news', items };
+  emit({ t: 'agent:data', agent: 'news', grounding });
+
+  const citations: Citation[] = items.map((it, i) => ({
+    id: `news·${i + 1}`,
+    kind: 'news' as const,
+    label: (it.headline || `news·${i + 1}`).slice(0, 80),
+    payload: it,
+    url: it.url,
+  }));
+
+  return {
+    agent: 'news',
+    output: { claims, citations },
+    grounding,
+    elapsedMs: Date.now() - started,
+    ...(searchError ? { error: searchError } : {}),
   };
 }

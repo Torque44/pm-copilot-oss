@@ -32,6 +32,7 @@ import { runSynthesis } from './synthesis';
 import { runSentimentAgent, type SentimentInput } from './sentiment';
 import { runThesisAgent, type ThesisInput } from './thesis';
 import { runComparablesAgent, type ComparablesInput } from './comparables';
+import type { Searcher } from '../providers/exa';
 
 export type RememberGrounding = {
   (marketId: string, kind: 'book', data: BookGrounding | null): void;
@@ -63,10 +64,15 @@ export type SupervisorOpts = {
    *  populates this from an X-actions MCP feed when registered; when empty the
    *  sentiment agent emits a "no recent X mentions" claim. */
   tweets?: SentimentInput['tweets'];
+  /** Optional web-search backend (Exa). When the news provider doesn't have
+   *  native web search (Perplexity does, OpenAI/Claude don't via Chat API),
+   *  the news agent uses this searcher to fetch real hits, then asks the
+   *  provider to synthesise. Silent default for the public demo. */
+  searcher?: Searcher | null;
 };
 
 export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
-  const { market, emit, rememberGrounding, routing, tweets } = opts;
+  const { market, emit, rememberGrounding, routing, tweets, searcher } = opts;
 
   const sentimentEnabled = Boolean(routing?.sentiment);
 
@@ -134,7 +140,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   const fanOut: Array<Promise<AgentResult>> = [
     runOne('market', (c) => runMarketAgent(c, primaryProvider)),
     runOne('holders', (c) => runHoldersAgent(c, primaryProvider)),
-    runOne('news', (c) => runNewsAgent(c, newsProvider)),
+    runOne('news', (c) => runNewsAgent(c, newsProvider, searcher)),
     // Comparables is deterministic (HTTP only, no LLM) — fans out with the
     // specialists so its result is ready when thesis runs.
     runOne('comparables', () => runComparablesAgent(ctx, comparablesInput)),

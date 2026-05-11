@@ -23,7 +23,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
-    "p-limit": "^6.1.0"
+    "exa-js": "^2.12.1",
+    "p-limit": "^6.1.0",
+    "zod": "^3.25.28"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.116",

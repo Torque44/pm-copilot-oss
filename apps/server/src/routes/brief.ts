@@ -29,6 +29,7 @@ import { runSupervisor } from '@pm-copilot/core/agents/supervisor';
 import { byokProvider } from '@pm-copilot/core/providers/byok';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import { rememberGrounding } from '../groundingStore.js';
+import { getExaSearcher } from '../exa.js';
 import type { MarketMeta, AgentEvent, Category } from '@pm-copilot/core';
 import { getCached, startRecording, type BriefEnvelope } from '../briefStore.js';
 
@@ -171,7 +172,12 @@ export async function briefHandler(req: Request, res: Response) {
     // Production users supplying an MCP feed for venue=x scope=news override
     // this at registration time.
     const tweets = routing.sentiment ? topTweetsForMarket(market.title, 10) : [];
-    await runSupervisor({ market, emit, rememberGrounding, routing, tweets });
+    // Exa searcher is a silent default — fed into the news agent so the
+    // brief gets real web-search-grounded catalysts even when the user has
+    // no Perplexity key configured. Null when EXA_API_KEY isn't set on
+    // the server; the news agent falls back to its provider-only path.
+    const searcher = getExaSearcher();
+    await runSupervisor({ market, emit, rememberGrounding, routing, tweets, searcher });
   } catch (err: unknown) {
     const errEv: BriefEnvelope = { t: 'error', error: errMsg(err) || 'supervisor crashed' };
     record(errEv);

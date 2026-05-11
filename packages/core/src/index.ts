@@ -21,6 +21,7 @@ export { makeOpenAIProvider } from './providers/openai';
 export { makeGoogleProvider } from './providers/google';
 export { makePerplexityProvider } from './providers/perplexity';
 export { makeXAIProvider } from './providers/xai';
+export { makeExaSearcher, type Searcher, type SearchHit, type SearchOpts } from './providers/exa';
 export { runSentimentAgent } from './agents/sentiment';
 export { runThesisAgent } from './agents/thesis';
 

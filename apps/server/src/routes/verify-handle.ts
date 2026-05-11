@@ -16,9 +16,11 @@
 //      timeout) → unknown, frontend keeps the input usable.
 
 import type { Request, Response } from 'express';
+import { BoundedCache } from '../lib/boundedCache.js';
 
 type CacheEntry = { at: number; result: 'ok' | 'notfound' };
-const positiveCache = new Map<string, CacheEntry>();
+const CACHE_MAX = 2000;
+const positiveCache = new BoundedCache<CacheEntry>(CACHE_MAX);
 const CACHE_TTL_MS = 60 * 60 * 1000;        // 1h
 const PROBE_TIMEOUT_MS = 4_000;
 const VALID_HANDLE_RX = /^[A-Za-z0-9_]{1,15}$/;

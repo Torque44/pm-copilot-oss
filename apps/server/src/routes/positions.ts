@@ -5,11 +5,15 @@
 // per resolved-wallet for POSITIONS_CACHE_TTL_MS (default 60s).
 
 import type { Request, Response } from 'express';
+import { BoundedCache } from '../lib/boundedCache.js';
 
 const POLY_DATA = 'https://data-api.polymarket.com';
 const POLY_WEB = 'https://polymarket.com';
 
 const TTL_MS = Number(process.env['POSITIONS_CACHE_TTL_MS'] || 60_000);
+const FETCH_TIMEOUT_MS = 8_000;
+const MAX_INPUT_LEN = 64;        // longer than any real handle or 0x address
+const CACHE_MAX = 500;
 
 type PositionRow = {
   conditionId: string;
@@ -31,36 +35,53 @@ type PositionRow = {
 };
 
 type Cached = { rows: PositionRow[]; resolved: string; cachedAt: number };
-const cache = new Map<string, Cached>();
+const cache = new BoundedCache<Cached>(CACHE_MAX);
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 async function resolveWallet(input: string): Promise<string | null> {
   if (ADDRESS_RE.test(input)) return input.toLowerCase();
-  // try profile lookup
+  // Profile lookup — gated by a hard timeout so a slow / unresponsive
+  // Polymarket upstream can't tie up node's connection pool.
+  const ctrl = new AbortController();
+  const killer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const url = `${POLY_WEB}/api/profiles/${encodeURIComponent(input)}`;
-    const r = await fetch(url, { headers: { Accept: 'application/json' } });
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctrl.signal });
+    clearTimeout(killer);
     if (!r.ok) return null;
     const json = (await r.json()) as { proxyWallet?: string; address?: string };
     return (json.proxyWallet || json.address || '').toLowerCase() || null;
   } catch {
+    clearTimeout(killer);
     return null;
   }
 }
 
 async function fetchPositions(wallet: string): Promise<PositionRow[]> {
-  const url = `${POLY_DATA}/positions?user=${wallet}&limit=100&sortBy=CURRENT&sortDirection=DESC`;
-  const r = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!r.ok) throw new Error(`polymarket positions HTTP ${r.status}`);
-  const json = (await r.json()) as PositionRow[];
-  return Array.isArray(json) ? json : [];
+  const ctrl = new AbortController();
+  const killer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const url = `${POLY_DATA}/positions?user=${wallet}&limit=100&sortBy=CURRENT&sortDirection=DESC`;
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: ctrl.signal });
+    clearTimeout(killer);
+    if (!r.ok) throw new Error(`polymarket positions HTTP ${r.status}`);
+    const json = (await r.json()) as PositionRow[];
+    return Array.isArray(json) ? json : [];
+  } catch (err) {
+    clearTimeout(killer);
+    throw err;
+  }
 }
 
 export async function positionsHandler(req: Request, res: Response) {
   const input = String(req.query['wallet'] || '').trim();
   if (!input) {
     res.status(400).json({ error: 'missing wallet query param' });
+    return;
+  }
+  if (input.length > MAX_INPUT_LEN) {
+    res.status(400).json({ error: `wallet too long (max ${MAX_INPUT_LEN} chars)` });
     return;
   }
 

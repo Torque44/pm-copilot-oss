@@ -117,10 +117,16 @@ async function main() {
   app.get('/api/health/providers', rateLimit({ windowMs: 60_000, max: 20, bucket: 'health-providers' }), healthProvidersHandler);
 
   // ---- New beta routes ----
-  app.get('/api/positions', positionsHandler);
-  app.get('/api/profile/:handle', profileHandler);
-  app.get('/api/resolve', resolveHandler);
-  app.get('/api/verify-handle', verifyHandleHandler);
+  // Public lookup routes proxy Polymarket / X.com on every uncached request.
+  // Rate limits are generous (60-120/hr/IP) so honest users never hit them,
+  // tight enough to deny a script flooding unique handles or wallets to
+  // grow our in-memory caches or tie up upstream calls.
+  app.get('/api/positions', rateLimit({ windowMs: 60 * 60 * 1000, max: 120, bucket: 'positions' }), positionsHandler);
+  app.get('/api/profile/:handle', rateLimit({ windowMs: 60 * 60 * 1000, max: 120, bucket: 'profile' }), profileHandler);
+  app.get('/api/resolve', rateLimit({ windowMs: 60 * 60 * 1000, max: 60, bucket: 'resolve' }), resolveHandler);
+  // verify-handle fires on every keystroke (debounced 400ms) so its limit
+  // needs more headroom — 300 hits an honest typist's session ceiling.
+  app.get('/api/verify-handle', rateLimit({ windowMs: 60 * 60 * 1000, max: 300, bucket: 'verify-handle' }), verifyHandleHandler);
 
   // ---- Ported routes ----
   app.get('/api/markets', getMarketsHandler);

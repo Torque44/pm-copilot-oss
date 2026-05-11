@@ -180,13 +180,27 @@ specified in the system prompt.`;
       return !isDenylisted(it.url);
     })
     .map(it => {
-      if (it.from === 'training' || !it.url) return it;
+      // Training-data items have no live URL — always flag as unverified so
+      // the UI shows the "unverified" badge. Without this flag honest users
+      // assume the URL (if present) is a real source.
+      if (it.from === 'training' || !it.url) return { ...it, unverified: true };
       const verified = isAllowlisted(sub, it.url);
       return verified ? it : { ...it, unverified: true };
     })
     .slice(0, 8);
   const rawClaims: Claim[] = Array.isArray(parsed?.claims) ? parsed!.claims : [];
   const background = typeof parsed?.background === 'string' ? parsed!.background : '';
+
+  // Web-search providers (Perplexity, xAI/Grok live_search) should return
+  // items with from:"web". If every surviving item is from:"training" we
+  // either lost web search silently or the model declined to use it. Surface
+  // this so the UI banner reads "no live-search results — training-data
+  // fallback" instead of pretending the items are fresh.
+  const webItemCount = items.filter((it) => it.from === 'web' && it.url).length;
+  const allTraining = items.length > 0 && webItemCount === 0;
+  if (allTraining && allowedTools.includes('WebSearch')) {
+    console.warn(`[news] live_search returned no web items for "${market.title}" — fell back to training data`);
+  }
 
   // Debug visibility: when we fail to extract anything useful, log the raw
   // text so we can tell whether the model declined, hit a rate limit, or

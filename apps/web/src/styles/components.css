@@ -1167,3 +1167,25 @@ button.palette-item {
 button.palette-item:hover {
   background: rgba(255, 255, 255, 0.04);
 }
+
+/* Stale brief banner — shown when /api/brief served the in-memory cache
+ * and the cached envelope is older than ~10 min. Lets users hit refresh
+ * without guessing whether the data is fresh. */
+.brief-stale-banner {
+  background: rgba(245, 196, 81, 0.08);
+  border: 1px solid rgba(245, 196, 81, 0.25);
+  color: #f5c451;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.brief-stale-refresh {
+  background: transparent;
+  border: none;
+  color: #f5c451;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}

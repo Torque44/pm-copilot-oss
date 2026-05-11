@@ -243,6 +243,7 @@ function reduce(events: BriefEventLike[]): BriefShape {
   let holderRows: HolderRow[] = [];
   let newsItems: NewsItem[] = [];
   let complete = false;
+  let cacheAgeMs: number | null = null;
 
   const setAgent = (id: ServerAgentId, status: AgentStatus) => {
     if (id in agents) {
@@ -356,7 +357,7 @@ function reduce(events: BriefEventLike[]): BriefShape {
         if (typeof ev.error === 'string' && ev.error) errors.push(ev.error);
         break;
       case 'cache':
-        // informational only
+        if (typeof ev.ageMs === 'number') cacheAgeMs = ev.ageMs;
         break;
       default:
         break;
@@ -375,6 +376,7 @@ function reduce(events: BriefEventLike[]): BriefShape {
     newsItems,
     errors,
     complete,
+    cacheAgeMs,
   };
 }
 

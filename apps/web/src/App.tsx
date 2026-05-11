@@ -747,6 +747,14 @@ export function App() {
           )
         ) : (
           <>
+            {brief.cacheAgeMs != null && brief.cacheAgeMs > 10 * 60 * 1000 ? (
+              <div className="brief-stale-banner mono">
+                cached brief · {Math.round(brief.cacheAgeMs / 60000)} min old ·{' '}
+                <button onClick={reconnectBrief} className="brief-stale-refresh" type="button">
+                  refresh
+                </button>
+              </div>
+            ) : null}
             <MarketHeader
               market={market}
               inWatchlist={selectedMarketId ? watchlist.has(selectedMarketId) : false}

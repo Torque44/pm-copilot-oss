@@ -236,6 +236,10 @@ export type BriefShape = {
   newsItems: NewsItem[];
   errors: string[];
   complete: boolean;
+  /** Age in ms of the served brief if it came from the in-memory cache.
+   *  `null` for a fresh supervisor run. The brief shell uses this to show
+   *  a "stale · refresh" banner when the cached brief crosses ~10 min. */
+  cacheAgeMs: number | null;
 };
 
 /** Provider config exposed by useProvider. Plaintext keys are intentionally

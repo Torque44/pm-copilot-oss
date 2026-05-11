@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { CitationPill } from './CitationPill';
+import { isSafeHref } from '../../lib/url';
 import type {
   ComparableHit,
   KOLSentimentItem,
@@ -109,18 +110,21 @@ export function NewsPanel({
               className={`news-row ${flashId === n.id ? 'flash' : ''}`}
             >
               <span className="cite-id mono">[{n.id}]</span>
-              {n.url ? (
-                <a
-                  className="news-title news-link"
-                  href={n.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {n.title}
-                </a>
-              ) : (
-                <span className="news-title">{n.title}</span>
-              )}
+              {(() => {
+                const safe = isSafeHref(n.url);
+                return safe ? (
+                  <a
+                    className="news-title news-link"
+                    href={safe}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {n.title}
+                  </a>
+                ) : (
+                  <span className="news-title">{n.title}</span>
+                );
+              })()}
               <span className="news-meta mono">
                 {n.src}
                 {n.when ? ` · ${n.when}` : ''}
@@ -163,7 +167,7 @@ export function NewsPanel({
         <ul className="sentiment-list">
           {sentiment.map((s) => {
             const handle = s.handle?.replace(/^@/, '') || '';
-            const tweetUrl = s.url || (handle ? `https://x.com/${handle}` : '');
+            const tweetUrl = isSafeHref(s.url) || (handle ? `https://x.com/${handle}` : '');
             return (
               <li
                 key={s.id}
@@ -262,7 +266,7 @@ export function NewsPanel({
               c.outcome === 'yes' ? 'yes' :
               c.outcome === 'no' ? 'no' :
               'muted';
-            const url = c.slug ? `https://polymarket.com/event/${c.slug}` : null;
+            const url = c.slug ? isSafeHref(`https://polymarket.com/event/${c.slug}`) : null;
             return (
               <div key={c.eventId} className="comparable-row" id={`src-comp·${i + 1}`}>
                 <span className="cite-id mono">[comp·{i + 1}]</span>

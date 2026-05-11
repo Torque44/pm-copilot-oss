@@ -5,11 +5,9 @@
 // memory by cryptoStorage so repeat reads are cheap. Set `skipBYOK: true`
 // to opt out (e.g., the auth-test endpoint where we pass keys in the body).
 //
-// SSE endpoint note: EventSource cannot send custom headers. For
-// /api/brief?marketId=X the BYOK fallback is to attach the relevant key as
-// query params (?provider=…&key=…). buildBriefSSEUrl() returns just the URL
-// today; the server side can read either the headers (set by middleware) or
-// fall back to query params when the request comes from EventSource.
+// All endpoints (including the NDJSON-streamed /api/brief) are reached via
+// fetch with headers — EventSource was retired in the cf-azure-rewrite, so
+// the server-side query-param key fallback has been removed as well.
 
 import type { ProviderName } from '../types';
 import { getSecret } from './cryptoStorage';

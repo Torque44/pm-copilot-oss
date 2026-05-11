@@ -141,6 +141,34 @@ export async function getEventBySlug(slug: string): Promise<GammaEvent | null> {
   return arr?.[0] ?? null;
 }
 
+/** Direct lookup of a market by its Polymarket id, plus the parent event.
+ *  Used as the fallback when our category-bucket scan misses a market
+ *  (typically culture / pop-culture / niche-tag markets that Gamma's
+ *  tag_slug=other filter doesn't return). Returns null only when the
+ *  market truly doesn't exist on Gamma. */
+export async function getEventForMarketId(
+  marketId: string,
+): Promise<{ event: GammaEvent; marketRaw: GammaMarket } | null> {
+  // Gamma's /markets endpoint accepts `id=` and returns the market with an
+  // embedded `events: [{id, ticker, ...}]` array — the FIRST event in that
+  // array is the parent. We fetch the parent event separately so callers
+  // get a fully-hydrated GammaEvent (with all sibling markets attached).
+  type GammaMarketWithEvents = GammaMarket & {
+    events?: Array<{ id: string }>;
+  };
+  const arr = await get<GammaMarketWithEvents[]>(`${GAMMA}/markets?id=${encodeURIComponent(marketId)}`);
+  const m = arr?.[0];
+  if (!m) return null;
+  const parentEventId = m.events?.[0]?.id;
+  if (!parentEventId) return null;
+  try {
+    const ev = await getEvent(parentEventId);
+    return { event: ev, marketRaw: m };
+  } catch {
+    return null;
+  }
+}
+
 export type BookResponse = {
   market: string;
   asset_id: string;

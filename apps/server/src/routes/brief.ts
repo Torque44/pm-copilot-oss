@@ -23,6 +23,7 @@ import {
   listEventsAll,
   pickBestSubMarket,
   gammaToMarketMeta,
+  getEventForMarketId,
 } from '@pm-copilot/core/feeds/polymarket';
 import { cached } from '../cache.js';
 import { runSupervisor } from '@pm-copilot/core/agents/supervisor';
@@ -87,7 +88,24 @@ async function resolveMarketById(marketId: string): Promise<MarketMeta | null> {
         }
       }
     }
-    return null;
+
+    // Final fallback: direct lookup against Gamma's /markets endpoint plus
+    // the parent event. This catches markets that don't surface in the
+    // sports/crypto/politics/listEventsAll scans above — typically culture
+    // / pop-culture / niche-tag markets. Without this, pasting any Polymarket
+    // URL outside our 4 hard-coded category lists would 404 with "market not
+    // found" even though /api/resolve correctly identified the marketId.
+    try {
+      const direct = await getEventForMarketId(marketId);
+      if (!direct) return null;
+      const { event, marketRaw } = direct;
+      if (!marketRaw.clobTokenIds) return null;
+      const meta = gammaToMarketMeta(event, marketRaw, 'other');
+      if (!meta.tokenIdYes || !meta.tokenIdNo) return null;
+      return meta;
+    } catch {
+      return null;
+    }
   });
 }
 

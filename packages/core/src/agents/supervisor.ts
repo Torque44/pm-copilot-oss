@@ -84,10 +84,16 @@ export type SupervisorOpts = {
    *  the news agent uses this searcher to fetch real hits, then asks the
    *  provider to synthesise. Silent default for the public demo. */
   searcher?: Searcher | null;
+  /** Optional abort signal. The server wires this from req.on('close') so
+   *  a client disconnect short-circuits the supervisor at wave boundaries
+   *  — no more burning BYOK / OpenAI quota on an answer no one is reading.
+   *  Wave-1 specialists already in flight finish (their fetches are short),
+   *  but wave-2 thesis + synthesis don't fire if the signal is aborted. */
+  signal?: AbortSignal;
 };
 
 export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
-  const { market: rawMarket, emit, rememberGrounding, routing, tweets, searcher } = opts;
+  const { market: rawMarket, emit, rememberGrounding, routing, tweets, searcher, signal } = opts;
 
   // Sanitize the title once and pass the cleaned market to every downstream
   // agent. Other fields (numeric prices, ISO dates, marketId) don't need
@@ -175,6 +181,11 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   }
 
   const results = await Promise.all(fanOut);
+  if (signal?.aborted) {
+    // Client disconnected during wave-1. Don't spend the wave-2 LLM budget
+    // (thesis + synthesis are the most expensive calls of the pipeline).
+    return;
+  }
   // fanOut order: market, holders, news, comparables, [sentiment]
   const marketR = results[0]!;
   const holdersR = results[1]!;

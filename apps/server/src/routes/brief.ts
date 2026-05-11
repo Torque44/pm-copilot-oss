@@ -123,8 +123,22 @@ export async function briefHandler(req: Request, res: Response) {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
+  // Abort signal fires when the client disconnects (closed tab / nav away /
+  // network drop). The supervisor and any in-flight grounding fetches read
+  // this through ctx.signal and bail early instead of finishing a full
+  // 15-second 7-agent run that no one is listening to. Burns BYOK quota
+  // and OpenAI bill for no UX gain.
+  const abortCtrl = new AbortController();
+  let clientGone = false;
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      clientGone = true;
+      abortCtrl.abort();
+    }
+  });
+
   const writeLine = (env: StreamEnvelope) => {
-    if (res.writableEnded) return;
+    if (res.writableEnded || clientGone) return;
     res.write(JSON.stringify(env) + '\n');
   };
 
@@ -198,7 +212,7 @@ export async function briefHandler(req: Request, res: Response) {
     // no Perplexity key configured. Null when EXA_API_KEY isn't set on
     // the server; the news agent falls back to its provider-only path.
     const searcher = getExaSearcher();
-    await runSupervisor({ market, emit, rememberGrounding, routing, tweets, searcher });
+    await runSupervisor({ market, emit, rememberGrounding, routing, tweets, searcher, signal: abortCtrl.signal });
   } catch (err: unknown) {
     const internal = errMsg(err) || 'supervisor crashed';
     console.warn(`[brief] supervisor crashed for ${market.marketId}: ${internal}`);

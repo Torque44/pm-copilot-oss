@@ -101,6 +101,14 @@ export function useAsk(market: unknown): UseAskResult {
   const [runElapsedMs, setRunElapsedMs] = useState<number | null>(null);
   const [lastElapsedMs, setLastElapsedMs] = useState<number | null>(null);
 
+  // AbortController for the active /api/ask fetch + a run-id guard so that
+  // an answer arriving AFTER the user switched markets can't write into the
+  // wrong chat's history. Both are refs so the send() closure can read the
+  // latest values without re-creating the callback every render.
+  const activeCtrlRef = useRef<AbortController | null>(null);
+  const runCounterRef = useRef(0);
+  const runMarketIdRef = useRef<string | null>(null);
+
   // Live ticker while a run is in flight. We don't use Date.now() inside
   // the agent rail directly because that would force re-renders of the
   // entire page on every animation frame; here we tick once every 250ms
@@ -130,17 +138,31 @@ export function useAsk(market: unknown): UseAskResult {
     const prev = lastMarketIdRef.current;
     if (prev === marketId) return;
     lastMarketIdRef.current = marketId;
+    // Cancel any in-flight ask call for the prior market — the user has
+    // moved on, the response (if it ever arrives) would otherwise write
+    // into the new market's chat history. Bumping runCounter also ensures
+    // that even if the abort fires too late and the response lands, the
+    // stale-run guard in send() drops it.
+    if (activeCtrlRef.current) {
+      activeCtrlRef.current.abort();
+      activeCtrlRef.current = null;
+    }
+    runCounterRef.current += 1;
     if (marketId === null) {
       // Brief unloaded (user navigated home). Clear the in-memory chat but
       // do NOT touch storage — the next market arrival re-hydrates from disk.
       setMessages([]);
       setError(null);
       hydratedForRef.current = null;
+      setBusy(false);
+      setRunStatus('idle');
       return;
     }
     setMessages(loadFromStorage(marketId));
     setError(null);
     hydratedForRef.current = marketId;
+    setBusy(false);
+    setRunStatus('idle');
   }, [marketId]);
 
   // Persist on every change. setMessages can mutate during streaming, so this
@@ -168,6 +190,22 @@ export function useAsk(market: unknown): UseAskResult {
       const trimmed = text.trim();
       if (!trimmed || !market) return;
 
+      // Stamp this run with a unique id + the marketId it's bound to. Any
+      // response that comes back AFTER a market switch (or after another
+      // send call) gets dropped at the response-handler gate below.
+      const myRunId = ++runCounterRef.current;
+      const myMarketId = marketId;
+      runMarketIdRef.current = myMarketId;
+
+      // Cancel any prior in-flight call. setBusy/setRunStatus below race
+      // with the cancelled run's `finally`; the run-id guard prevents that
+      // run from un-doing the new run's `busy=true`.
+      if (activeCtrlRef.current) {
+        activeCtrlRef.current.abort();
+      }
+      const ctrl = new AbortController();
+      activeCtrlRef.current = ctrl;
+
       setBusy(true);
       setError(null);
       setMessages((m) => [...m, { role: 'user', content: trimmed }]);
@@ -184,38 +222,55 @@ export function useAsk(market: unknown): UseAskResult {
         // so the chat-message-build behavior is identical to the old
         // streaming path (just no per-frame reveal animation).
         const acc: ChatMessage = { role: 'ai', content: '', citations: [] };
+        // Server-side canonicalisation (commit 36c04b5): only marketId is
+        // trusted server-side. The full market object is left out of the
+        // body now — sending it would just be wasted bytes since /api/ask
+        // re-resolves canonical metadata regardless.
         const res = await apiJSON<{ events: AskEvent[]; complete: boolean }>(
           '/api/ask',
           {
             method: 'POST',
             body: {
               marketId: (market as { marketId?: string }).marketId,
-              market,
               question: trimmed,
             } as unknown as BodyInit,
+            signal: ctrl.signal,
           },
         );
+        // Stale-run guard: a switch to a different market (or a later send)
+        // makes this response stale. Drop it silently — the new run owns
+        // the chat history now.
+        if (myRunId !== runCounterRef.current || myMarketId !== runMarketIdRef.current) {
+          return;
+        }
         for (const ev of res.events ?? []) {
           handleAskEvent(ev, acc, setMessages);
         }
       } catch (err: unknown) {
+        // AbortError is the expected outcome of a market switch — don't
+        // surface as a user-visible error.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (myRunId !== runCounterRef.current || myMarketId !== runMarketIdRef.current) return;
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
         setMessages((m) => [...m, { role: 'ai', content: `error: ${msg}` }]);
         setRunStatus('error');
       } finally {
-        setBusy(false);
-        const final = Date.now() - runStart;
-        setLastElapsedMs(final);
-        setRunElapsedMs(final);
-        setRunStartedAt(null);
-        // If we didn't already mark it as 'error' in the catch block, then we
-        // got here cleanly — the SSE stream completed and ask:done has been
-        // dispatched. Mark as done so the rail flips from running to DONE.
-        setRunStatus((s) => (s === 'error' ? 'error' : 'done'));
+        // Don't mutate busy/status if a NEWER run has started — the new run
+        // already set busy=true and runStatus=running, and we'd otherwise
+        // flip them back to idle here.
+        if (myRunId === runCounterRef.current) {
+          setBusy(false);
+          const final = Date.now() - runStart;
+          setLastElapsedMs(final);
+          setRunElapsedMs(final);
+          setRunStartedAt(null);
+          setRunStatus((s) => (s === 'error' ? 'error' : 'done'));
+          if (activeCtrlRef.current === ctrl) activeCtrlRef.current = null;
+        }
       }
     },
-    [market],
+    [market, marketId],
   );
 
   const clear = useCallback(() => {

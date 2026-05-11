@@ -32,9 +32,16 @@ import { runHoldersAgent } from '@pm-copilot/core/agents/holders';
 import { runNewsAgent } from '@pm-copilot/core/agents/news';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import { byokProvider, bestWebSearchProvider } from '@pm-copilot/core/providers/byok';
+import {
+  gammaToMarketMeta,
+  getEventForMarketId,
+  listEventsByTag,
+  listEventsAll,
+} from '@pm-copilot/core/feeds/polymarket';
 import type {
-  MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent,
+  MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent, Category,
 } from '@pm-copilot/core';
+import { getCached as getCachedBrief, type BriefEnvelope } from '../briefStore.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Off-topic question gate — pre-LLM, regex-based, zero cost.
@@ -90,16 +97,82 @@ export type AskResponse = {
   complete: boolean;
 };
 
-/** Validate the body's market shape just enough to trust it for grounding fetches. */
-function parseMarket(body: unknown): MarketMeta | null {
+/** Extract the marketId from the body. Prefers a top-level `marketId`
+ *  string (current clients); falls back to `body.market.marketId` for
+ *  any pre-canonicalization client still in flight. The full `market`
+ *  object the client may attach is IGNORED — we re-resolve canonical
+ *  MarketMeta server-side via resolveCanonicalMarket() so a crafted
+ *  caller can't inject a fake title/token through the agent prompts
+ *  or poison the grounding cache. */
+function parseMarketId(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
-  const root = body as { market?: unknown };
-  const m = root.market;
-  if (!m || typeof m !== 'object') return null;
-  const cand = m as Partial<MarketMeta>;
-  if (typeof cand.marketId !== 'string' || !cand.marketId) return null;
-  if (typeof cand.tokenIdYes !== 'string' || typeof cand.tokenIdNo !== 'string') return null;
-  return cand as MarketMeta;
+  const root = body as { marketId?: unknown; market?: unknown };
+  if (typeof root.marketId === 'string' && root.marketId) return root.marketId;
+  if (root.market && typeof root.market === 'object') {
+    const inner = (root.market as { marketId?: unknown }).marketId;
+    if (typeof inner === 'string' && inner) return inner;
+  }
+  return null;
+}
+
+/** Resolve a marketId to canonical MarketMeta server-side. Same precedence
+ *  as /api/brief:
+ *    1. In-memory briefStore — instant if a recent brief ran for this id.
+ *    2. Scan the four bucket lists (sports/crypto/politics/other) for
+ *       a matching sub-market in any event.
+ *    3. Final fallback: direct Gamma /markets?id= lookup with the parent
+ *       event hydrated for category/title context.
+ *  Returns null when no canonical metadata is available. */
+async function resolveCanonicalMarket(marketId: string): Promise<MarketMeta | null> {
+  // (1) briefStore cache: the very first envelope of a completed brief is
+  // the canonical `{ t: 'market', market }` envelope written server-side.
+  const cached = getCachedBrief(marketId);
+  if (cached) {
+    const marketEv = cached.events.find(
+      (e): e is Extract<BriefEnvelope, { t: 'market' }> =>
+        (e as { t?: string }).t === 'market',
+    );
+    if (marketEv?.market) return marketEv.market;
+  }
+
+  // (2) Bucket scans — same shape as brief.ts:resolveMarketById. The list
+  // endpoints are themselves cached so repeated asks are cheap.
+  const buckets: { cat: Category; fetch: () => Promise<Awaited<ReturnType<typeof listEventsByTag>>> }[] = [
+    { cat: 'sports',   fetch: () => listEventsByTag('sports', 200) },
+    { cat: 'crypto',   fetch: () => listEventsByTag('crypto', 200) },
+    { cat: 'politics', fetch: () => listEventsByTag('politics', 200) },
+    { cat: 'other',    fetch: () => listEventsAll(200) },
+  ];
+  for (const b of buckets) {
+    try {
+      const events = await b.fetch();
+      for (const ev of events) {
+        for (const m of ev.markets) {
+          if (m.id !== marketId) continue;
+          if (!m.clobTokenIds) return null;
+          const meta = gammaToMarketMeta(ev, m, b.cat);
+          if (!meta.tokenIdYes || !meta.tokenIdNo) return null;
+          return meta;
+        }
+      }
+    } catch {
+      /* try the next bucket */
+    }
+  }
+
+  // (3) Direct Gamma lookup (catches culture / pop-culture / niche-tag
+  // markets that don't surface in the four bucket scans).
+  try {
+    const direct = await getEventForMarketId(marketId);
+    if (!direct) return null;
+    const { event, marketRaw } = direct;
+    if (!marketRaw.clobTokenIds) return null;
+    const meta = gammaToMarketMeta(event, marketRaw, 'other');
+    if (!meta.tokenIdYes || !meta.tokenIdNo) return null;
+    return meta;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -149,14 +222,24 @@ async function ensureGrounding(
 }
 
 export async function askHandler(req: Request, res: Response) {
-  const market = parseMarket(req.body);
+  const marketId = parseMarketId(req.body);
   const question = String(req.body?.question ?? '').trim();
-  if (!market) {
-    res.status(400).json({ error: 'request body must include { market: MarketMeta, question }' });
+  if (!marketId) {
+    res.status(400).json({ error: 'request body must include { marketId, question }' });
     return;
   }
   if (!question) {
     res.status(400).json({ error: 'question required' });
+    return;
+  }
+  // Re-resolve canonical metadata server-side. The client's `market` object
+  // (if attached for backward compat) is intentionally NOT trusted: agent
+  // prompts use the canonical title and prices, the grounding store keys
+  // off the canonical marketId, and any spoofed token IDs from a crafted
+  // caller would never reach the supervisor.
+  const market = await resolveCanonicalMarket(marketId);
+  if (!market) {
+    res.status(404).json({ error: `market ${marketId} not found` });
     return;
   }
 

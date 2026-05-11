@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { byokHeader } from './middleware/byokHeader.js';
 import { adminAuth } from './middleware/adminAuth.js';
+import { rateLimit } from './middleware/rateLimit.js';
 import { positionsHandler } from './routes/positions.js';
 import { profileHandler } from './routes/profile.js';
 import { authTestHandler } from './routes/auth-test.js';
@@ -84,7 +85,9 @@ async function main() {
   });
 
   // ---- BYOK auth check ----
-  app.post('/api/auth/test', authTestHandler);
+  // 10 per minute per IP: enough headroom to validate 4 provider keys
+  // without forcing a coffee break, tight enough to deny key probing.
+  app.post('/api/auth/test', rateLimit({ windowMs: 60_000, max: 10, bucket: 'auth-test' }), authTestHandler);
   app.get('/api/health/providers', healthProvidersHandler);
 
   // ---- New beta routes ----
@@ -97,8 +100,12 @@ async function main() {
   app.get('/api/markets', getMarketsHandler);
   app.get('/api/markets-list', getMarketsListHandler);
   app.get('/api/market', getMarketByIdHandler);
-  app.get('/api/brief', briefHandler);
-  app.post('/api/ask', askHandler);
+  // 30 briefs per hour per IP — well above honest single-user load and
+  // far below what an OpenAI-bill-draining bot would attempt.
+  app.get('/api/brief', rateLimit({ windowMs: 60 * 60 * 1000, max: 30, bucket: 'brief' }), briefHandler);
+  // 30 questions per hour per IP — same shape ask had inline, now via the
+  // shared util so brief/auth-test reuse the same machinery.
+  app.post('/api/ask', rateLimit({ windowMs: 60 * 60 * 1000, max: 30, bucket: 'ask' }), askHandler);
   app.get('/api/events', getEventsListHandler);
   app.get('/api/event', getEventByIdHandler);
 

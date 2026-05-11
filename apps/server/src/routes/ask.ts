@@ -5,11 +5,13 @@
 // Three abuse defenses keep the public-demo OpenAI bill from getting
 // drained by bots running off-topic prompts ("solve 2+2", "write me code"):
 //
-//   1. Off-topic gate (free, runs first) — regex denylist for the obvious
-//      non-market patterns. Hits return a canned refusal without calling
-//      the LLM at all.
-//   2. Per-IP sliding-window rate limit (free, runs second) — caps each
-//      IP at 30 questions per rolling hour. Returns 429 once breached.
+//   1. Per-IP sliding-window rate limit (free, applied as route middleware
+//      in apps/server/src/index.ts) — caps each IP at 30 questions per
+//      rolling hour via the shared rateLimit() util. Returns 429 once
+//      breached, before the handler runs.
+//   2. Off-topic gate (free, runs in-handler) — regex denylist for the
+//      obvious non-market patterns. Hits return a canned refusal without
+//      calling the LLM at all.
 //   3. SYS prompt rule (cheap, runs last) — when 1 and 2 both pass and we
 //      reach the LLM, the system prompt still tells the model to refuse
 //      anything unrelated to prediction markets / trading / financial
@@ -77,59 +79,6 @@ function isOffTopic(question: string): boolean {
     if (rx.test(question)) return true;
   }
   return false;
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// Per-IP sliding-window rate limit.
-// ─────────────────────────────────────────────────────────────────────
-// 30 questions per IP per rolling hour. In-memory; a future multi-replica
-// scale-out would need shared state (Redis), but for a single-replica
-// Container App this is fine. Behind Container Apps' ingress the real
-// client IP is in the `x-forwarded-for` header.
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;   // 1 hour
-const RATE_LIMIT_MAX_PER_WINDOW = 30;
-const RATE_LIMIT_SWEEP_EVERY = 200;            // sweep on every Nth insert
-const ipBuckets = new Map<string, number[]>(); // ip → [timestamps]
-let _sweepCounter = 0;
-
-function clientIp(req: Request): string {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) {
-    const first = xff.split(',')[0];
-    if (first) return first.trim();
-  }
-  return req.ip || req.socket.remoteAddress || 'unknown';
-}
-
-/** Drop fully-expired buckets so the map can't grow without bound when
- *  IPs visit a few times then disappear. Bounded cost — runs once every
- *  RATE_LIMIT_SWEEP_EVERY inserts regardless of map size. */
-function sweepExpired(cutoff: number): void {
-  for (const [k, v] of ipBuckets) {
-    if (!v.some((t) => t > cutoff)) ipBuckets.delete(k);
-  }
-}
-
-function checkRateLimit(ip: string): { ok: boolean; remaining: number; retryAfterMs: number } {
-  const now = Date.now();
-  const cutoff = now - RATE_LIMIT_WINDOW_MS;
-  const stamps = ipBuckets.get(ip)?.filter((t) => t > cutoff) ?? [];
-  if (stamps.length >= RATE_LIMIT_MAX_PER_WINDOW) {
-    const oldest = stamps[0]!;
-    return {
-      ok: false,
-      remaining: 0,
-      retryAfterMs: Math.max(0, RATE_LIMIT_WINDOW_MS - (now - oldest)),
-    };
-  }
-  stamps.push(now);
-  ipBuckets.set(ip, stamps);
-  if (++_sweepCounter % RATE_LIMIT_SWEEP_EVERY === 0) sweepExpired(cutoff);
-  return {
-    ok: true,
-    remaining: RATE_LIMIT_MAX_PER_WINDOW - stamps.length,
-    retryAfterMs: 0,
-  };
 }
 
 /** Response shape returned by POST /api/ask. The client iterates the
@@ -211,31 +160,16 @@ export async function askHandler(req: Request, res: Response) {
     return;
   }
 
-  // ── Defense layer 1: per-IP rate limit ──
-  // Cheap, runs before any LLM call. 30 questions per rolling hour per IP.
-  // 429 with Retry-After header lets the client back off cleanly.
-  const ip = clientIp(req);
-  const rate = checkRateLimit(ip);
-  if (!rate.ok) {
-    const retryS = Math.ceil(rate.retryAfterMs / 1000);
-    res.setHeader('Retry-After', String(retryS));
-    res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX_PER_WINDOW));
-    res.setHeader('X-RateLimit-Remaining', '0');
-    res.status(429).json({
-      error: `rate limit exceeded — ${RATE_LIMIT_MAX_PER_WINDOW} questions per hour per IP. Retry in ${Math.ceil(retryS / 60)} minutes.`,
-    });
-    return;
-  }
-  res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX_PER_WINDOW));
-  res.setHeader('X-RateLimit-Remaining', String(rate.remaining));
-
-  // ── Defense layer 2: off-topic gate ──
+  // ── Defense layer 1: off-topic gate ──
+  // The per-IP rate limit runs as route middleware (see index.ts wiring);
+  // we never reach this handler if the caller is over the cap.
+  //
   // Cheap, runs before any LLM call. Pure regex denylist for obvious
   // non-market questions (math homework, code generation, jokes, etc.).
   // Returns a canned single-claim refusal in the ask response shape so
   // the client renders it as a normal chat reply instead of a 4xx error.
   if (isOffTopic(question)) {
-    console.info(`[ask] off-topic blocked from ${ip}: ${question.slice(0, 80)}`);
+    console.info(`[ask] off-topic blocked from ${req.ip || 'unknown'}: ${question.slice(0, 80)}`);
     const events: AskEvent[] = [
       { t: 'ask:start' },
       {

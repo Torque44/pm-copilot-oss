@@ -17,6 +17,7 @@ import { profileHandler } from './routes/profile.js';
 import { authTestHandler } from './routes/auth-test.js';
 import { resolveHandler } from './routes/resolve.js';
 import { healthProvidersHandler } from './routes/health-providers.js';
+import { verifyHandleHandler } from './routes/verify-handle.js';
 import { briefHandler } from './routes/brief.js';
 import { askHandler } from './routes/ask.js';
 import {
@@ -84,6 +85,7 @@ async function main() {
   app.get('/api/positions', positionsHandler);
   app.get('/api/profile/:handle', profileHandler);
   app.get('/api/resolve', resolveHandler);
+  app.get('/api/verify-handle', verifyHandleHandler);
 
   // ---- Ported routes ----
   app.get('/api/markets', getMarketsHandler);

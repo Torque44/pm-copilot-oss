@@ -758,6 +758,25 @@ h1.headline .accent { color: var(--citation); }
 }
 .handle-submit:hover { background: var(--citation); }
 
+/* Live verifier indicator — sits between the input and the submit button.
+   Drives the ✓ / ✕ / ⋯ / ~ glyph the user sees while typing a handle. */
+.handle-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  font-size: 14px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  user-select: none;
+  transition: color 120ms ease;
+}
+.handle-check.check-idle { color: transparent; border-color: transparent; }
+.handle-check.check-checking { color: var(--text-muted); }
+.handle-check.check-ok { color: #22c55e; }
+.handle-check.check-notfound { color: #ef4444; }
+.handle-check.check-unknown { color: #f59e0b; }
+
 .privacy-note {
   display: flex;
   align-items: flex-start;

@@ -22,16 +22,16 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { isPlausibleEvmAddress } from '../../hooks/useAuth';
 import './landing.css';
 
-type Stage = 'landing' | 'auth-wallets' | 'auth-paste' | 'twitter' | 'handoff';
+// v1 simplification (May 2026): the wallet-picker stage is gone. Live
+// wallet-connect (MetaMask / Coinbase / WalletConnect) made the flow heavier
+// without delivering more than the paste path — pm-copilot is read-only, we
+// only need the address to look up positions. Tradeable execution comes in
+// v2; until then a pasted address is the single, simplest entry point.
+type Stage = 'landing' | 'auth-paste' | 'twitter' | 'handoff';
 
-// Minimal shape for EIP-1193 injected wallet providers (window.ethereum).
-// Just enough to call eth_requestAccounts; we don't sign or send tx.
-type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  isMetaMask?: boolean;
-  isCoinbaseWallet?: boolean;
-  isRabby?: boolean;
-};
+// EthereumProvider injected-wallet shape lived here until v1 simplification
+// dropped the wallet-picker stage in May 2026. Re-add when v2 brings
+// tradeable execution back into scope.
 
 export interface LandingFlowProps {
   /** Called once the user has at minimum a wallet address. The hook then
@@ -208,12 +208,15 @@ export function LandingFlow({
   onHandoffComplete,
 }: LandingFlowProps) {
   const [stage, setStage] = useState<Stage>('landing');
-  const [walletPick, setWalletPick] = useState<string | null>(null);
   const [addr, setAddr] = useState('');
   const [addrError, setAddrError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState<string | null>(null);
-  const [connectError, setConnectError] = useState<string | null>(null);
   const [handle, setHandle] = useState('');
+  // Server-side verifier state for the X handle input — debounced existence
+  // check via /api/verify-handle. 'idle' before user types, 'checking' while
+  // the request is in flight, 'ok' / 'notfound' / 'unknown' after it returns.
+  // Drives the small status indicator next to the input.
+  type HandleCheck = 'idle' | 'checking' | 'ok' | 'notfound' | 'unknown';
+  const [handleCheck, setHandleCheck] = useState<HandleCheck>('idle');
   const handleInputRef = useRef<HTMLInputElement | null>(null);
   // Lazy-init from cache so repeat visitors see real markets on first
   // paint. New visitors see the curated FALLBACK_TICKER until the network
@@ -334,57 +337,39 @@ export function LandingFlow({
     setStage('twitter');
   };
 
-  // Browser-injected wallet connect (MetaMask, Coinbase Wallet extension,
-  // Rabby, OKX, Brave). All inject a window.ethereum provider. We don't
-  // sign anything — just request the user's address with eth_requestAccounts.
-  // No SDK, no extra deps; ~0KB bundle cost.
-  const connectInjected = async (which: 'metamask' | 'coinbase' | 'walletconnect') => {
-    setConnectError(null);
-    if (which === 'walletconnect') {
-      // WalletConnect QR flow needs an SDK we haven't bundled. Fall through
-      // to the address-paste step which works for everyone — including
-      // mobile-only users on the Polymarket app, who can copy their
-      // address straight from their profile.
-      setWalletPick('walletconnect');
-      setStage('auth-paste');
+  // Live verifier for the X handle input. Debounced 400ms — as the user
+  // types, we POST the cleaned handle to /api/verify-handle and surface a
+  // green / amber / red indicator next to the input. Non-blocking: a
+  // 'notfound' result lets the user proceed anyway (they may have typoed
+  // momentarily), but a 'ok' check gives them confidence before submit.
+  useEffect(() => {
+    if (stage !== 'twitter') return;
+    const cleaned = handle.replace(/^@/, '').trim();
+    if (!cleaned) { setHandleCheck('idle'); return; }
+    // Format gate: Twitter handles are 1–15 chars, alphanumeric + underscore.
+    // Reject obvious garbage without burning a network call.
+    if (!/^[A-Za-z0-9_]{1,15}$/.test(cleaned)) {
+      setHandleCheck('notfound');
       return;
     }
-    const eth = (window as Window & { ethereum?: EthereumProvider }).ethereum;
-    if (!eth || typeof eth.request !== 'function') {
-      // No injected wallet available — fall back to paste with a helpful
-      // hint. Common case on mobile browsers without the wallet extension.
-      setConnectError(
-        which === 'metamask'
-          ? 'metamask not detected in this browser. install the extension or paste your address below.'
-          : 'coinbase wallet extension not detected. install it or paste your address below.',
-      );
-      setWalletPick(which);
-      setStage('auth-paste');
-      return;
-    }
-    setConnecting(which);
-    try {
-      const accounts = await eth.request({ method: 'eth_requestAccounts' });
-      if (!Array.isArray(accounts) || accounts.length === 0) {
-        throw new Error('no account returned by wallet');
+    setHandleCheck('checking');
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/verify-handle?h=${encodeURIComponent(cleaned)}`, {
+          signal: ctrl.signal,
+        });
+        const body = (await res.json()) as { ok: boolean | 'unknown'; reason?: string };
+        if (body.ok === true) setHandleCheck('ok');
+        else if (body.ok === 'unknown') setHandleCheck('unknown');
+        else setHandleCheck('notfound');
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return;
+        setHandleCheck('unknown');
       }
-      const first = accounts[0];
-      if (typeof first !== 'string' || !isPlausibleEvmAddress(first)) {
-        throw new Error('wallet returned an unexpected address shape');
-      }
-      onConnectWallet(first);
-      setStage('twitter');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // User rejected the request (MetaMask code 4001) or any other error
-      // — drop to paste with the message visible.
-      setConnectError(`connect failed: ${msg.slice(0, 140)}. try pasting your address instead.`);
-      setWalletPick(which);
-      setStage('auth-paste');
-    } finally {
-      setConnecting(null);
-    }
-  };
+    }, 400);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [handle, stage]);
 
   const onSubmitHandleForm = (e: FormEvent) => {
     e.preventDefault();
@@ -484,7 +469,7 @@ export function LandingFlow({
             </div>
 
             <div className="cta-row">
-              <button className="btn-primary" onClick={() => setStage('auth-wallets')}>
+              <button className="btn-primary" onClick={() => setStage('auth-paste')}>
                 sign in with polymarket
                 <svg className="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75}>
                   <path d="M6 12 L10 8 L6 4" />
@@ -570,7 +555,7 @@ export function LandingFlow({
       </div>
 
       {/* ============== STAGE 2: wallet picker ============== */}
-      <div className={`lf-stage lf-stage-auth ${stage === 'auth-wallets' || stage === 'auth-paste' ? 'active' : ''}`}>
+      <div className={`lf-stage lf-stage-auth ${stage === 'auth-paste' ? 'active' : ''}`}>
         <div className="lf-modal">
           <div className="lf-modal-head">
             <div className="auth-mini-logo">
@@ -579,97 +564,35 @@ export function LandingFlow({
               <img src="/mark.svg" alt="pm" className="auth-pm-logo" width={33} height={16} />
             </div>
             <div className="head-text">
-              <div className="head-title">connect your wallet</div>
+              <div className="head-title">paste your polymarket address</div>
               <div className="head-sub mono">read-only. no signing, no spending.</div>
             </div>
             <button className="head-x" onClick={() => setStage('landing')} aria-label="close">✕</button>
           </div>
 
-          {stage === 'auth-wallets' && (
-            <div className="lf-modal-body">
-              <div className="modal-label mono">choose a wallet</div>
-              <div className="wallet-list">
-                <button
-                  type="button"
-                  className="wallet-row"
-                  onClick={() => { void connectInjected('metamask'); }}
-                  disabled={connecting !== null}
-                >
-                  <div className="wico mm">M</div>
-                  <div className="wname">
-                    <div className="n">MetaMask</div>
-                    <div className="s mono">browser extension. most polymarket users.</div>
-                  </div>
-                  <span className="wstatus">
-                    {connecting === 'metamask' ? 'connecting…' : 'connect'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="wallet-row"
-                  onClick={() => { void connectInjected('walletconnect'); }}
-                  disabled={connecting !== null}
-                >
-                  <div className="wico wc">W</div>
-                  <div className="wname">
-                    <div className="n">WalletConnect</div>
-                    <div className="s mono">paste address from your mobile wallet</div>
-                  </div>
-                  <span className="wstatus">paste</span>
-                </button>
-                <button
-                  type="button"
-                  className="wallet-row"
-                  onClick={() => { void connectInjected('coinbase'); }}
-                  disabled={connecting !== null}
-                >
-                  <div className="wico cb">C</div>
-                  <div className="wname">
-                    <div className="n">Coinbase Wallet</div>
-                    <div className="s mono">extension. injects into the same path as metamask.</div>
-                  </div>
-                  <span className="wstatus">
-                    {connecting === 'coinbase' ? 'connecting…' : 'connect'}
-                  </span>
-                </button>
-              </div>
-              {connectError && (
-                <div className="addr-error mono" style={{ marginTop: 12 }}>{connectError}</div>
-              )}
+          <form className="lf-modal-body" onSubmit={onSubmitAddr}>
+            <div className="modal-label mono">
+              paste your active polymarket address
             </div>
-          )}
-
-          {stage === 'auth-paste' && (
-            <form className="lf-modal-body" onSubmit={onSubmitAddr}>
-              <div className="modal-label mono">
-                paste your {walletPick === 'metamask' ? 'metamask' : walletPick === 'coinbase' ? 'coinbase' : 'wallet'} address
-              </div>
-              {connectError && (
-                <div className="addr-error mono" style={{ marginBottom: 8 }}>{connectError}</div>
-              )}
-              <div className="addr-row">
-                <input
-                  type="text"
-                  className="addr-input mono"
-                  placeholder="0x…"
-                  value={addr}
-                  onChange={(e) => { setAddr(e.target.value); setAddrError(null); }}
-                  spellCheck={false}
-                  autoComplete="off"
-                  autoFocus
-                />
-                <button type="submit" className="addr-submit">continue ↵</button>
-              </div>
-              {addrError && <div className="addr-error mono">{addrError}</div>}
-              <div className="addr-hint mono">
-                we read your polymarket positions read-only. no signing, no spending,
-                no permissions requested.
-              </div>
-              <button type="button" className="addr-back mono" onClick={() => { setConnectError(null); setStage('auth-wallets'); }}>
-                ← pick a different wallet
-              </button>
-            </form>
-          )}
+            <div className="addr-row">
+              <input
+                type="text"
+                className="addr-input mono"
+                placeholder="0x…"
+                value={addr}
+                onChange={(e) => { setAddr(e.target.value); setAddrError(null); }}
+                spellCheck={false}
+                autoComplete="off"
+                autoFocus
+              />
+              <button type="submit" className="addr-submit">continue ↵</button>
+            </div>
+            {addrError && <div className="addr-error mono">{addrError}</div>}
+            <div className="addr-hint mono">
+              we read positions for this address only. no signing, no spending,
+              no permissions requested. <b>tradeable execution lands in v2 — this is v1.</b>
+            </div>
+          </form>
 
           <div className="lf-modal-foot mono">
             <span className="lock">⊙</span>
@@ -692,7 +615,7 @@ export function LandingFlow({
             <span>desk</span>
           </div>
 
-          <h2>one more, link your X handle.</h2>
+          <h2>one more, paste your X handle.</h2>
 
           <p className="why">
             the news and sentiment agents weight by <span className="accent">accounts you actually follow</span>.
@@ -701,15 +624,6 @@ export function LandingFlow({
           </p>
 
           <form className="x-connect-row" onSubmit={onSubmitHandleForm}>
-            <button type="button" className="btn-x" onClick={() => handleInputRef.current?.focus()}>
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-              </svg>
-              connect with X
-            </button>
-
-            <div className="or-divider mono">or paste a handle</div>
-
             <div className="handle-input-wrap">
               <span className="at">@</span>
               <input
@@ -721,6 +635,22 @@ export function LandingFlow({
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
               />
+              <span
+                className={`handle-check mono check-${handleCheck}`}
+                aria-live="polite"
+                title={
+                  handleCheck === 'ok' ? 'handle exists on x.com' :
+                  handleCheck === 'notfound' ? 'no such handle on x.com — check the spelling' :
+                  handleCheck === 'checking' ? 'verifying…' :
+                  handleCheck === 'unknown' ? "couldn't verify (x.com timed out) — proceed anyway if it's yours" :
+                  ''
+                }
+              >
+                {handleCheck === 'ok' && '✓'}
+                {handleCheck === 'notfound' && '✕'}
+                {handleCheck === 'checking' && '⋯'}
+                {handleCheck === 'unknown' && '~'}
+              </span>
               <button type="submit" className="handle-submit">continue ↵</button>
             </div>
           </form>

@@ -408,12 +408,22 @@ export function App() {
   const ask = useAsk(brief.rawMarket);
 
   // Push a recent entry whenever we settle on a market we have data for.
+  // Depend on STABLE values: ids and the useCallback'd push. The full
+  // `recents` object and `brief.market` shape are recreated each render
+  // (object identity churn from the brief reducer + new returned record),
+  // so depending on them caused an infinite update loop. Switching to
+  // ids + the stable callback fires the effect exactly once per market
+  // selection.
+  const pushRecent = recents.push;
   useEffect(() => {
     if (selectedMarketId && brief.market && brief.market.id === selectedMarketId) {
-      const m = brief.market;
-      recents.push({ ...m, category: category || 'other' });
+      pushRecent({ ...brief.market, category: category || 'other' });
     }
-  }, [selectedMarketId, brief.market, category, recents]);
+    // brief.market is intentionally excluded from deps; brief.market?.id
+    // already captures the only field that can change without a fresh
+    // marketId selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMarketId, brief.market?.id, category, pushRecent]);
 
   // UI state
   const [focusedPanel, setFocusedPanel] = useState<PanelKey | null>(null);

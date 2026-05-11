@@ -62,14 +62,17 @@ export class GoogleProvider implements LLMProvider {
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         model
-      )}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+      )}:generateContent`;
 
       const ctrl = new AbortController();
       const killer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
         const r = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.apiKey,
+          },
           body: JSON.stringify(body),
           signal: ctrl.signal,
         });

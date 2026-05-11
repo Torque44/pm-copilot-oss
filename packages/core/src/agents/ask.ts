@@ -619,6 +619,27 @@ Respond ONLY with the JSON object described in the system prompt.`;
 
   const res = await llm.complete(prompt, askOpts);
 
+  // Register any live-search URLs the provider returned (xAI live_search,
+  // Perplexity sonar) as evidence rows under [ask-src-N] ids. Before this
+  // fix, Perplexity's citations were dropped entirely and xAI's were
+  // returned but never threaded into the answer — so a trader reading a
+  // recent factual answer had no clickable source to verify it against.
+  if (Array.isArray(res.citations) && res.citations.length > 0) {
+    res.citations.forEach((url, i) => {
+      const id = `ask-src-${i + 1}`;
+      if (registry.has(id)) return;
+      let host = '';
+      try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { host = url.slice(0, 60); }
+      registry.set(id, {
+        id,
+        kind: 'news',
+        label: host || `ask-src-${i + 1}`,
+        url,
+        payload: { source: 'live-search', url, host },
+      });
+    });
+  }
+
   type RawClaim = { text?: string; citations?: string[] };
   const parsed = res.ok ? extractJson<unknown>(res.text) : null;
 
@@ -729,6 +750,17 @@ Respond ONLY with the JSON object described in the system prompt.`;
   const sectionedCount = claims.filter((c) => SECTION_LABEL_RX.test(c.text)).length;
   if (sectionedCount > 1) {
     claims.sort((a, b) => orderOf(a) - orderOf(b));
+  }
+
+  // Surface any live-search URLs the provider returned as evidence rows on
+  // the answer, even if the model didn't reference them inline. The chat
+  // panel renders these as clickable pills in the trailing source row so
+  // the trader can verify recent factual answers against the actual URLs
+  // Perplexity or xAI used to ground the response.
+  for (const [id, cit] of registry) {
+    if (id.startsWith('ask-src-') && !usedCitations.has(id)) {
+      usedCitations.set(id, cit);
+    }
   }
 
   const answer: AskAnswer = {

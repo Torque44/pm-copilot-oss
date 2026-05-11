@@ -87,12 +87,21 @@ export class PerplexityProvider implements LLMProvider {
         }
         const data = (await r.json()) as any;
         const text = String(data?.choices?.[0]?.message?.content ?? '').trim();
+        // Perplexity attaches its sources as a flat citations: string[] of
+        // URLs at the top level of the response. Surface them so callers
+        // (the Ask agent) can register them as evidence rows instead of
+        // discarding them — without that, the answer cites material the
+        // user can't click through to.
+        const rawCitations = Array.isArray(data?.citations) ? data.citations : [];
+        const citations = rawCitations
+          .filter((c: unknown): c is string => typeof c === 'string' && c.length > 0);
         return {
           ok: true,
           text,
           elapsedMs: Date.now() - started,
           model,
           provider: 'perplexity',
+          ...(citations.length ? { citations } : {}),
         };
       } catch (err: any) {
         clearTimeout(killer);

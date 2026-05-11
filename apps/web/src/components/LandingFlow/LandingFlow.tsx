@@ -394,6 +394,16 @@ export function LandingFlow({
         <span className="right mono">
           <span>open source</span>
           <span><span className="live-dot" />markets live</span>
+          {/* SIGN IN — same destination as the hero "open desk" CTA, but
+              available from the persistent top bar so returning users
+              don't have to scroll to the hero command-row. */}
+          <button
+            type="button"
+            className="util-signin mono"
+            onClick={() => setStage('auth-paste')}
+          >
+            sign in
+          </button>
         </span>
       </div>
 

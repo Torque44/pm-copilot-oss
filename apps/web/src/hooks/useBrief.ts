@@ -6,7 +6,7 @@
 // plus a couple of meta envelopes ('market', 'cache'). We tolerate the
 // superset and only key on `t`.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgentStatus,
   BookRow,
@@ -450,8 +450,16 @@ export function useBrief(marketId: string | null): UseBriefResult {
   const [error, setError] = useState<string | null>(null);
   // Bumping `nonce` triggers a refetch via the effect below.
   const [nonce, setNonce] = useState(0);
+  // Set by `reconnect()` so the next effect run appends `&force=1` to the
+  // brief URL. Without this, a cached brief served from the in-memory
+  // store on reconnect would re-emit the SAME cache envelope (same ageMs,
+  // same events) — and the stale-brief banner would never clear because
+  // cacheAgeMs > 10min stays true. Reset after consumption so subsequent
+  // unrelated effect re-runs (marketId change, etc) hit the cache normally.
+  const forceNextRef = useRef(false);
 
   const reconnect = useCallback(() => {
+    forceNextRef.current = true;
     setNonce((n) => n + 1);
   }, []);
 
@@ -469,12 +477,15 @@ export function useBrief(marketId: string | null): UseBriefResult {
     setLoadState('loading');
     setError(null);
 
+    const forced = forceNextRef.current;
+    forceNextRef.current = false;
+
     (async () => {
       try {
-        const res = await apiFetch(
-          `/api/brief?marketId=${encodeURIComponent(marketId)}`,
-          { signal: controller.signal },
-        );
+        const url = forced
+          ? `/api/brief?marketId=${encodeURIComponent(marketId)}&force=1`
+          : `/api/brief?marketId=${encodeURIComponent(marketId)}`;
+        const res = await apiFetch(url, { signal: controller.signal });
         if (cancelled) return;
         if (!res.ok) {
           throw new Error(`HTTP ${res.status} ${res.statusText}`);

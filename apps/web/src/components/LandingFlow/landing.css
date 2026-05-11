@@ -75,6 +75,28 @@
 }
 @keyframes lf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
+/* SIGN IN button on the utility bar — pill-shaped, same height as the
+   live badge, brand-cyan accent so returning users spot it instantly. */
+.lf-util-bar .util-signin {
+  background: var(--brand-cyan, #75d0ea);
+  color: #050506;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+.lf-util-bar .util-signin:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.lf-util-bar .util-signin:active { transform: translateY(0); filter: brightness(0.95); }
+.lf-util-bar .util-signin:focus-visible {
+  outline: 2px solid var(--brand-cyan, #75d0ea);
+  outline-offset: 2px;
+}
+
 /* ticker tape */
 .lf-ticker {
   height: 28px;

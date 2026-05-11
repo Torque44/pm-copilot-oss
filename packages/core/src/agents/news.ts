@@ -48,9 +48,23 @@ Source rules — follow STRICTLY:
 - If web search returns content from a non-vetted source, drop it from the response. Do not paraphrase from it.
 - If the topic is too niche for any vetted source, fall back to your training-data knowledge marked from:"training", relevance:"low" — but DO NOT invent URLs or sources.
 
+RECENCY RULES — this is a LIVE prediction market and stale news is the
+single biggest UX failure mode of this product:
+- STRONGLY PREFER items published in the last 7 DAYS from today's date
+  (today's date is provided in the user prompt; use it).
+- Expand to last 30 DAYS only if there is no relevant 7-day coverage.
+- NEVER include news older than 6 MONTHS for an active market that
+  resolves in the future — the trader needs the current state, not
+  history. Anything older than 6 months belongs in "background context"
+  not "items".
+- Sort items[] DESCENDING by publishedAt — most recent first.
+- If web search returns only stale items, prefer fewer fresh items over
+  many stale ones. Returning 2 items from this week beats 8 items from
+  last year.
+
 Use web search aggressively across the vetted domains. Cast a wide net:
 
-- Recent news (last 30 days) about the entities/event in the title
+- Recent news (LAST 7 DAYS PREFERRED, last 30 days max) about the entities/event in the title
 - Scheduled events that could drive resolution (votes, releases, summits, games, earnings, court dates)
 - Background context: what is this dispute/question about, who are the parties, what's the current state
 - If the topic is too niche or breaking for web search, fall back to your training-data knowledge — mark such items with "from": "training" and a confidence flag
@@ -159,15 +173,21 @@ export async function runNewsAgent(
   const profile = profileFor(sub);
   const systemPrompt = buildSystemPrompt(profile.domains, profile.hint);
 
+  // Inject TODAY'S date so the model has a concrete reference for "last
+  // 7 days" — without this, models can anchor "recent" to their training
+  // cutoff and return 2024 news for a 2026-resolving market.
+  const todayIso = new Date().toISOString().slice(0, 10);
   const prompt = `Market title: "${market.title}"
 Resolves by: ${market.endDate ?? 'unknown'}
 Current YES price: ${market.yes != null ? (market.yes * 100).toFixed(1) + '¢' : 'n/a'}
+Today's date: ${todayIso}
 
 Build a fast briefing for a trader looking at this contract.
-Cast a wide net: last 30 days of news + scheduled events + background context.
-If the topic is niche/breaking and web search comes up thin, supplement from
-your training-data knowledge marked from:"training". Return the JSON shape
-specified in the system prompt.`;
+PREFER news from the last 7 days (vs ${todayIso}). Expand to last 30 days
+only if 7-day coverage is thin. Sort items[] newest-first by publishedAt.
+If the topic is niche/breaking and web search comes up thin, supplement
+from your training-data knowledge marked from:"training". Return the
+JSON shape specified in the system prompt.`;
 
   const res = await newsProvider.complete(prompt, {
     tier: 'fast',
@@ -186,7 +206,7 @@ specified in the system prompt.`;
   //     for this sub-category as `unverified` so the UI can mark them
   //   - training-data items (no URL) pass through with no filtering — the
   //     prompt already tells the model to mark them low-relevance
-  const items: NewsItem[] = rawItems
+  const cleaned: NewsItem[] = rawItems
     .filter(it => {
       if (it.from === 'training' || !it.url) return true;
       return !isDenylisted(it.url);
@@ -198,8 +218,35 @@ specified in the system prompt.`;
       if (it.from === 'training' || !it.url) return { ...it, unverified: true };
       const verified = isAllowlisted(sub, it.url);
       return verified ? it : { ...it, unverified: true };
-    })
-    .slice(0, 8);
+    });
+
+  // Newest-first. Items with no publishedAt sort to the bottom — they
+  // could be anything from "no date metadata available" to ancient
+  // training-data backfill, so we'd rather show a dated catalyst above
+  // an undated one.
+  cleaned.sort((a, b) => {
+    const ta = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const tb = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    if (!ta && !tb) return 0;
+    if (!ta) return 1;
+    if (!tb) return -1;
+    return tb - ta;
+  });
+
+  // Drop stale items (>180 days old) when we have fresh ones — staleness is
+  // the biggest visible failure mode (e.g., 2024 news on a 2026-resolving
+  // active market). If EVERY item is stale, keep them rather than emit an
+  // empty section: a niche market with only old coverage still benefits
+  // from showing what context exists.
+  const STALE_MS = 180 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const fresh = cleaned.filter((it) => {
+    if (!it.publishedAt) return true;
+    const t = Date.parse(it.publishedAt);
+    if (!Number.isFinite(t)) return true;
+    return now - t < STALE_MS;
+  });
+  const items: NewsItem[] = (fresh.length >= 3 ? fresh : cleaned).slice(0, 8);
   const rawClaims: Claim[] = Array.isArray(parsed?.claims) ? parsed!.claims : [];
   const background = typeof parsed?.background === 'string' ? parsed!.background : '';
 
@@ -311,25 +358,56 @@ async function runNewsViaExa(
   // shorthand. Exa's auto type does well with natural-language queries.
   const query = `${market.title} — recent news, scheduled events, background context`;
 
+  // Two-pass recency: prefer last-7-day hits (the freshest catalysts that
+  // could move an active market), expand to 30 days only if 7 days returned
+  // fewer than 4 hits. This is the architecture-level fix for the stale-
+  // news complaint — even when the model is told to prefer recent news,
+  // Exa was previously asked for a 30-day window so it had no incentive
+  // to surface the freshest items.
   let hits: SearchHit[] = [];
   let searchError: string | null = null;
+  let recencyUsedDays = 7;
   try {
     hits = await searcher.search(query, {
       numResults: 10,
-      // 30-day window mirrors the prompt's "last 30 days" framing. Tighter
-      // windows starve the model on niche markets.
-      recencyHours: 24 * 30,
+      recencyHours: 24 * 7,
       category: 'news',
       withFullText: false,
     });
+    if (hits.length < 4) {
+      // Niche or slow-news market — widen the window. Merge results so any
+      // fresh hits already collected aren't lost when the 30d pass returns
+      // mostly older items.
+      const wider = await searcher.search(query, {
+        numResults: 10,
+        recencyHours: 24 * 30,
+        category: 'news',
+        withFullText: false,
+      });
+      const seen = new Set(hits.map((h) => h.url));
+      for (const h of wider) {
+        if (!seen.has(h.url)) hits.push(h);
+      }
+      recencyUsedDays = 30;
+    }
   } catch (err) {
     searchError = err instanceof Error ? err.message : 'exa search failed';
   }
+  void recencyUsedDays;
 
   // Filter through denylist + per-sub-category allowlist (same provenance
-  // contract as the legacy path).
-  const filtered = hits.filter((h) => !isDenylisted(h.url)).slice(0, 10);
-  const items: NewsItem[] = filtered.map((h) => {
+  // contract as the legacy path). Sort newest-first so the LLM evidence
+  // block and the rendered items both lead with the freshest catalyst.
+  const filtered = hits.filter((h) => !isDenylisted(h.url));
+  filtered.sort((a, b) => {
+    const ta = a.publishedDate ? Date.parse(a.publishedDate) : 0;
+    const tb = b.publishedDate ? Date.parse(b.publishedDate) : 0;
+    if (!ta && !tb) return (b.score ?? 0) - (a.score ?? 0);
+    if (!ta) return 1;
+    if (!tb) return -1;
+    return tb - ta;
+  });
+  const items: NewsItem[] = filtered.slice(0, 10).map((h) => {
     const item: NewsItem = {
       headline: h.title,
       source: h.domain,

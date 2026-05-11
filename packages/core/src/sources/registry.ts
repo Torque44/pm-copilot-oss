@@ -19,6 +19,7 @@ export type MarketSubcategory =
   | 'geopolitics'     // international — Iran/Ukraine/China/etc.
   | 'macro'           // Fed, CPI, GDP, rates, central banks
   | 'tech'            // AI / chips / Big Tech earnings
+  | 'culture'         // music / film / TV / celebrity / awards
   | 'other';
 
 export type SourceProfile = {
@@ -235,6 +236,41 @@ const PROFILES: Record<MarketSubcategory, SourceProfile> = {
     hint: 'tech/AI — official company blogs first (anthropic.com, openai.com, x.ai, nvidia.com), then The Information / Stratechery for analysis. Founder accounts (sama, elonmusk, demishassabis) when they personally announce. Dylan Patel for chip supply.',
   },
 
+  culture: {
+    domains: [
+      // music trade press
+      'billboard.com', 'pitchfork.com', 'rollingstone.com', 'spin.com',
+      'stereogum.com', 'theneedledrop.com', 'consequence.net', 'nme.com',
+      // film/TV trade press
+      'variety.com', 'hollywoodreporter.com', 'deadline.com', 'indiewire.com',
+      'thewrap.com', 'vulture.com', 'ew.com', 'avclub.com',
+      // streaming/industry analysis
+      'puck.news',
+      // major general outlets with serious culture desks
+      'nytimes.com', 'theguardian.com', 'newyorker.com', 'theatlantic.com',
+      'bbc.com', 'apnews.com', 'reuters.com',
+      // awards / industry official
+      'oscars.org', 'grammy.com', 'goldenglobes.com', 'emmys.com',
+      // streamers / studios (primary source for release dates)
+      'netflix.com', 'disneyplus.com', 'max.com', 'hulu.com', 'paramount.com',
+      'a24.com', 'apple.com',
+    ],
+    handles: [
+      // music critics + outlets
+      'pitchfork', 'billboard', 'RollingStone', 'stereogum', 'theneedledrop',
+      'consequence', 'NME', 'questlove',
+      // film/TV trade
+      'Variety', 'THR', 'DEADLINE', 'IndieWire', 'TheWrap', 'vulture', 'ew',
+      // awards
+      'TheAcademy', 'TheGRAMMYs', 'goldenglobes',
+      // industry analysts
+      'puckdotnews', 'mattbelloni',
+      // general high-credibility culture desks
+      'guardian', 'nytimes',
+    ],
+    hint: 'music/film/TV/celebrity markets — favor trade press (Variety, Hollywood Reporter, Deadline, Billboard, Pitchfork) and verified critics. Studios/streamers (netflix.com, a24.com) are primary source for release dates. Skip fan accounts and rumor mills.',
+  },
+
   other: {
     domains: [
       ...COMMON_NEUTRAL_NEWS,
@@ -258,6 +294,24 @@ export function profileFor(sub: MarketSubcategory): SourceProfile {
 export function classifyMarket(category: string, title: string): MarketSubcategory {
   const t = (title || '').toLowerCase();
   const c = (category || '').toLowerCase();
+
+  // Title-side culture detection runs BEFORE category dispatch — a Polymarket
+  // market about Drake or the Grammys can show up under "other", "pop culture",
+  // or even un-categorised, and we want all three to land on the culture
+  // profile so sentiment + news use trade press instead of wire services.
+  const CULTURE_RX = /\b(grammy|grammys|oscar|oscars|emmy|emmys|golden\s+globe|tony\s+awards|cannes|mtv\s+vma|sag\s+awards|billboard\s+(?:200|hot\s+100|chart|number\s+one)|drake|kendrick|taylor\s+swift|beyonc|kanye|bieber|billie\s+eilish|the\s+weeknd|post\s+malone|sza|ariana\s+grande|rihanna|spider[-\s]?man|gta\s*(?:6|vi)\b|marvel|dc\s+(?:movie|film)|album\s+(?:release|drop)|tour\s+announcement|netflix\s+series|hbo\s+show|hulu\s+(?:series|show)|disney\+|paramount\+|streaming\s+release|box\s+office|opening\s+weekend|movie\s+release|tv\s+show\s+release)\b/;
+  if (CULTURE_RX.test(t)) return 'culture';
+
+  // Category-side: any Polymarket category that names culture-shaped content
+  // routes here too, so a "pop culture" tab market with an unusual title
+  // (e.g. a new artist we don't keyword-match) still gets the right profile.
+  if (
+    c === 'culture' || c === 'pop culture' || c === 'pop-culture' ||
+    c === 'entertainment' || c === 'music' || c === 'film' ||
+    c === 'movies' || c === 'tv' || c === 'streaming'
+  ) {
+    return 'culture';
+  }
 
   // politics → split into geopolitics/macro/politics
   if (c === 'politics') {

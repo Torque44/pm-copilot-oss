@@ -152,7 +152,12 @@ export function NewsPanel({
         </div>
       )}
       {tab === 'sentiment' && sentiment !== null && sentiment.length === 0 && !sentimentRunning && (
-        <div className="panel-placeholder mono">no sentiment surfaced for this market</div>
+        <div className="panel-placeholder mono">
+          no recent posts from vetted handles for this market.
+          <br />
+          handle allowlists are curated per category (politics, macro, crypto,
+          sports, tech, culture). niche topics or new artists may not be covered yet.
+        </div>
       )}
       {tab === 'sentiment' && sentiment !== null && sentiment.length > 0 && (
         <ul className="sentiment-list">

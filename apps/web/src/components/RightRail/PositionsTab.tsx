@@ -40,11 +40,12 @@ export function PositionsTab({ wallet, positions, onWalletChange }: PositionsTab
       )}
       {positions.map((p) => {
         const up = p.cashPnl >= 0;
+        const side = p.outcome.toLowerCase() === 'yes' ? 'yes' : p.outcome.toLowerCase() === 'no' ? 'no' : '';
         return (
           <div key={p.conditionId} className="position-card">
             <div className="position-title">{p.title}</div>
             <div className="position-row">
-              <span className="position-outcome mono">{p.outcome}</span>
+              <span className={`position-outcome mono ${side}`}>{p.outcome}</span>
               <span className="mono">
                 {p.size.toFixed(0)} @ {p.avgPrice.toFixed(2)}
               </span>

@@ -145,7 +145,15 @@
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: 0.04em;
+  font-weight: 600;
 }
+/* YES / NO side coloring on the outcome label + pnl row. The .yes / .no
+   classes are set by PositionsTab.tsx based on the position's outcome
+   (and pnl sign for the bottom row). */
+.position-outcome.yes,
+.position-card .yes { color: var(--success); }
+.position-outcome.no,
+.position-card .no  { color: var(--danger); }
 .position-meta {
   color: var(--muted, #888);
   font-size: 10px;

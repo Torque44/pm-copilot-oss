@@ -385,16 +385,15 @@ export function LandingFlow({
 
   return (
     <div className="lf-root">
-      {/* utility bar — quiet status at the top */}
+      {/* utility bar — 3-col grid: wordmark / domain / actions */}
       <div className="lf-util-bar">
         <span className="brand-mini mono">
           <img src="/wordmark.svg" alt="pm copilot" className="util-logo" width={107} height={20} />
         </span>
-        <span className="sep" />
-        <span className="mono">research desk</span>
-        <span className="right">
-          <span className="live-dot" />
-          markets live · v0.1
+        <span className="center-domain mono">pmcopilot.wtf</span>
+        <span className="right mono">
+          <span>open source</span>
+          <span><span className="live-dot" />markets live</span>
         </span>
       </div>
 
@@ -417,139 +416,217 @@ export function LandingFlow({
         </div>
       </div>
 
-      {/* ============== STAGE 1: landing ============== */}
+      {/* ============== STAGE 1: landing ==============
+          Visual direction from design-bundle/landing-redesign-mock.html.
+          Hero (left text + right preview), three numbered bands, footer.
+          All CTAs route to the existing auth-paste stage via setStage —
+          no functional changes from the prior version. */}
       <div className={`lf-stage lf-stage-landing ${stage === 'landing' ? 'active' : ''}`}>
         <main className="land">
-          <section className="land-hero-band">
-            <div className="land-marker mono">
-              <span className="num">01</span>
-              <span>research desk for polymarket</span>
-              <span className="rule" />
-              <span className="meta">v0.1 · early access · may 2026</span>
-            </div>
-
-            <h1 className="headline">
-              the AI on most pm tools<br />
-              <em>makes up</em> citations.<br />
-              <span className="accent">this one</span> can't.
-            </h1>
-
-            <div className="lede-grid">
-              <p className="lede-prose">
-                paste any polymarket market or event url. seven specialists fan
-                out in parallel: <b>orderbook depth</b>, <b>top wallet rotations</b>,
-                <b> news from a curated allowlist</b> (wikipedia, medium, reddit,
-                substack are banned by hostname because user-editable sources can
-                be doctored mid-trade), <b>vetted X handles</b>, <b>resolved
-                comparables</b> for base rates. each agent emits claims tagged
-                with citation ids like <code>[whale-3]</code> or <code>[news-7]</code>.
-                the synthesis layer can only cite ids the upstream agents
-                actually emitted. invent one, the system drops it. <b>the
-                contract is enforced in code, not by prompt instruction.</b>
+          {/* Hero band — left: pitch + command input; right: brief preview */}
+          <section className="land-hero-band land-shell" aria-labelledby="hero-title">
+            <div>
+              <div className="land-eyebrow mono">
+                <span>01</span>
+                <span>polymarket intelligence</span>
+                <span className="rule" />
+                <span>read-only</span>
+              </div>
+              <h1 className="headline" id="hero-title">
+                pmcopilot.wtf turns market chaos into <span className="accent">cited briefs.</span>
+              </h1>
+              <p className="lede">
+                paste a polymarket url. pm copilot checks the book, holders, news,
+                vetted x sentiment, resolved comparables, and thesis paths. every claim
+                has to point back to a source id already produced upstream.
               </p>
-
-              <div className="lede-spec mono">
-                <div className="lede-spec-row">
-                  <span className="k">fan-out</span>
-                  <span className="v">7 specialists <small>parallel</small></span>
+              <div className="command-row" role="button" tabIndex={0}
+                onClick={() => setStage('auth-paste')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStage('auth-paste'); }}>
+                <div className="command-input mono">
+                  <span className="prompt">&gt;</span>
+                  <span className="placeholder">https://polymarket.com/event/&lt;market&gt;</span>
                 </div>
-                <div className="lede-spec-row">
-                  <span className="k">citations</span>
-                  <span className="v">id-allowlisted <small>at synthesis</small></span>
-                </div>
-                <div className="lede-spec-row">
-                  <span className="k">denylist</span>
-                  <span className="v">wikipedia <small>+ medium + reddit + substack</small></span>
-                </div>
-                <div className="lede-spec-row">
-                  <span className="k">read-only</span>
-                  <span className="v">no signing <small>no spending</small></span>
-                </div>
+                <button type="button" className="mono" onClick={(e) => { e.stopPropagation(); setStage('auth-paste'); }}>
+                  open desk
+                </button>
+              </div>
+              <div className="hero-meta mono">
+                <span>no order placement</span>
+                <span>no wallet signing</span>
+                <span>BYOK encrypted in browser</span>
               </div>
             </div>
 
-            <div className="cta-row">
-              <button className="btn-primary" onClick={() => setStage('auth-paste')}>
-                sign in with polymarket
-                <svg className="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75}>
-                  <path d="M6 12 L10 8 L6 4" />
-                </svg>
-              </button>
-              <span className="cta-helper mono">
-                press <kbd>↵</kbd> to continue. BYOK keys live encrypted in your browser.
-              </span>
-            </div>
+            <aside className="preview" aria-label="market brief visual preview">
+              <div className="preview-head">
+                <div>
+                  <div className="kicker mono">polymarket / politics</div>
+                  <div className="title">Will J.D. Vance win the 2028 Republican presidential nomination?</div>
+                </div>
+                <button type="button" className="watch mono">watch</button>
+              </div>
+              <div className="price-grid mono">
+                <div className="price-cell">
+                  <div className="price-label">yes</div>
+                  <div className="price-value yes">0.37</div>
+                </div>
+                <div className="price-cell">
+                  <div className="price-label">no</div>
+                  <div className="price-value no">0.63</div>
+                </div>
+                <div className="price-cell">
+                  <div className="price-label">resolves in</div>
+                  <div className="price-value">910d</div>
+                </div>
+                <div className="price-cell">
+                  <div className="price-label">24h vol</div>
+                  <div className="price-value">$57k</div>
+                </div>
+              </div>
+              <div className="preview-grid">
+                <div className="preview-panel">
+                  <div className="panel-title mono"><span>market</span><span>top 20</span></div>
+                  <div className="book-row mono"><span className="no">NO</span><span className="size">$4,317</span><span className="cum">$4,317</span></div>
+                  <div className="book-row mono"><span className="no">NO</span><span className="size">$280</span><span className="cum">$4,598</span></div>
+                  <div className="book-row mono"><span className="no">NO</span><span className="size">$129</span><span className="cum">$4,728</span></div>
+                  <div className="book-row mono"><span className="yes">YES</span><span className="size">$3,920</span><span className="cum">$3,920</span></div>
+                  <div className="book-row mono"><span className="yes">YES</span><span className="size">$514</span><span className="cum">$4,434</span></div>
+                </div>
+                <div className="preview-panel">
+                  <div className="panel-title mono"><span>research</span><span>53 citations</span></div>
+                  <div className="research-row mono"><span className="cite">news-1</span><span className="thesis">Vance enters 2025 as Trump's vice president and presumptive MAGA heir</span><span className="source">training</span></div>
+                  <div className="research-row mono"><span className="cite">news-3</span><span className="thesis">Republican field remains unsettled this far from the primary</span><span className="source">training</span></div>
+                  <div className="research-row mono"><span className="cite">comp-4</span><span className="thesis">Open primary comparables show late leader churn</span><span className="source">base rate</span></div>
+                  <div className="research-row mono"><span className="cite">whale-2</span><span className="thesis">Top ten holders concentrate 90 percent of open interest</span><span className="source">holders</span></div>
+                </div>
+              </div>
+              <div className="preview-foot mono">
+                <div className="stat"><div className="k">book depth</div><div className="v">$78,774</div></div>
+                <div className="stat"><div className="k">spread</div><div className="v">0.001</div></div>
+                <div className="stat"><div className="k">top10 hold</div><div className="v warn">90%</div></div>
+                <div className="stat"><div className="k">citations</div><div className="v brand">53</div></div>
+                <div className="stat"><div className="k">agents</div><div className="v yes">5/6 done</div></div>
+              </div>
+            </aside>
           </section>
 
-          <section className="contract-band">
-            <div className="contract-head mono">
-              <span className="num">02</span>
-              <span>the contract</span>
-              <span className="rule" />
-              <span className="meta">enforced in code, not by prompt</span>
-            </div>
-            <ol className="contract-steps">
-              <li>
-                <span className="step-num mono">01</span>
-                <span className="step-body">
-                  seven specialists fan out in parallel against real
-                  data sources. one llm call per agent, never one llm
-                  for the whole brief.
-                </span>
-              </li>
-              <li>
-                <span className="step-num mono">02</span>
-                <span className="step-body">
-                  each agent emits structured claims tagged with citation
-                  ids it can prove: <code>[book-1a]</code>, <code>[whale-3]</code>,
-                  <code> [news-7]</code>, <code>[kol-2]</code>, <code>[comp-4]</code>.
-                </span>
-              </li>
-              <li>
-                <span className="step-num mono">03</span>
-                <span className="step-body">
-                  synthesis merges the six and runs every cite id through
-                  an allowlist of ids upstream agents actually produced.
-                  unknown ids get stripped from text and citations array.
-                </span>
-              </li>
-              <li>
-                <span className="step-num mono">04</span>
-                <span className="step-body">
-                  the brief renders with cyan citation pills. click any
-                  pill, the matching source row flashes in the rail in
-                  under a second. answer to evidence in one keystroke.
-                </span>
-              </li>
-            </ol>
-          </section>
-
-          <section className="manifest-band">
-            <div className="manifest-head">
-              <h2>seven agents,<br /><em>one brief</em>.</h2>
-              <div className="sub">
-                six specialists pull live data in parallel. a seventh merges
-                them through the citation allowlist. each agent owns its own
-                source, scope, and pill prefix.
+          {/* Band 02 — the four-step principle grid */}
+          <section className="band">
+            <div className="band-inner">
+              <div className="band-head mono">
+                <span>02</span>
+                <span>after you paste a market</span>
+                <span className="rule" />
+                <span>live sources, then synthesis</span>
+              </div>
+              <div className="principles">
+                <div className="principle">
+                  <div className="num mono">01</div>
+                  <div>
+                    <h2>read the book</h2>
+                    <p>mid, spread, depth, and slippage are pulled from the live CLOB before the brief starts writing.</p>
+                  </div>
+                </div>
+                <div className="principle">
+                  <div className="num mono">02</div>
+                  <div>
+                    <h2>map the holders</h2>
+                    <p>top wallets, side bias, and concentration show whether the price is broad consensus or a crowded trade.</p>
+                  </div>
+                </div>
+                <div className="principle">
+                  <div className="num mono">03</div>
+                  <div>
+                    <h2>pull evidence</h2>
+                    <p>news uses curated source lists. low-trust and user-editable domains stay banned by hostname.</p>
+                  </div>
+                </div>
+                <div className="principle">
+                  <div className="num mono">04</div>
+                  <div>
+                    <h2>cite or drop</h2>
+                    <p>synthesis can only cite ids that upstream agents already emitted. invented citations get stripped.</p>
+                  </div>
+                </div>
               </div>
             </div>
+          </section>
 
-            <div className="manifest-list">
-              {AGENTS.map(([idx, name, pill, desc]) => (
-                <div key={idx} className="manifest-row">
-                  <span className="idx mono">{idx}</span>
-                  <span className="name mono">{name}</span>
-                  <span className="pill mono">{pill}</span>
-                  <span className="desc">{desc}</span>
-                </div>
-              ))}
+          {/* Band 03 — the seven-agent board (6 small + 1 wide synthesis card) */}
+          <section className="band">
+            <div className="band-inner">
+              <div className="band-head mono">
+                <span>03</span>
+                <span>seven agents</span>
+                <span className="rule" />
+                <span>one brief</span>
+              </div>
+              <div className="agent-board">
+                {AGENTS.slice(0, 6).map(([idx, name, pill, desc]) => (
+                  <div key={idx} className="agent-card">
+                    <span className="agent-num mono">{idx}</span>
+                    <h2>{name}</h2>
+                    <p>{desc}</p>
+                    <span className="agent-pill mono">{pill.replace(/[[\]]/g, '')}</span>
+                  </div>
+                ))}
+                {AGENTS[6] && (
+                  <div className="agent-card wide">
+                    <span className="agent-num mono">{AGENTS[6][0]}</span>
+                    <h2>{AGENTS[6][1]}</h2>
+                    <p>{AGENTS[6][3]}</p>
+                    <span className="agent-pill mono">{AGENTS[6][2].replace(/[[\]]/g, '').replace(/^∅\s*/, '')}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
-          <footer className="land-foot mono">
-            <div>© 2026 pm copilot. <b>not financial advice.</b></div>
-            <div>built in mono</div>
-            <div className="right">open source</div>
+          {/* Band 04 — final CTA, mirrors the hero command row */}
+          <section className="band final-cta">
+            <div className="band-inner final-grid">
+              <div>
+                <div className="band-head mono compact">
+                  <span>04</span>
+                  <span>read-only by design</span>
+                  <span className="rule" />
+                </div>
+                <h2>research the trade. keep execution somewhere else.</h2>
+                <p>
+                  pmcopilot.wtf does not place orders, request spend permissions,
+                  or ask you to sign wallet messages. bring your own keys for model
+                  calls, inspect the evidence, and click any citation back to its row.
+                </p>
+              </div>
+              <div className="cta-panel mono">
+                <div className="domain">pmcopilot.wtf</div>
+                <div
+                  className="cta-row-real"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setStage('auth-paste')}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setStage('auth-paste'); }}
+                >
+                  <span>&gt; paste polymarket url</span>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setStage('auth-paste'); }}>
+                    open desk
+                  </button>
+                </div>
+                <div className="cta-checks">
+                  <span>no orders</span>
+                  <span>no signing</span>
+                  <span>no fabricated sources</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <footer className="land-footer">
+            <div className="band-inner">
+              <span>pmcopilot.wtf</span>
+              <span>open source prediction market research desk</span>
+            </div>
           </footer>
         </main>
       </div>

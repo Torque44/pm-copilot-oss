@@ -3,45 +3,50 @@
    dark-mode default, not negotiable.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap');
 
 :root {
   /* ---- color: surfaces ---- */
-  --bg:             #0A0B10;
-  --surface:        #12141C;
-  --panel:          #1A1D28;
+  --bg:             #050506;
+  --surface:        #0b0c0f;
+  --panel:          #111319;
 
   /* ---- color: borders ---- */
-  --border:         #262A38;
-  --border-strong:  #3A3F52;
+  --border:         #24262d;
+  --border-strong:  #3b3f49;
 
   /* ---- color: text ---- */
-  --text:           #E6E8EE;
-  --text-muted:     #8892A6;
+  --text:           #f2f4f5;
+  --text-muted:     #8f96a3;
+  --text-faint:     #555d6b;
 
   /* ---- color: interactive ---- */
-  --accent:         #0A66FF;  /* links, interactive */
-  --accent-hover:   #0047CC;
-  --accent-12:      rgba(10, 102, 255, 0.12);
-  --accent-20:      rgba(10, 102, 255, 0.20);
+  /* Brand-cyan replaces the old blue accent so the whole app reads as a single
+   *  palette. Interactive elements (buttons, links, focus rings) pick up the
+   *  same value as citation pills; this is the deliberate brand simplification
+   *  the landing redesign asks for. */
+  --accent:         #75d0ea;
+  --accent-hover:   #9adcef;
+  --accent-12:      rgba(117, 208, 234, 0.12);
+  --accent-20:      rgba(117, 208, 234, 0.22);
 
   /* ---- color: citation (the signature interaction) ---- */
-  --citation:       #22D3EE;
-  --citation-12:    rgba(34, 211, 238, 0.12);
-  --citation-20:    rgba(34, 211, 238, 0.20);
-  --citation-45:    rgba(34, 211, 238, 0.45);
+  --citation:       #75d0ea;
+  --citation-12:    rgba(117, 208, 234, 0.12);
+  --citation-20:    rgba(117, 208, 234, 0.22);
+  --citation-45:    rgba(117, 208, 234, 0.45);
 
   /* ---- color: semantic ---- */
-  --success:        #10B981;  /* YES side */
-  --success-12:     rgba(16, 185, 129, 0.12);
-  --danger:         #EF4444;  /* NO side */
-  --danger-12:      rgba(239, 68, 68, 0.12);
-  --warning:        #F59E0B;
-  --warning-12:     rgba(245, 158, 11, 0.12);
+  --success:        #16d99a;  /* YES side */
+  --success-12:     rgba(22, 217, 154, 0.12);
+  --danger:         #ff4d5e;  /* NO side */
+  --danger-12:      rgba(255, 77, 94, 0.12);
+  --warning:        #f5c451;
+  --warning-12:     rgba(245, 196, 81, 0.14);
 
   /* ---- type: families ---- */
-  --font-prose: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-  --font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-prose: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:  'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* ---- type: scale ---- */
   --fs-caption: 12px;
@@ -156,10 +161,10 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
    ========================================================================== */
 
 @keyframes citation-flash {
-  0%   { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); background-color: transparent; }
+  0%   { box-shadow: 0 0 0 0 rgba(117, 208, 234, 0); background-color: transparent; }
   15%  { box-shadow: 0 0 0 4px var(--citation-45); background-color: var(--citation-12); }
   40%  { box-shadow: 0 0 0 4px var(--citation-45); background-color: var(--citation-12); }
-  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); background-color: transparent; }
+  100% { box-shadow: 0 0 0 0 rgba(117, 208, 234, 0); background-color: transparent; }
 }
 
 .citation-flash {

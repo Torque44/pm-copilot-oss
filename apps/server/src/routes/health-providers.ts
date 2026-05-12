@@ -27,25 +27,13 @@ import type { Request, Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import { byokProvider } from '@pm-copilot/core/providers/byok';
 import { makeAnthropicProvider } from '@pm-copilot/core';
+import { sanitizeProviderError } from '../lib/sanitizeError.js';
 
 type ProviderProbe = {
   ok: boolean;
   ms: number;
   error?: string;
 };
-
-/** Drop model names, API URLs, and internal stack traces from probe errors;
- *  return a short categorical hint so the right rail can show "auth failed"
- *  vs "timed out" without leaking provider implementation detail. */
-function sanitizeProviderError(raw: string | undefined): string {
-  if (!raw) return 'unknown';
-  if (/401|403|unauthor|invalid.*key/i.test(raw)) return 'auth failed — check key';
-  if (/timeout|aborted/i.test(raw)) return 'timed out';
-  if (/429|rate.*limit|quota/i.test(raw)) return 'rate limited';
-  if (/credit balance|insufficient/i.test(raw)) return 'out of credit';
-  if (/Not logged in|claude-code|Please run/i.test(raw)) return 'claude code not signed in';
-  return 'provider error';
-}
 
 const PROBE_TIMEOUT_MS = 30_000;          // tolerate subprocess cold start
 const SUCCESS_CACHE_TTL_MS = 90_000;      // skip re-probe after a recent green

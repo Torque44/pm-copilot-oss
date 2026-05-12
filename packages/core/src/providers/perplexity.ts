@@ -11,6 +11,7 @@ import type {
   LLMProvider,
   ProviderCapabilities,
 } from './types';
+import { sanitizeUpstreamErrorBody } from './sanitizeError';
 
 const briefLimit = pLimit(4);
 const askLimit = pLimit(2);
@@ -79,7 +80,7 @@ export class PerplexityProvider implements LLMProvider {
           return {
             ok: false,
             text: '',
-            error: `perplexity ${r.status}: ${errText.slice(0, 500)}`,
+            error: `perplexity ${r.status}: ${sanitizeUpstreamErrorBody(errText, 500)}`,
             elapsedMs: Date.now() - started,
             model,
             provider: 'perplexity',

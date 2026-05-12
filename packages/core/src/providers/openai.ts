@@ -24,6 +24,7 @@ import type {
   LLMProvider,
   ProviderCapabilities,
 } from './types';
+import { sanitizeUpstreamErrorBody } from './sanitizeError';
 
 const briefLimit = pLimit(4);
 const askLimit = pLimit(2);
@@ -131,10 +132,14 @@ export class OpenAIProvider implements LLMProvider {
         clearTimeout(killer);
         if (!r.ok) {
           const errText = await r.text().catch(() => '');
+          // Redact any key fragments an upstream gateway / Azure validation
+          // page might have echoed back, then truncate. Otherwise the body
+          // can flow into logs, the persisted brief envelope, and the
+          // auth-test response.
           return {
             ok: false,
             text: '',
-            error: `openai ${r.status}: ${errText.slice(0, 500)}`,
+            error: `openai ${r.status}: ${sanitizeUpstreamErrorBody(errText, 500)}`,
             elapsedMs: Date.now() - started,
             model,
             provider: 'openai',

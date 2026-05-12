@@ -5,6 +5,7 @@
 
 import type { Request, Response } from 'express';
 import { byokProvider } from '@pm-copilot/core';
+import { sanitizeProviderError } from '../lib/sanitizeError.js';
 
 export async function authTestHandler(req: Request, res: Response) {
   const { provider, key } = (req.body || {}) as { provider?: string; key?: string };
@@ -23,7 +24,13 @@ export async function authTestHandler(req: Request, res: Response) {
     });
 
     if (!result.ok) {
-      res.json({ ok: false, error: result.error || 'provider returned error', model: result.model });
+      // Sanitize: drop model URLs, stack traces, and any key fragments an
+      // upstream gateway might have echoed into the error body.
+      res.json({
+        ok: false,
+        error: sanitizeProviderError(result.error),
+        model: result.model,
+      });
       return;
     }
 
@@ -35,6 +42,6 @@ export async function authTestHandler(req: Request, res: Response) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ ok: false, error: msg });
+    res.status(500).json({ ok: false, error: sanitizeProviderError(msg) });
   }
 }

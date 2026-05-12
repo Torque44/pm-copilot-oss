@@ -8,6 +8,7 @@
 import type { AgentEvent, MarketMeta } from '@pm-copilot/core';
 import { markDirty, registerProducer } from './persist.js';
 import { publish } from './eventBus.js';
+import { redactKeyFragments } from './lib/sanitizeError.js';
 
 export type BriefEnvelope =
   | { t: 'market'; market: MarketMeta }
@@ -69,13 +70,36 @@ export function hydrate(
   rehydrated = true;
 }
 
+/** Strip key fragments from agent:error envelopes before persisting to disk.
+ *  An upstream provider 4xx body can carry "Bearer sk-..." substrings that
+ *  end up in result.error → agent:error.error → snapshot.json. Redacting
+ *  at the persistence boundary keeps the live SSE replay (which the UI
+ *  consumes) untouched while preventing key fragments from hitting disk. */
+function sanitizeEventsForPersistence(events: BriefEnvelope[]): BriefEnvelope[] {
+  return events.map((ev) => {
+    if ((ev as AgentEvent).t === 'agent:error') {
+      const e = ev as Extract<AgentEvent, { t: 'agent:error' }>;
+      return { ...e, error: redactKeyFragments(e.error) };
+    }
+    if ((ev as { t: string }).t === 'error') {
+      const e = ev as { t: 'error'; error: string };
+      return { ...e, error: redactKeyFragments(e.error) };
+    }
+    return ev;
+  });
+}
+
 registerProducer(() => {
   const out: Record<string, { events: unknown[]; savedAt: number; version: number }> = {};
   const now = Date.now();
   for (const [k, v] of store.entries()) {
     if (!v.complete) continue;
     if (now - v.savedAt > TTL_MS) continue;
-    out[k] = { events: v.events, savedAt: v.savedAt, version: CACHE_VERSION };
+    out[k] = {
+      events: sanitizeEventsForPersistence(v.events),
+      savedAt: v.savedAt,
+      version: CACHE_VERSION,
+    };
   }
   return { briefs: out };
 });

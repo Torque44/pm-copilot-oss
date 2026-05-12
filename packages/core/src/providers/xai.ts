@@ -13,6 +13,7 @@ import type {
   LLMProvider,
   ProviderCapabilities,
 } from './types';
+import { sanitizeUpstreamErrorBody } from './sanitizeError';
 
 const BASE = process.env['XAI_BASE_URL'] || 'https://api.x.ai/v1';
 
@@ -144,10 +145,12 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
 
         if (!res.ok) {
           const detail = await res.text().catch(() => '');
+          // Redact key fragments before the body lands in result.error
+          // (which can flow into logs, persisted briefs, auth-test).
           return {
             ok: false,
             text: '',
-            error: `xAI HTTP ${res.status}: ${detail.slice(0, 300)}`,
+            error: `xAI HTTP ${res.status}: ${sanitizeUpstreamErrorBody(detail, 300)}`,
             model,
             elapsedMs: Date.now() - started,
             provider: 'xai' as 'perplexity',

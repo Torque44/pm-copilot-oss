@@ -745,6 +745,16 @@ Respond ONLY with the JSON object described in the system prompt.`;
 
   const res = await llm.complete(prompt, askOpts);
 
+  // Provider warning surface (e.g. xAI's "live-search rejected, falling
+  // back to training-data answer"). Without this, the chat would render
+  // a stale model-knowledge answer as if it were live evidence. We prepend
+  // a no-citation claim that says "this answer is grounded in training
+  // data, not real-time sources" so the trader can discount it.
+  const providerWarnings: string[] = Array.isArray(res.warnings) ? res.warnings : [];
+  const liveSearchDegraded = providerWarnings.some((w) =>
+    typeof w === 'string' && w.startsWith('xai-live-search-disabled'),
+  );
+
   // Register any live-search URLs the provider returned (xAI live_search,
   // Perplexity sonar) as evidence rows under [ask-src-N] ids. Before this
   // fix, Perplexity's citations were dropped entirely and xAI's were
@@ -893,6 +903,17 @@ Respond ONLY with the JSON object described in the system prompt.`;
     if (id.startsWith('ask-src-') && !usedCitations.has(id)) {
       usedCitations.set(id, cit);
     }
+  }
+
+  // Prepend a no-citation warning claim when live-search degraded so the
+  // user sees the disclaimer ABOVE the answer body. The model's output is
+  // ungrounded training-data recall in this case — without the warning,
+  // chat renders it as if it came from real-time evidence.
+  if (liveSearchDegraded) {
+    claims.unshift({
+      text: 'live web/X search was unavailable for this run — the answer below is grounded in the model\'s training data, not real-time sources. Discount accordingly.',
+      citations: [],
+    });
   }
 
   const answer: AskAnswer = {

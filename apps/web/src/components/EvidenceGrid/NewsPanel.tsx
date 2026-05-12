@@ -129,12 +129,21 @@ export function NewsPanel({
                 {n.src}
                 {n.when ? ` · ${n.when}` : ''}
                 {n.unverified && (
-                  <span
-                    className="news-unverified mono"
-                    title="source not on the curated allowlist for this category — apply your own discount"
-                  >
-                    {' '}· unverified
-                  </span>
+                  n.src === 'model knowledge' ? (
+                    <span
+                      className="news-unverified mono"
+                      title="No live news source returned for this market. This row is model knowledge only — click to search the web for the headline yourself."
+                    >
+                      {' '}· training fallback
+                    </span>
+                  ) : (
+                    <span
+                      className="news-unverified mono"
+                      title="source not on the curated allowlist for this category — apply your own discount"
+                    >
+                      {' '}· unverified
+                    </span>
+                  )
                 )}
               </span>
             </li>

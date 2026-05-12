@@ -46,7 +46,8 @@ Source rules — follow STRICTLY:
 - NEVER cite Wikipedia, Wikipedia mirrors, Reddit, Substack, Medium, Forbes contributor pieces, Yahoo aggregator pages, or any user-editable source.
 - ${hint}
 - If web search returns content from a non-vetted source, drop it from the response. Do not paraphrase from it.
-- If the topic is too niche for any vetted source, fall back to your training-data knowledge marked from:"training", relevance:"low" — but DO NOT invent URLs or sources.
+- If the topic is too niche for any vetted source, fall back to your training-data knowledge marked from:"training", relevance:"low".
+- When emitting a from:"training" item: set source:"model knowledge", url:"", publishedAt:"". DO NOT invent a source like "reuters.com" or "nytimes.com" — the user will see a "Reuters · 2023-04-15 · unverified" row and reasonably ask "how is Reuters unverified?". Honest empty fields are better than fabricated metadata.
 
 RECENCY RULES — this is a LIVE prediction market and stale news is the
 single biggest UX failure mode of this product:
@@ -212,10 +213,28 @@ JSON shape specified in the system prompt.`;
       return !isDenylisted(it.url);
     })
     .map(it => {
-      // Training-data items have no live URL — always flag as unverified so
-      // the UI shows the "unverified" badge. Without this flag honest users
-      // assume the URL (if present) is a real source.
-      if (it.from === 'training' || !it.url) return { ...it, unverified: true };
+      // Training-data items are model knowledge, not real articles. The model
+      // sometimes still writes `source: "reuters.com"` and a fabricated
+      // publishedAt date even though we forbid it in the SYS prompt. Strip
+      // both: the source becomes "model knowledge" (the truth), the fake
+      // date is dropped, and we attach a Google search URL on the headline
+      // so the row is clickable to "go verify this yourself". This is the
+      // most honest representation of a no-live-source state.
+      if (it.from === 'training' || !it.url) {
+        const headline = (it.headline || '').trim();
+        const cleaned: NewsItem = {
+          ...it,
+          source: 'model knowledge',
+          url: headline ? `https://news.google.com/search?q=${encodeURIComponent(headline)}` : '',
+          unverified: true,
+          from: 'training',
+        };
+        // Drop the fabricated publishedAt — without a live source, the date
+        // is just a hallucination. Better to render with no date than show
+        // a fake one (which makes the row look like a real-dated article).
+        delete cleaned.publishedAt;
+        return cleaned;
+      }
       const verified = isAllowlisted(sub, it.url);
       return verified ? it : { ...it, unverified: true };
     });

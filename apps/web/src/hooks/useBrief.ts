@@ -178,7 +178,12 @@ function bookGroundingToRows(g: RawBookGrounding): BookRow[] {
   bids.forEach((l, i) => {
     if (typeof l.price !== 'number' || typeof l.size !== 'number') return;
     rows.push({
-      id: i === 0 ? 'book-1b' : `book-1b-${i + 1}`,
+      // book-{N}b naming matches the ask agent's registry (ask.ts:334-339).
+      // Previously the second+ rows used the double-hyphen form
+      // `book-1b-N` which works at the regex level but reads inconsistently
+      // alongside the ask side. Aligning lets the citation regex/registry
+      // share the same naming convention everywhere.
+      id: `book-${i + 1}b`,
       side: 'NO',
       price: Number((1 - l.price).toFixed(3)),
       size: l.size,
@@ -188,7 +193,7 @@ function bookGroundingToRows(g: RawBookGrounding): BookRow[] {
   asks.forEach((l, i) => {
     if (typeof l.price !== 'number' || typeof l.size !== 'number') return;
     rows.push({
-      id: i === 0 ? 'book-1a' : `book-1a-${i + 1}`,
+      id: `book-${i + 1}a`,
       side: 'YES',
       price: l.price,
       size: l.size,

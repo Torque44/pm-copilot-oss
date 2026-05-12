@@ -132,8 +132,14 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
         if (wantedSearch && (res.status === 410 || res.status === 400)) {
           const peek = await res.clone().text().catch(() => '');
           if (/search/i.test(peek) || res.status === 410) {
+            // Log occurrence + status only — do NOT echo the response body.
+            // Gateway error pages occasionally include auth-header context,
+            // and stdout logs land in Render/Azure container logs in plain
+            // text. The body is preserved in the `warnings` array that
+            // flows back to the client for UX surfacing (see news/sentiment
+            // agents' agent:warning paths).
             console.warn(
-              `[xai] live-search rejected (HTTP ${res.status}): ${peek.slice(0, 200)} — retrying without search_parameters`,
+              `[xai] live-search rejected (HTTP ${res.status}) — retrying without search_parameters`,
             );
             warnings.push(
               `xai-live-search-disabled: live web/X search rejected by xAI (HTTP ${res.status}); answer is grounded in the model's training data, not real-time sources`,

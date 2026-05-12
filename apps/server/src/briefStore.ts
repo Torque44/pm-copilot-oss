@@ -36,7 +36,13 @@ const TTL_MS = 60 * 60 * 1000;
 // v2 (2026-05-11): news agent shipped recency tightening (last-7-day
 // preference, today's-date injection, 6-month max-age filter). Cached v1
 // briefs returned 2024-dated news for active 2026 markets.
-const CACHE_VERSION = 2;
+//
+// v3 (2026-05-12): no-hallucinations news policy. Training-data fallback
+// removed entirely from the SYS prompt. Items without URL+publishedAt
+// dropped. Two-pass Exa retry with broader keyword query. Cached v2 briefs
+// might still carry fabricated 'reuters.com / 2023-04-15' rows; v3 hydrate
+// drops them so users see fresh real news or honest empty-state.
+const CACHE_VERSION = 3;
 
 const store = new Map<string, BriefRecord>();
 

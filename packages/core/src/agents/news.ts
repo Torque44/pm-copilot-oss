@@ -46,8 +46,22 @@ Source rules — follow STRICTLY:
 - NEVER cite Wikipedia, Wikipedia mirrors, Reddit, Substack, Medium, Forbes contributor pieces, Yahoo aggregator pages, or any user-editable source.
 - ${hint}
 - If web search returns content from a non-vetted source, drop it from the response. Do not paraphrase from it.
-- If the topic is too niche for any vetted source, fall back to your training-data knowledge marked from:"training", relevance:"low".
-- When emitting a from:"training" item: set source:"model knowledge", url:"", publishedAt:"". DO NOT invent a source like "reuters.com" or "nytimes.com" — the user will see a "Reuters · 2023-04-15 · unverified" row and reasonably ask "how is Reuters unverified?". Honest empty fields are better than fabricated metadata.
+
+HARD RULE — NO HALLUCINATIONS, EVER:
+- This is a LIVE prediction-market product. Users rely on the news section
+  to make trading decisions. A fabricated headline can cost real money.
+- DO NOT EVER fall back to training-data knowledge to fill the items array.
+- DO NOT invent a source name (e.g., "reuters.com", "nytimes.com") for an
+  item you didn't actually retrieve from web search.
+- DO NOT invent a publishedAt date for an item that didn't have one.
+- DO NOT invent URLs.
+- If web search returns nothing relevant from the vetted domains, return
+  items: [] — an EMPTY ARRAY. The UI will show "no recent news surfaced".
+  Empty is the correct, honest answer when there is no news. The product
+  prefers no answer over a wrong one.
+- The ONLY items[] entries permitted are ones that come from a real web
+  search hit on a vetted domain, with the real URL, headline, source
+  domain, and publishedAt taken verbatim from the search result.
 
 RECENCY RULES — this is a LIVE prediction market and stale news is the
 single biggest UX failure mode of this product:
@@ -68,7 +82,8 @@ Use web search aggressively across the vetted domains. Cast a wide net:
 - Recent news (LAST 7 DAYS PREFERRED, last 30 days max) about the entities/event in the title
 - Scheduled events that could drive resolution (votes, releases, summits, games, earnings, court dates)
 - Background context: what is this dispute/question about, who are the parties, what's the current state
-- If the topic is too niche or breaking for web search, fall back to your training-data knowledge — mark such items with "from": "training" and a confidence flag
+- If web search returns nothing for the specific market: TRY AGAIN with broader query terms (drop date qualifiers, broaden entity from "Musk tweet count" to "Elon Musk", search just the noun like "tweets" or "weather"). Do TWO total search passes before giving up.
+- If both passes return nothing relevant: return items:[] EMPTY. Do not fill it with training-data items.
 
 Return JSON ONLY (no markdown fences, no prose) with this exact shape:
 {
@@ -77,11 +92,11 @@ Return JSON ONLY (no markdown fences, no prose) with this exact shape:
     {
       "headline": "<short, neutral>",
       "source": "<publication or domain>",
-      "url": "<full url; '' if from training>",
-      "publishedAt": "<ISO date if known, else ''>",
+      "url": "<full url from the web-search result — REQUIRED, no item without a URL>",
+      "publishedAt": "<ISO date from the web-search result — REQUIRED>",
       "snippet": "<1–2 sentences why this matters to the market>",
       "relevance": "high" | "med" | "low",
-      "from": "web" | "training"
+      "from": "web"
     }
   ],
   "claims": [
@@ -90,10 +105,10 @@ Return JSON ONLY (no markdown fences, no prose) with this exact shape:
 }
 
 Rules:
-- items[] target 5–8 entries. Mix of recent news + scheduled events + background.
-- Always emit at least one item even on niche topics — fall back to training-data with from:"training", relevance:"low" if web search returns nothing.
-- claims[] target 3–4 entries. Each must cite [news·N] referencing items[N-1].
-- Do not fabricate URLs. If unsure, leave url:"".
+- items[] target 3–8 entries when web search returns relevant hits. EMPTY ARRAY when nothing relevant is found — that is the honest answer.
+- DO NOT emit "from": "training" items. The schema no longer permits them. The only valid "from" is "web".
+- DO NOT emit items without a URL or without a publishedAt date.
+- claims[] target 1–4 entries when items[] is non-empty; emit [] when items is empty.
 - Be neutral; let the trader form their own view.`;
 }
 
@@ -207,34 +222,30 @@ JSON shape specified in the system prompt.`;
   //     for this sub-category as `unverified` so the UI can mark them
   //   - training-data items (no URL) pass through with no filtering — the
   //     prompt already tells the model to mark them low-relevance
+  // POLICY: no hallucinations. Items must come from real web search with a
+  // real URL. Drop anything that's training-data, lacks a URL, lacks a date,
+  // or hits the curated denylist. What's left is real news or nothing —
+  // both are correct. The UI's "no recent news surfaced" empty state takes
+  // over when the array is empty.
   const cleaned: NewsItem[] = rawItems
     .filter(it => {
-      if (it.from === 'training' || !it.url) return true;
-      return !isDenylisted(it.url);
+      // Training-data items are no longer permitted by the SYS prompt. If
+      // the model emits one anyway, drop it silently — better empty than
+      // fabricated.
+      if (it.from === 'training') return false;
+      // Items missing a URL or publishedAt are almost always model-fabricated
+      // (real search hits carry both). Drop.
+      if (!it.url || !it.publishedAt) return false;
+      // Denylist domains (Wikipedia / Reddit / Substack / Medium / Forbes
+      // contributor / Yahoo aggregator) are not trader-grade. Drop.
+      if (isDenylisted(it.url)) return false;
+      return true;
     })
     .map(it => {
-      // Training-data items are model knowledge, not real articles. The model
-      // sometimes still writes `source: "reuters.com"` and a fabricated
-      // publishedAt date even though we forbid it in the SYS prompt. Strip
-      // both: the source becomes "model knowledge" (the truth), the fake
-      // date is dropped, and we attach a Google search URL on the headline
-      // so the row is clickable to "go verify this yourself". This is the
-      // most honest representation of a no-live-source state.
-      if (it.from === 'training' || !it.url) {
-        const headline = (it.headline || '').trim();
-        const cleaned: NewsItem = {
-          ...it,
-          source: 'model knowledge',
-          url: headline ? `https://news.google.com/search?q=${encodeURIComponent(headline)}` : '',
-          unverified: true,
-          from: 'training',
-        };
-        // Drop the fabricated publishedAt — without a live source, the date
-        // is just a hallucination. Better to render with no date than show
-        // a fake one (which makes the row look like a real-dated article).
-        delete cleaned.publishedAt;
-        return cleaned;
-      }
+      // Surviving items have real URLs. Flag as `unverified` if the URL's
+      // domain isn't on the curated allowlist for this sub-category — the
+      // UI shows a small "unverified" badge but the link is still real
+      // and clickable.
       const verified = isAllowlisted(sub, it.url);
       return verified ? it : { ...it, unverified: true };
     });
@@ -252,33 +263,21 @@ JSON shape specified in the system prompt.`;
     return tb - ta;
   });
 
-  // Drop stale items (>180 days old) when we have fresh ones — staleness is
-  // the biggest visible failure mode (e.g., 2024 news on a 2026-resolving
-  // active market). If EVERY item is stale, keep them rather than emit an
-  // empty section: a niche market with only old coverage still benefits
-  // from showing what context exists.
+  // Drop stale items (>180 days old). No fallback to keeping stale items
+  // anymore — under the no-hallucinations policy, an empty array is the
+  // honest answer when there's no fresh news. The UI shows "no recent
+  // news surfaced (last 30 days)" instead of stale 2024 catalysts on a
+  // live 2026 market.
   const STALE_MS = 180 * 24 * 60 * 60 * 1000;
   const now = Date.now();
-  const fresh = cleaned.filter((it) => {
-    if (!it.publishedAt) return true;
+  const items: NewsItem[] = cleaned.filter((it) => {
+    if (!it.publishedAt) return false;
     const t = Date.parse(it.publishedAt);
-    if (!Number.isFinite(t)) return true;
+    if (!Number.isFinite(t)) return false;
     return now - t < STALE_MS;
-  });
-  const items: NewsItem[] = (fresh.length >= 3 ? fresh : cleaned).slice(0, 8);
+  }).slice(0, 8);
   const rawClaims: Claim[] = Array.isArray(parsed?.claims) ? parsed!.claims : [];
   const background = typeof parsed?.background === 'string' ? parsed!.background : '';
-
-  // Web-search providers (Perplexity, xAI/Grok live_search) should return
-  // items with from:"web". If every surviving item is from:"training" we
-  // either lost web search silently or the model declined to use it. Surface
-  // this so the UI banner reads "no live-search results — training-data
-  // fallback" instead of pretending the items are fresh.
-  const webItemCount = items.filter((it) => it.from === 'web' && it.url).length;
-  const allTraining = items.length > 0 && webItemCount === 0;
-  if (allTraining && allowedTools.includes('WebSearch')) {
-    console.warn(`[news] live_search returned no web items for market=${market.marketId} — training fallback`);
-  }
 
   // Debug visibility: log occurrence + error class only. Repo policy is no
   // request bodies, market titles, or model output in server logs. The market
@@ -325,18 +324,29 @@ JSON shape specified in the system prompt.`;
   }
 
   if (!claims.length) {
-    // Differentiate the empty fallback by root cause so the UI can show
-    // something useful instead of an opaque "no catalysts" message.
+    // Empty array of claims is fine when items[] is also empty — the UI's
+    // "no catalysts surfaced" placeholder takes over. We still emit a
+    // single explanatory claim when there's a real provider failure
+    // (auth / rate limit / network) so the trader knows it's a tool
+    // problem, not "literally no news exists".
     const errMsg = res.error || '';
     const isAuth = /claude-code|Not logged in|Please run \/login|API key|credit balance/i.test(errMsg);
-    claims = [{
-      text: isAuth
-        ? `news agent failed: provider authentication. ${errMsg.slice(0, 160)}`
-        : !res.ok
-          ? `news agent failed: ${errMsg.slice(0, 160) || 'provider error'}`
-          : 'no recent catalysts surfaced for this market — the underlying topic may be too niche or breaking for web search to anchor.',
-      citations: [],
-    }];
+    if (!res.ok && errMsg) {
+      claims = [{
+        text: isAuth
+          ? `news agent failed: provider authentication. ${errMsg.slice(0, 160)}`
+          : `news agent failed: ${errMsg.slice(0, 160) || 'provider error'}`,
+        citations: [],
+      }];
+    } else if (items.length === 0) {
+      claims = [{
+        text: 'no recent news surfaced in the last 30 days for this market from any vetted source. the topic may be too niche, too breaking, or the relevant news may post under different phrasing — try the polymarket comments or search the market title directly.',
+        citations: [],
+      }];
+    }
+    // If items.length > 0 but claims.length === 0 (model emitted items but
+    // no claims), leave claims = [] — the items render in the news tab on
+    // their own without claim summaries.
   }
 
   const output: SectionOut = { claims, citations };
@@ -375,19 +385,33 @@ async function runNewsViaExa(
 
   // Query construction: "{title} news" + (when known) the sub-category
   // shorthand. Exa's auto type does well with natural-language queries.
-  const query = `${market.title} — recent news, scheduled events, background context`;
+  // Search query construction. We try two phrasings — the full market title
+  // with recency framing, then a broader keyword-only query — so a market
+  // whose exact phrasing returns nothing still has a chance to surface
+  // relevant news under simpler search terms. This is the no-hallucinations
+  // policy's "search like a normal person" retry: try the obvious query
+  // first, then back off to broader terms before declaring empty.
+  const titleQuery = `${market.title} — recent news, scheduled events, background context`;
+  // Broader query: strip dates / qualifiers, keep just the salient nouns.
+  // Cheap heuristic — drop everything after a colon or em-dash and any
+  // bracketed date qualifiers. Real failure modes are niche markets where
+  // the title is full of date metadata that pollutes the search.
+  const broadQuery = market.title
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[—:].*$/, '')
+    .replace(/\b(before|after|by|between|on|in)\s+\w+\s+\d+\s*,?\s*\d{0,4}/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  // Two-pass recency: prefer last-7-day hits (the freshest catalysts that
+  // Two-pass recency: prefer last-7-day hits (freshest catalysts that
   // could move an active market), expand to 30 days only if 7 days returned
-  // fewer than 4 hits. This is the architecture-level fix for the stale-
-  // news complaint — even when the model is told to prefer recent news,
-  // Exa was previously asked for a 30-day window so it had no incentive
-  // to surface the freshest items.
+  // fewer than 4 hits. Then, if STILL thin, retry with the broader keyword
+  // query.
   let hits: SearchHit[] = [];
   let searchError: string | null = null;
   let recencyUsedDays = 7;
   try {
-    hits = await searcher.search(query, {
+    hits = await searcher.search(titleQuery, {
       numResults: 10,
       recencyHours: 24 * 7,
       category: 'news',
@@ -397,7 +421,7 @@ async function runNewsViaExa(
       // Niche or slow-news market — widen the window. Merge results so any
       // fresh hits already collected aren't lost when the 30d pass returns
       // mostly older items.
-      const wider = await searcher.search(query, {
+      const wider = await searcher.search(titleQuery, {
         numResults: 10,
         recencyHours: 24 * 30,
         category: 'news',
@@ -408,6 +432,22 @@ async function runNewsViaExa(
         if (!seen.has(h.url)) hits.push(h);
       }
       recencyUsedDays = 30;
+    }
+    // Still thin AND we have a meaningfully different broader query? Try once
+    // more with the simpler phrasing. This is the "search like a normal
+    // person" fallback before we declare empty-state under the no-
+    // hallucinations policy.
+    if (hits.length < 3 && broadQuery && broadQuery !== market.title) {
+      const broadHits = await searcher.search(broadQuery, {
+        numResults: 10,
+        recencyHours: 24 * 30,
+        category: 'news',
+        withFullText: false,
+      });
+      const seen = new Set(hits.map((h) => h.url));
+      for (const h of broadHits) {
+        if (!seen.has(h.url)) hits.push(h);
+      }
     }
   } catch (err) {
     searchError = err instanceof Error ? err.message : 'exa search failed';
@@ -426,19 +466,25 @@ async function runNewsViaExa(
     if (!tb) return -1;
     return tb - ta;
   });
-  const items: NewsItem[] = filtered.slice(0, 10).map((h) => {
-    const item: NewsItem = {
-      headline: h.title,
-      source: h.domain,
-      url: h.url,
-      publishedAt: h.publishedDate ?? '',
-      snippet: h.snippet,
-      relevance: h.score > 0.7 ? 'high' : h.score > 0.4 ? 'med' : 'low',
-      from: 'web',
-    };
-    if (!isAllowlisted(sub, h.url)) item.unverified = true;
-    return item;
-  });
+  // Exa hits without a publishedDate are dropped under the no-hallucinations
+  // policy: an item with no real date can't be trusted as "fresh news". Real
+  // Exa results from vetted-domain news endpoints always carry a date.
+  const items: NewsItem[] = filtered
+    .filter((h) => Boolean(h.publishedDate))
+    .slice(0, 10)
+    .map((h) => {
+      const item: NewsItem = {
+        headline: h.title,
+        source: h.domain,
+        url: h.url,
+        publishedAt: h.publishedDate ?? '',
+        snippet: h.snippet,
+        relevance: h.score > 0.7 ? 'high' : h.score > 0.4 ? 'med' : 'low',
+        from: 'web',
+      };
+      if (!isAllowlisted(sub, h.url)) item.unverified = true;
+      return item;
+    });
 
   // Synthesis pass: give the model the cleaned hits + ask for background
   // and 3-4 claims that cite specific news·N indexes. This is the same
@@ -508,17 +554,24 @@ Build the briefing JSON.`;
   }
 
   if (!claims.length) {
-    claims = items.length
-      ? items.slice(0, 3).map((it, i) => ({
-          text: `${it.headline} (${it.source}).`,
-          citations: [`news·${i + 1}`],
-        }))
-      : [{
-          text: searchError
-            ? `news search failed: ${searchError.slice(0, 160)}`
-            : 'no recent catalysts surfaced — the underlying topic may be too niche or breaking for current sources.',
-          citations: [],
-        }];
+    if (items.length) {
+      claims = items.slice(0, 3).map((it, i) => ({
+        text: `${it.headline} (${it.source}).`,
+        citations: [`news·${i + 1}`],
+      }));
+    } else if (searchError) {
+      claims = [{
+        text: `news search failed: ${searchError.slice(0, 160)}`,
+        citations: [],
+      }];
+    } else {
+      // Honest empty state under the no-hallucinations policy. No
+      // training-data fallback, no fabricated catalysts.
+      claims = [{
+        text: 'no recent news surfaced in the last 30 days for this market from any vetted source. the topic may be too niche, too breaking, or relevant news may post under different phrasing — try the polymarket comments or search the market title directly.',
+        citations: [],
+      }];
+    }
   }
 
   const grounding: NewsGrounding = background

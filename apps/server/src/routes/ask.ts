@@ -228,6 +228,14 @@ async function ensureGrounding(
   // comparable citation payloads off the comparables agent's section output.
   // Without this, ask responses claimed "no past Polymarket resolution data"
   // even though the comparables agent had exactly that data on the brief side.
+  //
+  // ComparableHit gained optional `shape` and `description` fields in commits
+  // a548f1e and 2a9d6c4 (the threshold-shape comparables work). The mapping
+  // below is unchanged because the new fields ride on the same payload object
+  // — they pass through structurally to AskComparable, which mirrors the
+  // shape. runAsk's describeComparables() reads `shape` + `description` to
+  // render per-comp threshold + realized-value rows when present, falling
+  // back to plain-title rows otherwise.
   tasks.push(
     runComparablesAgent(ctx, { marketTitle: market.title, category: market.category })
       .then((r) => {

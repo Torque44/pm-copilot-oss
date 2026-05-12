@@ -27,6 +27,7 @@ import { PositionStrip } from './components/PositionStrip/PositionStrip';
 import { KeyboardHelp } from './components/KeyboardHelp/KeyboardHelp';
 
 import { useEventsList } from './hooks/useEventsList';
+import { useGlobalEventsPool } from './hooks/useGlobalEventsPool';
 import { useBrief } from './hooks/useBrief';
 import { useProvider } from './hooks/useProvider';
 import { useProviderHealth } from './hooks/useProviderHealth';
@@ -327,6 +328,19 @@ export function App() {
     mode: 'contested',
   });
   const events = useMemo(() => normaliseEvents(rawEvents), [rawEvents]);
+
+  // Global search pool — pre-fetches the four canonical buckets in parallel
+  // at app mount so typing "f1" while on the politics tab finds F1 markets
+  // under sports. LeftRail uses this pool when the search box has text;
+  // tab-switch UX is unchanged (per-tab `events` still drives the default
+  // browse view). The hook returns RAW events so we can run them through
+  // the same normaliseEvents() the per-tab list uses — without that the
+  // events get double-normalised and lose their fields.
+  const { rawPool: searchRawPool } = useGlobalEventsPool();
+  const searchPoolNormalised = useMemo(
+    () => normaliseEvents(searchRawPool),
+    [searchRawPool],
+  );
 
   // marketId comes from URL when route is /m/:id; otherwise blank.
   const selectedMarketId = route.name === 'market' ? route.marketId : null;
@@ -761,6 +775,7 @@ export function App() {
         onSelect={(id) => navigate({ name: 'market', marketId: id })}
         collapsed={leftCollapsed}
         events={events}
+        searchPool={searchPoolNormalised}
         onCategoryChange={(c) => setCategory(c)}
         loading={eventsLoading}
         onHome={() => navigate({ name: 'home' })}

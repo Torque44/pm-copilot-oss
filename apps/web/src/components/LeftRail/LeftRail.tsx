@@ -182,6 +182,10 @@ export interface LeftRailProps {
   onSelect: (id: string) => void;
   collapsed: boolean;
   events?: EventSummary[];
+  /** Pre-fetched multi-category pool used as the search source when the
+   *  search box has text. Empty/omitted falls back to the per-tab `events`
+   *  list — search then behaves like the legacy per-tab filter. */
+  searchPool?: EventSummary[];
   onCategoryChange?: (cat: string) => void;
   loading?: boolean;
   /** Called when the user clicks the brand. Resets the workbench to the
@@ -202,6 +206,7 @@ const POLYMARKET_URL_RX = /\bpolymarket\.com\//i;
 export function LeftRail({
   selectedId,
   onSelect,
+  searchPool,
   collapsed,
   events,
   onCategoryChange,
@@ -257,7 +262,12 @@ export function LeftRail({
     }
   };
 
-  const source = events ?? [];
+  const browseSource = events ?? [];
+  // Global-search source: when search is active, use the pre-fetched
+  // multi-category pool so "f1" on the politics tab still finds F1
+  // markets. Falls back to the per-tab list if no pool was supplied
+  // (component is reusable without the App-level prefetch).
+  const searchSource = (searchPool && searchPool.length > 0) ? searchPool : browseSource;
 
   // Filter pipeline:
   //   When the search box is EMPTY: filter by the active category tab.
@@ -275,19 +285,19 @@ export function LeftRail({
       return e.outcomes.some((o) => o.name.toLowerCase().includes(ql));
     };
     // Global-search short-circuit: if the user typed something, skip the
-    // category filter entirely.
+    // category filter and search across the pre-fetched global pool.
     if (ql) {
-      return source
+      return searchSource
         .filter(titleOrOutcomeMatch)
         .sort((a, b) => (b.volume24hr ?? 0) - (a.volume24hr ?? 0));
     }
-    return source
+    return browseSource
       .filter((e) => {
         if (isCanonical) return e.category === cat;
         return Array.isArray(e.tagSlugs) && e.tagSlugs.includes(cat);
       })
       .sort((a, b) => (b.volume24hr ?? 0) - (a.volume24hr ?? 0));
-  }, [source, cat, q]);
+  }, [browseSource, searchSource, cat, q]);
 
   if (collapsed) return null;
 
@@ -361,7 +371,7 @@ export function LeftRail({
           <div className="empty-rail">
             {loading
               ? 'loading polymarket events…'
-              : source.length === 0
+              : browseSource.length === 0
                 ? 'no events loaded yet.'
                 : q.trim()
                   ? `no markets match "${q.trim()}".`

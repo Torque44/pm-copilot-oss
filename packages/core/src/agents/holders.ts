@@ -148,6 +148,7 @@ export async function runHoldersAgent(
     systemPrompt: SYS,
     jsonOnly: true,
     timeoutMs: 90_000,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
   const parsed = res.ok ? extractJson<{ claims: Claim[] }>(res.text) : null;

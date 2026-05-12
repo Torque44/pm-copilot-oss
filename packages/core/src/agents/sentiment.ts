@@ -79,6 +79,7 @@ export async function runSentimentAgent(
   const pass1 = await provider.complete(pass1Prompt, {
     tier: 'fast',
     timeoutMs: 60_000,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
     liveSearch: {
       mode: 'on',
       sources: ['x'],
@@ -140,6 +141,7 @@ Return JSON ONLY:
       systemPrompt: pass2Sys,
       jsonOnly: true,
       timeoutMs: 30_000,
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
       // liveSearch intentionally omitted — pure summarisation.
     },
   );

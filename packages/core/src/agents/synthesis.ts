@@ -119,6 +119,7 @@ export async function runSynthesis(
     systemPrompt: SYS,
     jsonOnly: true,
     timeoutMs: 30_000,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
   const parsed = res.ok ? extractJson<SynthRaw>(res.text) : null;

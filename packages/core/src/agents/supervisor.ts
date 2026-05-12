@@ -129,7 +129,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   if (sentimentEnabled && !isResolved) startedAgents.splice(3, 0, 'sentiment');
   for (const a of startedAgents) emit({ t: 'agent:start', agent: a });
 
-  const ctx: AgentContext = { market, emit };
+  const ctx: AgentContext = { market, emit, ...(signal ? { signal } : {}) };
 
   // Wrap each specialist so we always emit agent:done (or error), never crash the SSE.
   const runOne = async (

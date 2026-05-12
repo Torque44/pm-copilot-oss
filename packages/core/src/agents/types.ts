@@ -208,6 +208,12 @@ export type Brief = {
 export type AgentContext = {
   market: MarketMeta;
   emit: (ev: AgentEvent) => void;
+  /** Abort signal threaded from the route handler (req.on('close')) through
+   *  the supervisor into each agent. When the client disconnects, agents
+   *  can pass this into provider.complete({ signal }) so the in-flight
+   *  LLM fetch aborts instead of burning BYOK quota for a dropped client.
+   *  Optional so tests / programmatic callers don't have to construct one. */
+  signal?: AbortSignal;
 };
 
 export type AgentResult = {

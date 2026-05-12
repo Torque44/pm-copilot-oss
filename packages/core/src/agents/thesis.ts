@@ -116,6 +116,7 @@ Write the thesis brief.`;
     tier: 'fast',
     systemPrompt: ANALYSIS_SYS,
     timeoutMs: 150_000,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
   if (!passOne.ok || !passOne.text) {
@@ -160,6 +161,7 @@ valid_citation_ids: ${[...validIds].slice(0, 30).join(', ') || '(none)'}`;
     systemPrompt: EXTRACT_SYS,
     jsonOnly: true,
     timeoutMs: 30_000,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
   let parsed: StructuredResp | null = null;

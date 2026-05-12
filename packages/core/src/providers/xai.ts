@@ -14,6 +14,7 @@ import type {
   ProviderCapabilities,
 } from './types';
 import { sanitizeUpstreamErrorBody } from './sanitizeError';
+import { chainAbortSignal } from './types';
 
 const BASE = process.env['XAI_BASE_URL'] || 'https://api.x.ai/v1';
 
@@ -106,6 +107,7 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
 
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const unchain = chainAbortSignal(ctrl, opts.signal);
 
       const fetchOnce = async (withSearch: boolean): Promise<Response> => {
         return fetch(`${BASE}/chat/completions`, {
@@ -148,6 +150,7 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
           }
         }
         clearTimeout(timer);
+        unchain();
 
         if (!res.ok) {
           const detail = await res.text().catch(() => '');
@@ -192,6 +195,7 @@ export function makeXAIProvider(apiKey?: string | null): LLMProvider {
         };
       } catch (err) {
         clearTimeout(timer);
+        unchain();
         const msg =
           err instanceof Error && err.name === 'AbortError'
             ? `timeout after ${timeoutMs}ms`

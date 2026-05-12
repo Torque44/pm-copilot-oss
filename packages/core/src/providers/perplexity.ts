@@ -12,6 +12,7 @@ import type {
   ProviderCapabilities,
 } from './types';
 import { sanitizeUpstreamErrorBody } from './sanitizeError';
+import { chainAbortSignal } from './types';
 
 const briefLimit = pLimit(4);
 const askLimit = pLimit(2);
@@ -64,6 +65,7 @@ export class PerplexityProvider implements LLMProvider {
 
       const ctrl = new AbortController();
       const killer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const unchain = chainAbortSignal(ctrl, opts.signal);
       try {
         const r = await fetch('https://api.perplexity.ai/chat/completions', {
           method: 'POST',
@@ -75,6 +77,7 @@ export class PerplexityProvider implements LLMProvider {
           signal: ctrl.signal,
         });
         clearTimeout(killer);
+        unchain();
         if (!r.ok) {
           const errText = await r.text().catch(() => '');
           return {
@@ -106,6 +109,7 @@ export class PerplexityProvider implements LLMProvider {
         };
       } catch (err: any) {
         clearTimeout(killer);
+        unchain();
         const msg = err?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : err?.message ?? 'fetch failed';
         return {
           ok: false,

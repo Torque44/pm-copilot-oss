@@ -34,6 +34,12 @@ export type CompleteOpts = {
    *  Most providers ignore this. The Anthropic-via-Claude-Code path uses it to
    *  pass `--allowedTools` so a specialist (e.g. NewsAgent) can run web search. */
   allowedTools?: string[];
+  /** Optional abort signal. When the parent request is cancelled (client
+   *  disconnect), agents can pass this in so the in-flight provider fetch
+   *  aborts instead of running to completion and burning BYOK quota for an
+   *  answer no one is reading. Each provider chains this to its internal
+   *  per-call AbortController. */
+  signal?: AbortSignal;
   /** Live-search opts. Today only the xAI/Grok provider honours these — Grok
    *  has X + web + news search baked into its API. Other providers ignore. */
   liveSearch?: {
@@ -95,6 +101,32 @@ export interface LLMProvider {
 
   /** Issue a single text completion. */
   complete(prompt: string, opts?: CompleteOpts): Promise<CompleteResult>;
+}
+
+/** Chain a caller-supplied AbortSignal into the provider's local
+ *  per-call AbortController. Returns a cleanup function the provider
+ *  must call after the fetch resolves/rejects to remove the listener.
+ *
+ *  Behaviour:
+ *    - If parent is already aborted, abort the local ctrl immediately.
+ *    - Otherwise wire a one-shot listener that aborts the local ctrl
+ *      when the parent fires.
+ *
+ *  Used by every fetch-based provider so a route-handler signal (client
+ *  disconnect) cancels the in-flight LLM request instead of letting it
+ *  run to completion and burn BYOK quota. */
+export function chainAbortSignal(
+  ctrl: AbortController,
+  parent: AbortSignal | undefined,
+): () => void {
+  if (!parent) return () => undefined;
+  if (parent.aborted) {
+    ctrl.abort();
+    return () => undefined;
+  }
+  const onAbort = () => ctrl.abort();
+  parent.addEventListener('abort', onAbort, { once: true });
+  return () => parent.removeEventListener('abort', onAbort);
 }
 
 /** Extract the first JSON object/array from a blob of text.

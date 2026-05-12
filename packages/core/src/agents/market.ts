@@ -150,6 +150,7 @@ export async function runMarketAgent(
     jsonOnly: true,
     // 90s: subprocess + concurrent contention can push haiku-class calls to 30-60s.
     timeoutMs: 90_000,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
   const parsed = res.ok ? extractJson<{ claims: Claim[] }>(res.text) : null;

@@ -35,8 +35,8 @@ export type MarketShape = {
 // the most specific phrase first ("at least" before "least"). Word-boundary
 // anchors prevent "atleast" or fragments from matching.
 const COMPARATOR_PATTERNS: Array<{ rx: RegExp; op: MarketShape['comparator'] }> = [
-  { rx: /(?:>=|at\s+least|≥|or\s+more|or\s+higher)/i, op: '>=' },
-  { rx: /(?:<=|at\s+most|≤|or\s+fewer|or\s+lower)/i, op: '<=' },
+  { rx: /(?:>=|\bat\s+least\b|≥|\bor\s+more\b|\bor\s+higher\b)/i, op: '>=' },
+  { rx: /(?:<=|\bat\s+most\b|≤|\bor\s+fewer\b|\bor\s+lower\b|\bless\s+than\b|\bfewer\s+than\b|\bunder\b)/i, op: '<=' },
   { rx: />/, op: '>' },
   { rx: /</, op: '<' },
 ];
@@ -101,12 +101,99 @@ function parseTweetCount(title: string): MarketShape | null {
   };
 }
 
+/** Temperature markets: 'highest NYC temperature ≥ 95°F'. The metric word
+ *  is 'temperature' and the unit is °F (US default for Polymarket weather
+ *  markets; Celsius variants would be handled by a future extension).
+ *  Threshold extraction prefers a number directly after a comparator
+ *  phrase, then falls back to the LAST integer in the title — this
+ *  guards against titles where a year (e.g. '2026') appears before
+ *  the actual threshold and would otherwise leak as the threshold. */
+function parseTemperature(title: string): MarketShape | null {
+  if (!/\btemperature\b/i.test(title)) return null;
+  const op = detectComparator(title) ?? '>=';
+
+  // Try after-comparator first.
+  const afterComparator = title.match(/(?:>=|<=|≥|≤|>|<|\bat\s+least\b|\bat\s+most\b|\bor\s+more\b|\bor\s+fewer\b|\bor\s+higher\b|\bor\s+lower\b|\bless\s+than\b|\bfewer\s+than\b|\bunder\b|\bover\b)\s*(\d{1,3})\b/i);
+  // Fall back to the LAST integer in the title (avoids picking up a year prefix).
+  const allNums = [...title.matchAll(/\b(\d{1,3})\b/g)];
+  const lastNum = allNums[allNums.length - 1];
+  const numMatch = afterComparator ?? lastNum;
+  if (!numMatch) return null;
+  const threshold = Number(numMatch[1]);
+  if (!Number.isFinite(threshold)) return null;
+
+  // Entity = city / location word before "temperature".
+  const before = title.toLowerCase().split(/temperature/i)[0] ?? '';
+  const tokens = before.replace(/\b(highest|lowest|will|the|in|a|an)\b/g, ' ').split(/\s+/).filter(Boolean);
+  const entity = tokens[tokens.length - 1] ?? 'unknown';
+  return {
+    entity,
+    metric: 'temperature',
+    comparator: op,
+    threshold,
+    unit: '°F',
+    window: { start: null, end: '' },
+    source: { titlePart: title },
+  };
+}
+
+/** Price markets: 'BTC ≥ $100k', 'ETH > $5000', 'TSLA ≥ $300'. */
+function parsePrice(title: string): MarketShape | null {
+  const dollar = title.match(/\$\s*([\d,]+(?:\.\d+)?)(\s*k\b|\s*m\b)?/i);
+  if (!dollar) return null;
+  const op = detectComparator(title) ?? '>=';
+  let raw = Number(dollar[1]!.replace(/,/g, ''));
+  if (!Number.isFinite(raw)) return null;
+  const suffix = (dollar[2] ?? '').trim().toLowerCase();
+  if (suffix === 'k') raw *= 1_000;
+  else if (suffix === 'm') raw *= 1_000_000;
+  // Entity = first all-caps token (BTC / ETH / TSLA / SPX). Falls back to
+  // the first non-stopword token.
+  const tickerMatch = title.match(/\b([A-Z]{2,5})\b/);
+  const entity = (tickerMatch ? (tickerMatch[1] ?? '') : (title.split(/\s+/)[0] ?? '')).toLowerCase();
+  return {
+    entity,
+    metric: 'price',
+    comparator: op,
+    threshold: raw,
+    unit: '$',
+    window: { start: null, end: '' },
+    source: { titlePart: title },
+  };
+}
+
+/** Snow / rain / precipitation: '≥ 1 inch of snow in NYC by Dec 31',
+ *  'Will NYC see ≥ 1 inch of snow by Dec 31?'. Entity extraction tries
+ *  both common phrasings: "in CITY" / "at CITY" and "Will CITY see/record/have". */
+function parsePrecipitation(title: string): MarketShape | null {
+  const m = title.match(/(?:≥|>=|at\s+least|over)?\s*(\d+(?:\.\d+)?)\s*(inch(?:es)?|in\b|mm|cm)\s+(?:of\s+)?(snow|rain|precipitation)/i);
+  if (!m) return null;
+  const threshold = Number(m[1]);
+  const metric = (m[3] ?? 'snow').toLowerCase();
+  const op = detectComparator(title) ?? '>=';
+  // Entity heuristics — try "in/at CITY" first, then "Will CITY see/record/have".
+  const inAtMatch = title.match(/\b(?:in|at)\s+([A-Z][a-zA-Z]+)/);
+  const willSeeMatch = title.match(/\bWill\s+([A-Z][a-zA-Z]+)\s+(?:see|record|have|get|receive)/);
+  const cityMatch = inAtMatch ?? willSeeMatch;
+  const entity = (cityMatch?.[1] ?? 'unknown').toLowerCase();
+  return {
+    entity,
+    metric,
+    comparator: op,
+    threshold,
+    unit: 'in',
+    window: { start: null, end: '' },
+    source: { titlePart: title },
+  };
+}
+
 export function parseMarketShape(market: MarketMeta): MarketShape | null {
   if (!market.title || market.title.trim().length === 0) return null;
-  const tweet = parseTweetCount(market.title);
-  if (tweet) {
-    return { ...tweet, window: { start: null, end: market.endDate } };
+  const tryParsers = [parseTweetCount, parsePrecipitation, parseTemperature, parsePrice];
+  for (const fn of tryParsers) {
+    const result = fn(market.title);
+    if (result) return { ...result, window: { start: null, end: market.endDate } };
   }
-  void stripComparators; // reserved for future shapes
+  void stripComparators;
   return null;
 }

@@ -7,7 +7,7 @@
 
 import type { AgentEvent, MarketMeta } from '@pm-copilot/core';
 import { markDirty, registerProducer } from './persist.js';
-import { publish } from './eventBus.js';
+import { publish, clearTopic } from './eventBus.js';
 import { redactKeyFragments } from './lib/sanitizeError.js';
 
 export type BriefEnvelope =
@@ -128,6 +128,7 @@ export function getCached(marketId: string): BriefRecord | null {
   if (!rec || !rec.complete) return null;
   if (Date.now() - rec.savedAt > TTL_MS) {
     store.delete(marketId);
+    clearTopic(`brief:${marketId}`);
     markDirty();
     return null;
   }
@@ -136,5 +137,8 @@ export function getCached(marketId: string): BriefRecord | null {
 
 export function invalidateBrief(marketId: string) {
   store.delete(marketId);
+  // Reclaim the eventBus channel — otherwise channels Map grows unbounded
+  // across unique marketIds (one per ever-briefed market, never reaped).
+  clearTopic(`brief:${marketId}`);
   markDirty();
 }

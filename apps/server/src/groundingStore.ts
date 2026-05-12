@@ -4,7 +4,7 @@
 
 import type { BookGrounding, HoldersGrounding, NewsGrounding } from '@pm-copilot/core';
 import { markDirty, registerProducer } from './persist.js';
-import { publish } from './eventBus.js';
+import { publish, clearTopic } from './eventBus.js';
 
 type Slot = {
   book?: BookGrounding | null;
@@ -81,6 +81,9 @@ export function readGrounding(marketId: string): Slot | null {
   if (!slot) return null;
   if (Date.now() - slot.updatedAt > TTL_MS) {
     store.delete(marketId);
+    // Reclaim the eventBus channel too — otherwise channels Map grows
+    // unbounded across unique marketIds.
+    clearTopic(`grounding:${marketId}`);
     markDirty();
     return null;
   }

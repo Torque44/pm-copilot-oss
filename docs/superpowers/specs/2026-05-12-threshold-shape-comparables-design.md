@@ -272,3 +272,15 @@ On a weather market ("Highest NYC temperature week of Jun 16-22 ≥ 95°F"):
 > - **May 26-Jun 1 (≥ 85°F)** — NYC hit 91°F, resolved YES at 100¢ [comp-3]
 >
 > Threshold this week is 92°F. Past resolutions at the 90-95°F band: 4 of 6 YES (67%).
+
+## Live verification notes (2026-05-12)
+
+End-to-end verification status at the close of the implementation pass:
+
+**Unit coverage**: 119 tests pass. `marketShape.test.ts` exercises tweet-count, temperature, price, precipitation parsers plus negative cases plus the year-prefix and "Will CITY see" regression tests. `realizedValue.test.ts` exercises all three priority tiers including top-level + nested description paths.
+
+**Cold-cache integration check (non-threshold market)**: ran `/api/brief?marketId=540819&force=1` against the "Will Jesus Christ return before GTA VI?" event. Result: 5 comparable citations, **0 with parsed shapes**. This is correct — the query market is a binary-event shape (scope c), so `queryShape` is null and the candidate-shape parser is correctly skipped. The keyword-only fallback continues to produce comparables.
+
+**Cold-cache integration check (threshold market)**: deferred. Polymarket's current top-100-by-volume catalog has no active threshold-in-window markets (no tweet-count, temperature, snow, or threshold-priced markets in the trending feed). Pipeline correctness for threshold markets is locked in by unit tests but the human-readable answer text for a real threshold market on the live URL will need to be inspected when one surfaces.
+
+**Recommended live retry**: when a threshold market does appear (e.g., a weekly Musk tweet-count market, a daily NYC weather market, a "BTC ≥ $X by date" market), open it in the workbench, ask "what past Polymarket resolutions exist for similar markets?", and confirm the answer cites per-comp threshold + realized values (or `(inferred)` markers) rather than collapsing to a base-rate one-liner.

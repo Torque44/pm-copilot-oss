@@ -10,6 +10,7 @@
     ".": "./src/index.ts",
     "./agents": "./src/agents/index.ts",
     "./agents/*": "./src/agents/*.ts",
+    "./news/*": "./src/news/*.ts",
     "./providers": "./src/providers/index.ts",
     "./providers/*": "./src/providers/*.ts",
     "./mcp": "./src/mcp/registry.ts",

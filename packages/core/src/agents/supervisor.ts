@@ -48,6 +48,8 @@ import { runSentimentAgent, type SentimentInput } from './sentiment';
 import { runThesisAgent, type ThesisInput } from './thesis';
 import { runComparablesAgent, type ComparablesInput } from './comparables';
 import type { Searcher } from '../providers/exa';
+import type { NewsCache } from '../news/cache';
+import type { NewsOpts } from './news';
 
 export type RememberGrounding = {
   (marketId: string, kind: 'book', data: BookGrounding | null): void;
@@ -90,10 +92,15 @@ export type SupervisorOpts = {
    *  Wave-1 specialists already in flight finish (their fetches are short),
    *  but wave-2 thesis + synthesis don't fire if the signal is aborted. */
   signal?: AbortSignal;
+  /** Process-singleton news grounding cache. When set, repeated briefs on
+   *  the same market within 6h return cached news without re-running the
+   *  chain. When omitted (e.g., tests), runNewsAgent allocates its own
+   *  ephemeral cache — useless but harmless. */
+  newsCache?: NewsCache;
 };
 
 export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
-  const { market: rawMarket, emit, rememberGrounding, routing, tweets, searcher, signal } = opts;
+  const { market: rawMarket, emit, rememberGrounding, routing, tweets, searcher, signal, newsCache } = opts;
 
   // Sanitize the title once and pass the cleaned market to every downstream
   // agent. Other fields (numeric prices, ISO dates, marketId) don't need
@@ -183,9 +190,14 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
     runOne('news', (c) => {
       // Resolved markets pass a windowOverride so news searches the 30 days
       // BEFORE resolution rather than "the last 30 days from today."
-      const newsOpts = isResolved && market.resolvedAt
-        ? { windowOverride: { endsAt: market.resolvedAt, days: 30 } }
-        : undefined;
+      // The newsCache (when provided by the server) makes repeated briefs
+      // on the same market within 6h cache-served.
+      const newsOpts: NewsOpts = {
+        ...(isResolved && market.resolvedAt
+          ? { windowOverride: { endsAt: market.resolvedAt, days: 30 } }
+          : {}),
+        ...(newsCache ? { cache: newsCache } : {}),
+      };
       return runNewsAgent(c, newsProvider, searcher, newsOpts);
     }),
     // Comparables is deterministic (HTTP only, no LLM) — fans out with the

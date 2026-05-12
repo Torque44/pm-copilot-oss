@@ -31,6 +31,7 @@ import { byokProvider } from '@pm-copilot/core/providers/byok';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import { rememberGrounding } from '../groundingStore.js';
 import { getExaSearcher } from '../exa.js';
+import { getNewsCache } from '../news-cache.js';
 import type { MarketMeta, AgentEvent, Category } from '@pm-copilot/core';
 import { getCached, startRecording, type BriefEnvelope } from '../briefStore.js';
 
@@ -212,7 +213,8 @@ export async function briefHandler(req: Request, res: Response) {
     // no Perplexity key configured. Null when EXA_API_KEY isn't set on
     // the server; the news agent falls back to its provider-only path.
     const searcher = getExaSearcher();
-    await runSupervisor({ market, emit, rememberGrounding, routing, tweets, searcher, signal: abortCtrl.signal });
+    const newsCache = getNewsCache();
+    await runSupervisor({ market, emit, rememberGrounding, routing, tweets, searcher, newsCache, signal: abortCtrl.signal });
   } catch (err: unknown) {
     const internal = errMsg(err) || 'supervisor crashed';
     console.warn(`[brief] supervisor crashed for ${market.marketId}: ${internal}`);

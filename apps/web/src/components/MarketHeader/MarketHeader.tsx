@@ -4,6 +4,9 @@
 // panel already has a dedicated "resolution" tab — duplicating the same
 // copy at the top wastes vertical space. Header now stays compact; users
 // hit ⌘3 → resolution tab when they want the fine print.
+//
+// Resolved markets get a slate-amber banner above the title row so the
+// trader knows AT A GLANCE the market they're briefing already paid out.
 
 import type { Market } from '../../types';
 
@@ -18,8 +21,29 @@ export interface MarketHeaderProps {
 }
 
 export function MarketHeader({ market, inWatchlist, onToggleWatchlist }: MarketHeaderProps) {
+  const resolved = market.resolvedAt;
+  // Outcome inference: whichever side is closer to 1.0 is the resolved outcome.
+  // Gamma sets the winning side to exactly 1.0 and the losing side to 0.0 on
+  // closed markets — but we use comparison rather than equality to survive
+  // any future drift in payout encoding.
+  const finalOutcome: 'YES' | 'NO' | null = resolved && market.yes != null && market.no != null
+    ? (market.yes >= market.no ? 'YES' : 'NO')
+    : null;
+  const finalPrice = finalOutcome === 'YES' ? market.yes : finalOutcome === 'NO' ? market.no : null;
+  const resolvedHuman = resolved ? formatResolvedDate(resolved) : '';
+
   return (
     <div className="market-header">
+      {resolved && (
+        <div className="mh-resolved-banner mono">
+          <span className="mh-resolved-label">resolved · {resolvedHuman}</span>
+          {finalOutcome && finalPrice != null && (
+            <span className={`mh-resolved-outcome ${finalOutcome.toLowerCase()}`}>
+              final {finalOutcome} @ ${finalPrice.toFixed(2)}
+            </span>
+          )}
+        </div>
+      )}
       <div className="mh-row">
         <div className="mh-title-block">
           <span className="venue-chip mono">{market.venue}</span>
@@ -35,7 +59,7 @@ export function MarketHeader({ market, inWatchlist, onToggleWatchlist }: MarketH
               trade on polymarket ↗
             </a>
           )}
-          {onToggleWatchlist && (
+          {!resolved && onToggleWatchlist && (
             <button
               type="button"
               className={`mh-watch-btn mono ${inWatchlist ? 'on' : ''}`}
@@ -89,4 +113,10 @@ export function MarketHeader({ market, inWatchlist, onToggleWatchlist }: MarketH
       )}
     </div>
   );
+}
+
+function formatResolvedDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toLowerCase();
 }

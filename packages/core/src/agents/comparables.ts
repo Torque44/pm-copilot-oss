@@ -17,11 +17,13 @@
 import type {
   AgentContext,
   AgentResult,
+  Category,
   Citation,
   Claim,
   SectionOut,
 } from './types';
 import { listEventsBroad, type GammaEvent, type PolyTag } from '../feeds/polymarket';
+import { parseMarketShape, type MarketShape } from './marketShape';
 
 const POLY_TAGS: readonly PolyTag[] = ['crypto', 'sports', 'politics'];
 
@@ -135,6 +137,13 @@ export type ComparableHit = {
   slug?: string;
   /** Keyword overlap score (informational). */
   score: number;
+  /** Parsed market shape when the title fits the threshold-in-window
+   *  pattern. Null when the comparable's title didn't parse. */
+  shape?: MarketShape | null;
+  /** Raw Gamma description text that the ask agent's realizedValue
+   *  extractor reads. Populated from the candidate GammaEvent so
+   *  consumers don't need to refetch. */
+  description?: string | null;
 };
 
 export type ComparablesInput = {
@@ -222,6 +231,26 @@ export async function runComparablesAgent(
     if (hits === 0) continue;
 
     const outcome = inferOutcome(ev);
+    // Parse the comparable's shape from its title for downstream
+    // shape-aware ask answers. parseMarketShape needs a MarketMeta but we
+    // only have a GammaEvent here — build a minimal stub. The parser only
+    // reads `title` and `endDate`.
+    const compShape = parseMarketShape({
+      marketId: ev.id,
+      eventId: ev.id,
+      venue: 'polymarket',
+      title: ev.title,
+      category: input.category as Category,
+      yes: 0,
+      no: 0,
+      volume24hr: 0,
+      volumeTotal: 0,
+      endDate: ev.endDate ?? '',
+      conditionId: '',
+      tokenIdYes: '',
+      tokenIdNo: '',
+      slug: ev.slug ?? '',
+    });
     scored.push({
       eventId: ev.id,
       title: ev.title,
@@ -230,6 +259,8 @@ export async function runComparablesAgent(
       resolvedPrice: pickResolvedPrice(ev),
       ...(ev.slug ? { slug: ev.slug } : {}),
       score,
+      ...(compShape ? { shape: compShape } : {}),
+      ...(ev.description ? { description: ev.description } : {}),
     });
   }
 

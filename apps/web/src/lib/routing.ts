@@ -7,10 +7,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+// /event/:id was previously declared but had no UI render path — direct
+// navigation fell through to an empty home view (audit L7, codex). Removed
+// from the union; pathToRoute now maps /event/:id paths to home so old
+// links don't 404.
 export type Route =
   | { name: 'home' }
   | { name: 'market'; marketId: string }
-  | { name: 'event'; eventId: string }
   | { name: 'setup' }
   | { name: 'settings' };
 
@@ -22,8 +25,6 @@ export function routeToPath(r: Route): string {
       return '/';
     case 'market':
       return `/m/${encodeURIComponent(r.marketId)}`;
-    case 'event':
-      return `/event/${encodeURIComponent(r.eventId)}`;
     case 'setup':
       return '/setup';
     case 'settings':
@@ -45,11 +46,10 @@ export function pathToRoute(path: string): Route {
     return { name: 'market', marketId: decodeURIComponent(marketMatch[1]) };
   }
 
-  const eventMatch = /^\/event\/([^/]+)$/.exec(p);
-  if (eventMatch && eventMatch[1]) {
-    return { name: 'event', eventId: decodeURIComponent(eventMatch[1]) };
-  }
-
+  // /event/:id is intentionally NOT matched as its own route — it had no
+  // UI render path, so users hitting it land on the home view instead of
+  // an empty broken screen. Old shareable /event/:id links degrade
+  // gracefully to the events list.
   return { name: 'home' };
 }
 

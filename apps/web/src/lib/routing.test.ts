@@ -30,9 +30,6 @@ describe('routeToPath', () => {
     expect(routeToPath({ name: 'market', marketId: 'a b/c' })).toBe('/m/a%20b%2Fc');
   });
 
-  it('event id → /event/<id>', () => {
-    expect(routeToPath({ name: 'event', eventId: 'evt-42' })).toBe('/event/evt-42');
-  });
 });
 
 describe('pathToRoute', () => {
@@ -56,8 +53,11 @@ describe('pathToRoute', () => {
     expect(pathToRoute('/m/abc-123')).toEqual({ name: 'market', marketId: 'abc-123' });
   });
 
-  it('/event/<id> → event', () => {
-    expect(pathToRoute('/event/evt-42')).toEqual({ name: 'event', eventId: 'evt-42' });
+  it('/event/<id> degrades to home (no UI render path)', () => {
+    // /event/:id was previously a declared route but had no handler in
+    // App.tsx — direct navigation landed users on an empty screen. The
+    // route is now mapped to home so old shareable links don't 404.
+    expect(pathToRoute('/event/evt-42')).toEqual({ name: 'home' });
   });
 
   it('decodes special characters in marketId', () => {
@@ -93,7 +93,6 @@ describe('round-trip', () => {
     { name: 'market', marketId: 'simple-slug' },
     { name: 'market', marketId: 'with spaces and / slashes' },
     { name: 'market', marketId: 'unicode-π-é' },
-    { name: 'event', eventId: 'evt-2024-us-pres' },
   ];
   it.each(cases)('round-trips %j', (r) => {
     expect(pathToRoute(routeToPath(r))).toEqual(r);

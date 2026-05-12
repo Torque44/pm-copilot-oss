@@ -647,7 +647,11 @@ export function App() {
   // Setup overlay (rendered after the main return below). The /setup URL
   // also opens it; saving from URL-mode also navigates back to home so the
   // address bar matches.
-  const showSetup = setupOpen || route.name === 'setup';
+  // /settings opens the same provider picker overlay /setup does — the
+  // distinction in routing.ts is a hint for future "first-run vs revisit"
+  // UI splits, but until that ships /settings should be a usable URL
+  // rather than a dead-end (audit L7, codex).
+  const showSetup = setupOpen || route.name === 'setup' || route.name === 'settings';
   const onSetupSave = async (info: { provider: ProviderName; key: string }) => {
     // Schema v2: each provider has its own key slot, so a paste only writes
     // to that one slot — no overwrite of other providers. The orchestrator

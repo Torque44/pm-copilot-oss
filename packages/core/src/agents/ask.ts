@@ -292,7 +292,7 @@ function describeComparables(comps: AskComparable[] | undefined): string {
         : '';
       // Normalise the ASCII comparator (>=, <=) to Unicode (≥, ≤) so the
       // LLM sees the same symbol form in the comparable rows as in the SYS
-      // prompt example. `>`, `<`, `between` pass through unchanged.
+      // prompt example. `>`, `<` pass through unchanged.
       const opDisplay = c.shape.comparator === '>=' ? '≥'
         : c.shape.comparator === '<=' ? '≤'
         : c.shape.comparator;

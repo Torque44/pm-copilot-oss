@@ -238,4 +238,36 @@ describe('parseMarketShape', () => {
     expect(s!.metric).toBe('snow');
     expect(s!.entity).toBe('nyc'); // leading-city pattern
   });
+
+  // ───── C1 re-audit: noun-phrase tweet-count shapes ─────
+  it('parses "Trump tweet count: N" noun-phrase shape (C1 re-audit)', () => {
+    const m = mkMarket({ title: 'Trump tweet count: 250 this week', endDate: '2026-05-15T23:59:00Z' });
+    const s = parseMarketShape(m);
+    expect(s).not.toBeNull();
+    expect(s!.threshold).toBe(250);
+    expect(s!.metric).toBe('tweets');
+  });
+
+  it('parses "N tweets by X" inverted phrasing (C1 re-audit)', () => {
+    const m = mkMarket({ title: '250 tweets by Trump this week', endDate: '2026-05-15T23:59:00Z' });
+    const s = parseMarketShape(m);
+    expect(s).not.toBeNull();
+    expect(s!.threshold).toBe(250);
+  });
+
+  it('parses "Musk tweet total: N" (C1 re-audit)', () => {
+    const m = mkMarket({ title: 'Musk tweet total: 187', endDate: '2026-05-15T23:59:00Z' });
+    const s = parseMarketShape(m);
+    expect(s).not.toBeNull();
+    expect(s!.threshold).toBe(187);
+  });
+
+  // ───── I3 re-audit regression: bare "high" / "low" stripped from temp entity ─────
+  it('strips bare "high"/"low" from temperature entity (I3 re-audit)', () => {
+    const m = mkMarket({ title: 'High temperature record in Phoenix ≥ 115°F', endDate: '2026-07-31T23:59:00Z' });
+    const s = parseMarketShape(m);
+    expect(s).not.toBeNull();
+    expect(s!.metric).toBe('temperature');
+    expect(s!.entity).toBe('phoenix'); // not 'high'
+  });
 });

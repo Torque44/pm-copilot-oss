@@ -97,15 +97,18 @@ const SHAPE_BONUS = {
   entityAndMetric: 5.0,
   /** Same metric only ("any tweet count" vs "Musk tweet count"). */
   metricOnly: 2.5,
-  /** Window duration within WINDOW_RATIO of the query market's window. */
-  timeScale: 1.0,
   /** Threshold within THRESHOLD_RATIO of the query market's threshold. */
   threshold: 0.5,
 } as const;
 
-/** Time-scale similarity bounds: weekly markets match other weekly windows,
- *  daily match daily, monthly match monthly. Excludes annual-vs-weekly drift. */
-const WINDOW_RATIO = { min: 0.5, max: 2.0 } as const;
+// Time-scale similarity bonus removed (2026-05-12 audit). The previous
+// implementation used |endDate - now| as a window-duration proxy, but it
+// only fires for narrow time-offset coincidences (a weekly query resolving
+// in 5 days only bonus-matches a comparable resolved 2.5-10 days ago, not
+// "any weekly resolved market"). The +5.0 / +2.5 / +0.5 bonuses cover the
+// dominant signal. Restore as a real window-duration bonus when
+// parseMarketShape learns to extract window.start from "this week" /
+// "between A and B" / weekly-cadence titles.
 
 /** Threshold proximity bounds: ≥200 matches ≥150 and ≥250 (within ~1.5×)
  *  but not ≥10 or ≥1000. */
@@ -200,10 +203,6 @@ export type ComparableHit = {
 export type ComparablesInput = {
   marketTitle: string;
   category: string;
-  /** Optional ISO end-date of the query market — used by the shape-aware
-   *  scorer to bonus candidates whose time-to-resolution is in a similar
-   *  range. When omitted, the time-scale bonus is silently skipped. */
-  endDate?: string | null;
 };
 
 /**
@@ -245,18 +244,8 @@ export async function runComparablesAgent(
   // Returns null for non-threshold markets — those fall back to the
   // pure-keyword scorer below.
   const queryShape = parseMarketShape(
-    gammaToShapeStub('query', input.marketTitle, input.category as Category, input.endDate ?? null),
+    gammaToShapeStub('query', input.marketTitle, input.category as Category, null),
   );
-
-  // Time-to-resolution (from now) for the query market — used by the
-  // time-scale similarity bonus. A market resolving in 5 days vs 7 days
-  // are both "weekly-ish" (within 0.5x-2x of each other); 5 days vs 365
-  // days are clearly different scales. When the query market has no end
-  // date or the date is in the past, treat scale as unknown (0) and
-  // the bonus block silently skips.
-  const now = Date.now();
-  const queryEndMs = input.endDate ? Date.parse(input.endDate) : 0;
-  const queryWindowMs = queryEndMs ? Math.abs(queryEndMs - now) : 0;
 
   for (const ev of candidates) {
     const titleLower = (ev.title || '').toLowerCase();
@@ -320,18 +309,6 @@ export async function runComparablesAgent(
         // Same metric, different entity — same bet shape, different subject.
         score += SHAPE_BONUS.metricOnly;
         hits += 1;
-      }
-
-      // Same time-scale: |endDate - now| magnitude within WINDOW_RATIO of
-      // the query's magnitude. Catches both future (resolves in 5 days) and
-      // recent past (resolved 3 days ago) resolution proximity groupings.
-      // Daily / weekly / monthly markets group together; annual markets
-      // don't blur into weekly ones.
-      const candEndMs = candidateShape.window.end ? Date.parse(candidateShape.window.end) : 0;
-      const candWindowMs = candEndMs ? Math.abs(candEndMs - now) : 0;
-      if (queryWindowMs > 0 && candWindowMs > 0) {
-        const ratio = candWindowMs / queryWindowMs;
-        if (ratio >= WINDOW_RATIO.min && ratio <= WINDOW_RATIO.max) score += SHAPE_BONUS.timeScale;
       }
 
       // Threshold proximity: candidate within THRESHOLD_RATIO of query's

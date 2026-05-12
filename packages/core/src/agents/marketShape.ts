@@ -73,11 +73,23 @@ function parseTweetCount(title: string): MarketShape | null {
     ? title.match(/\btweets?\s+(\d{1,8})\b/i)
     : null;
 
+  // Secondary anchor for "tweet count: N" / "tweet total: N" / "N tweets by X"
+  // noun-phrase shapes. Keeps legitimate Polymarket titles alive without
+  // re-introducing the date-leak bug (the pattern requires the noun `count`,
+  // `total`, or `number` adjacent to the digit, or an inverted "N tweets by X"
+  // form — neither fires on "Will X tweet by DATE?").
+  const nounPhraseAnchor = (!afterComparatorMatch && !tweetAnchoredMatch)
+    ? (title.match(/\btweet\s+(?:count|total|number)\s*[:=]?\s*(\d{1,8})\b/i)
+      ?? title.match(/\b(\d{1,8})\s+tweets?\s+(?:by|from)\b/i))
+    : null;
+
   let threshold: number;
   if (afterComparatorMatch) {
     threshold = Number(afterComparatorMatch[1]);
   } else if (tweetAnchoredMatch) {
     threshold = Number(tweetAnchoredMatch[1]);
+  } else if (nounPhraseAnchor) {
+    threshold = Number(nounPhraseAnchor[1]);
   } else {
     // C1: no explicit comparator and no anchored number — this is a binary
     // event title like "Will X tweet by Dec 31?". Return null.
@@ -159,7 +171,7 @@ function parseTemperature(title: string): MarketShape | null {
   // 2. Words before "temperature", skipping stopwords and month names.
   const before = title.toLowerCase().split(/temperatures?/i)[0] ?? '';
   const tokens = before
-    .replace(/\b(highest|lowest|will|the|in|a|an|see|record|have)\b/g, ' ')
+    .replace(/\b(highest|lowest|high|low|will|the|in|a|an|see|record|have)\b/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
     .filter(t => !MONTH_NAMES.test(t));

@@ -49,17 +49,27 @@ export async function cached<T>(
   if (inflightHit) return inflightHit;
 
   const p = (async () => {
+    // Stash the timer so we can clear it on fast-path resolution. Without
+    // this the timeout fires up to 30s after the loader resolved, which
+    // accumulates active timers under heavy traffic (bounded by
+    // INFLIGHT_TIMEOUT_MS so self-cleaning, but still measurable Node
+    // event-loop pressure).
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const value = await Promise.race([
         loader(),
-        new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error(`cache loader timeout after ${INFLIGHT_TIMEOUT_MS}ms`)), INFLIGHT_TIMEOUT_MS),
-        ),
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`cache loader timeout after ${INFLIGHT_TIMEOUT_MS}ms`)),
+            INFLIGHT_TIMEOUT_MS,
+          );
+        }),
       ]);
       store.set(key, { value, expiresAt: Date.now() + ttlMs });
       markDirty();
       return value;
     } finally {
+      if (timer) clearTimeout(timer);
       inflight.delete(key);
     }
   })();

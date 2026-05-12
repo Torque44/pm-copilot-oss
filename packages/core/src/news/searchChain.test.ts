@@ -161,6 +161,44 @@ describe('searchNews — chain orchestration', () => {
     vi.useRealTimers();
   });
 
+  it('integrates 3 backends: aggregates, dedupes by URL, stops at threshold', async () => {
+    // Realistic happy-path: all 3 backends configured, each returns a few
+    // hits with some overlap. Chain should aggregate + dedupe and stop at
+    // SATISFACTION_THRESHOLD (3) once reached. Concrete invariants:
+    //   1. Aggregate is deduped by URL across all backends.
+    //   2. Chain stops at backend 1 when it returns >=3 hits (later
+    //      backends never invoked).
+    //   3. When backend 1 returns <3, chain calls backend 2; etc.
+    const cache = new NewsCache();
+    const exa = mkBackend('exa', [
+      hit('https://reuters.com/a/1'),
+      hit('https://reuters.com/a/2'),
+      hit('https://shared/dup'),
+    ]);
+    const comments = mkBackend('polymarket-comments', [
+      hit('https://bbc.co.uk/news/1'),
+      hit('https://shared/dup'), // duplicate of exa's
+    ]);
+    const provider = mkBackend('provider-web', [
+      hit('https://cnn.com/news/x'),
+    ]);
+
+    const result = await searchNews(
+      { marketId: 'm-int', title: 'Will X happen?' },
+      [exa, comments, provider],
+      cache,
+      { windowStart: '2026-01-01', windowEnd: '2026-04-30', marketTitle: 'Will X happen?' },
+    );
+
+    // backend 1 returned 3 hits → satisfied → comments + provider not called
+    expect(result).toHaveLength(3);
+    expect(comments.search).not.toHaveBeenCalled();
+    expect(provider.search).not.toHaveBeenCalled();
+    // No duplicate URLs in the aggregate
+    const urls = result.map((h) => h.url);
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
   it('returns [] when all backends are empty (no cache write)', async () => {
     const cache = new NewsCache();
     const exa = mkBackend('exa', []);

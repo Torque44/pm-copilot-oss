@@ -260,23 +260,31 @@ export function LeftRail({
   const source = events ?? [];
 
   // Filter pipeline:
-  //   1. tag/category match — for the four canonical buckets we match on
-  //      `e.category` (the bucket the agent pipeline assigned). For any
-  //      other tab we match on `tagSlugs` (Polymarket's actual taxonomy).
-  //   2. text search on title or any outcome label.
-  //   3. sort by 24h volume desc.
+  //   When the search box is EMPTY: filter by the active category tab.
+  //   When the search box has text: search GLOBALLY across all events —
+  //     the tab is a browse hint, not a constraint. Otherwise "f1" typed
+  //     into the politics tab returns "no politics markets match" even
+  //     though F1 markets exist under sports — user-reported confusion.
+  //   Sort by 24h volume desc in both modes.
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
     const isCanonical = cat === 'politics' || cat === 'crypto' || cat === 'sports';
+    const titleOrOutcomeMatch = (e: EventSummary): boolean => {
+      if (!ql) return true;
+      if (e.title.toLowerCase().includes(ql)) return true;
+      return e.outcomes.some((o) => o.name.toLowerCase().includes(ql));
+    };
+    // Global-search short-circuit: if the user typed something, skip the
+    // category filter entirely.
+    if (ql) {
+      return source
+        .filter(titleOrOutcomeMatch)
+        .sort((a, b) => (b.volume24hr ?? 0) - (a.volume24hr ?? 0));
+    }
     return source
       .filter((e) => {
         if (isCanonical) return e.category === cat;
         return Array.isArray(e.tagSlugs) && e.tagSlugs.includes(cat);
-      })
-      .filter((e) => {
-        if (!ql) return true;
-        if (e.title.includes(ql)) return true;
-        return e.outcomes.some((o) => o.name.toLowerCase().includes(ql));
       })
       .sort((a, b) => (b.volume24hr ?? 0) - (a.volume24hr ?? 0));
   }, [source, cat, q]);
@@ -355,7 +363,9 @@ export function LeftRail({
               ? 'loading polymarket events…'
               : source.length === 0
                 ? 'no events loaded yet.'
-                : `no ${cat} markets match.`}
+                : q.trim()
+                  ? `no markets match "${q.trim()}".`
+                  : `no ${cat} markets match.`}
           </div>
         )}
       </div>

@@ -20,6 +20,30 @@ const PER_BACKEND_BUDGET_MS = 10_000;
 const TOTAL_CHAIN_BUDGET_MS = 25_000;
 const SATISFACTION_THRESHOLD = 3;
 
+/** Race a promise against a hard wall-clock timeout. Used to keep a hung
+ *  backend.search() from pinning the chain past its per-backend budget. */
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      resolve(fallback);
+    }, ms);
+    p.then((v) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      resolve(v);
+    }, () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      resolve(fallback);
+    });
+  });
+}
+
 export type ChainOpts = SearchOpts;
 
 export async function searchNews(
@@ -52,15 +76,24 @@ export async function searchNews(
 
     const backendStart = Date.now();
     for (const query of variants) {
-      if (Date.now() - backendStart > PER_BACKEND_BUDGET_MS) break;
+      const remaining = PER_BACKEND_BUDGET_MS - (Date.now() - backendStart);
+      if (remaining <= 0) break;
       if (aggregate.length >= SATISFACTION_THRESHOLD) break;
 
       try {
-        const hits = await backend.search(query, {
-          windowStart: opts.windowStart,
-          windowEnd: opts.windowEnd,
-          marketTitle: market.title,
-        });
+        // Race against the remaining per-backend budget so a hung
+        // backend.search (e.g. polymarket comments TCP stall) cannot pin
+        // the chain past its budget. Fallback is [] — same as a benign
+        // empty backend response, lets the chain escalate normally.
+        const hits = await withTimeout(
+          backend.search(query, {
+            windowStart: opts.windowStart,
+            windowEnd: opts.windowEnd,
+            marketTitle: market.title,
+          }),
+          remaining,
+          [] as NewsHit[],
+        );
         for (const h of hits) {
           if (!h.url || !h.publishedAt) continue;
           if (seen.has(h.url)) continue;

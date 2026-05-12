@@ -15,7 +15,7 @@ function mkBackend(
   return {
     name,
     available: () => available,
-    search: typeof hits === 'function' ? hits : vi.fn().mockResolvedValue(hits),
+    search: typeof hits === 'function' ? vi.fn().mockImplementation(hits) : vi.fn().mockResolvedValue(hits),
   };
 }
 
@@ -132,6 +132,33 @@ describe('searchNews — chain orchestration', () => {
     );
     const cached = cache.get('m-1');
     expect(cached?.items).toHaveLength(3);
+  });
+
+  it('escalates past a hung backend within the per-backend budget', async () => {
+    // Reduced from the production 10s budget so the test is fast; the
+    // important thing is that the never-resolving promise doesn't pin the
+    // chain.
+    vi.useFakeTimers();
+    const cache = new NewsCache();
+    const hung = mkBackend('exa', () => new Promise<NewsHit[]>(() => { /* never */ }));
+    const comments = mkBackend('polymarket-comments', [hit('https://c/1'), hit('https://c/2'), hit('https://c/3')]);
+
+    const promise = searchNews(
+      { marketId: 'm-hung', title: 't' },
+      [hung, comments],
+      cache,
+      { windowStart: '2026-01-01', windowEnd: '2026-04-30', marketTitle: 't' },
+    );
+
+    // Advance through the per-backend budget (10s) PLUS slack for all 3
+    // variants × backends and the inter-variant rechecks.
+    await vi.advanceTimersByTimeAsync(35_000);
+    const result = await promise;
+
+    expect(hung.search).toHaveBeenCalled();
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    expect(result.every((h) => h.url.startsWith('https://c/'))).toBe(true);
+    vi.useRealTimers();
   });
 
   it('returns [] when all backends are empty (no cache write)', async () => {

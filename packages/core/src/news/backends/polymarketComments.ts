@@ -41,13 +41,25 @@ export function makePolymarketCommentsBackend(opts: PolymarketCommentsOpts): Sea
       const slug = opts.slugFor(query, sopts.marketTitle);
       if (!slug) return [];
 
+      // Hard timeout — polymarket's public API can stall (TCP accept but no
+      // body) and without an AbortController this fetch never resolves, which
+      // pins the whole news chain. 8s aligns with the chain's per-backend
+      // budget so we escalate cleanly rather than starve other backends.
+      const ctrl = new AbortController();
+      const killer = setTimeout(() => ctrl.abort(), 8_000);
+
       let payload: CommentPayload;
       try {
         const url = `${COMMENTS_ENDPOINT}?event_slug=${encodeURIComponent(slug)}&limit=50`;
-        const res = await fetch(url, { method: 'GET' });
-        if (!res.ok) return [];
+        const res = await fetch(url, { method: 'GET', signal: ctrl.signal });
+        if (!res.ok) {
+          clearTimeout(killer);
+          return [];
+        }
         payload = await res.json() as CommentPayload;
+        clearTimeout(killer);
       } catch {
+        clearTimeout(killer);
         return [];
       }
 

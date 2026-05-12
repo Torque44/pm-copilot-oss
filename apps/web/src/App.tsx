@@ -153,13 +153,26 @@ function agentDetailsFromBrief(
 // useBrief reduces every agent's citations into one Citation[] union. The
 // panels want kind-specific lists. Project them.
 
+/** Best-effort hostname extraction. new URL() throws on malformed inputs
+ *  (escaped query bytes, missing protocols, raw text); the catch protects
+ *  the render path from crashing on a single bad citation URL. Falls back
+ *  to 'web' which the UI already handles. */
+function safeHostname(url: string | undefined): string {
+  if (!url) return 'web';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return 'web';
+  }
+}
+
 function newsCitationsToItems(cits: Citation[]): NewsItem[] {
   return cits
     .filter((c) => c.kind === 'news')
     .map((c) => ({
       id: c.id,
       title: c.label || c.id,
-      src: c.url ? new URL(c.url).hostname.replace(/^www\./, '') : 'web',
+      src: safeHostname(c.url),
       when: '',
       ...(c.url ? { url: c.url } : {}),
     }));

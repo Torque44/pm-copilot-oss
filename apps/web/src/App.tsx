@@ -554,6 +554,21 @@ export function App() {
       if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((o) => !o); return; }
       if (meta && e.key === '1') { e.preventDefault(); setFocusedPanel((p) => p === 'market' ? null : 'market'); return; }
       if (meta && e.key === '2') { e.preventDefault(); setFocusedPanel((p) => p === 'research' ? null : 'research'); return; }
+      // Esc un-focuses the focused panel (returns to dual view). Discovery
+      // path: user clicked into a focused panel and wants out — Esc is
+      // the universal "back" key. Don't swallow if no panel focused so
+      // chat-panel Esc / palette Esc still work.
+      if (e.key === 'Escape' && focusedPanel !== null) {
+        // Bail out if focus is in a text input so we don't fight with
+        // the in-context blur behaviour.
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName?.toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea') {
+          e.preventDefault();
+          setFocusedPanel(null);
+          return;
+        }
+      }
       if (meta && e.key === '[') { e.preventDefault(); setLeftCollapsed((c) => !c); return; }
       if (meta && e.key === ']') { e.preventDefault(); setRightCollapsed((c) => !c); return; }
       if (meta && e.key.toLowerCase() === 'b' && selectedMarketId && brief.market) {
@@ -588,7 +603,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedMarketId, brief.market, watchlist]);
+  }, [selectedMarketId, brief.market, watchlist, focusedPanel]);
 
   // ---------- derive everything BEFORE any early-return so hook order is
   // stable across the providerLoading / setup / home branches. (React's

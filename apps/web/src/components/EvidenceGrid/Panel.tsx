@@ -1,6 +1,6 @@
 // Panel — single grid cell. Shows loading skeleton, error state, or children.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 /**
  * Two top-level panels now: 'market' (book + holders tabs) and 'research'
@@ -23,6 +23,9 @@ export interface PanelProps {
   sub: string;
   panelKey: PanelKey;
   focused: boolean;
+  /** True when SOME panel is focused (so the un-focused sibling is hidden).
+   *  Drives the "show both" button on the focused panel's header. */
+  anyFocused?: boolean;
   errored: boolean;
   loading: boolean;
   onFocus: (key: PanelKey) => void;
@@ -40,6 +43,7 @@ export function Panel({
   sub,
   panelKey,
   focused,
+  anyFocused,
   errored,
   loading,
   onFocus,
@@ -48,27 +52,50 @@ export function Panel({
   errorMessage,
   children,
 }: PanelProps) {
-  const activate = () => onFocus(panelKey);
+  // Focus-toggle lives on the HEADER only — previously the whole <section>
+  // had onClick, which meant any click inside the body (a news pill, a row
+  // expander) bubbled up and collapsed the sibling panel. Users reported
+  // confusion: clicking a news link made the market panel disappear with
+  // no obvious way back. Keeping click semantics on the header makes the
+  // affordance explicit and stops the body from triggering focus.
+  const toggleFocus = (e: ReactMouseEvent | ReactKeyboardEvent) => {
+    e.stopPropagation();
+    // Clicking the focused panel's header un-focuses (returns to dual view).
+    // Clicking an un-focused panel's header focuses it.
+    onFocus(panelKey);
+  };
   return (
     <section
       className={`panel ${focused ? 'focused' : ''} ${errored ? 'errored' : ''}`}
-      onClick={activate}
-      role="button"
-      tabIndex={0}
-      aria-pressed={focused}
-      aria-label={`${title} panel (${PANEL_KBD[panelKey]} to focus)`}
-      onKeyDown={(e) => {
-        // Enter / Space activate, matching the click handler. Don't swallow
-        // other keys — global ⌘1/⌘2 shortcuts still need to bubble.
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          activate();
-        }
-      }}
+      aria-label={`${title} panel`}
     >
-      <header className="panel-head">
+      <header
+        className="panel-head clickable"
+        role="button"
+        tabIndex={0}
+        aria-pressed={focused}
+        aria-label={focused ? `${title} — click header to show both panels` : `${title} — click header to focus (${PANEL_KBD[panelKey]})`}
+        onClick={toggleFocus}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleFocus(e);
+          }
+        }}
+      >
         <span className="panel-title">{title}</span>
         <span className="panel-sub mono">{sub}</span>
+        {focused && anyFocused && (
+          <button
+            type="button"
+            className="panel-show-both mono"
+            title="show both panels (esc)"
+            aria-label="show both panels"
+            onClick={(e) => { e.stopPropagation(); onFocus(panelKey); }}
+          >
+            ⇆ both
+          </button>
+        )}
         <span className="panel-kbd mono">{PANEL_KBD[panelKey]}</span>
       </header>
       <div className="panel-body">

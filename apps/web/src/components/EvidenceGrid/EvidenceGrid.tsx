@@ -120,6 +120,7 @@ export function EvidenceGrid({
         sub={marketSub}
         panelKey="market"
         focused={focusedPanel === 'market'}
+        anyFocused={focusedPanel !== null}
         errored={errorPanel === 'market'}
         loading={marketLoading}
         onFocus={onFocus}
@@ -140,6 +141,7 @@ export function EvidenceGrid({
         sub={researchSub}
         panelKey="research"
         focused={focusedPanel === 'research'}
+        anyFocused={focusedPanel !== null}
         errored={errorPanel === 'research'}
         loading={researchLoading}
         onFocus={onFocus}

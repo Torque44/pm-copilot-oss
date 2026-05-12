@@ -450,9 +450,39 @@ body.is-resizing-row * { cursor: ns-resize !important; }
   background: var(--surface); border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
 }
+.panel-head.clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms;
+}
+.panel-head.clickable:hover {
+  background: var(--surface-hover, rgba(255,255,255,0.04));
+}
+.panel-head.clickable:focus-visible {
+  outline: 2px solid var(--citation);
+  outline-offset: -2px;
+}
 .panel-title { font-size: 12px; font-weight: 600; color: var(--text); }
 .panel-sub { font-size: 10px; color: var(--text-muted); }
+.panel-show-both {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--citation);
+  background: transparent;
+  border: 1px solid var(--citation);
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.panel-show-both:hover {
+  background: var(--citation);
+  color: var(--bg);
+}
 .panel-kbd { margin-left: auto; font-size: 10px; color: var(--text-muted); padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px; }
+/* When the show-both button is visible, the kbd hint loses its margin-left:auto
+   so they sit side-by-side instead of fighting for the right side. */
+.panel-show-both ~ .panel-kbd { margin-left: 6px; }
 .panel-body { flex: 1; overflow: auto; min-height: 0; }
 .panel-error { padding: 16px; }
 .panel-error-head { color: var(--danger); font-size: 13px; font-weight: 600; margin-bottom: 4px; }

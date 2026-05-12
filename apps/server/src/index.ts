@@ -45,9 +45,13 @@ const PORT = _rawPort === 5173 ? 8787 : _rawPort;
 // since the production deploy serves the web bundle from the api host
 // (CORS is a no-op there), and any explicit list is preferred for safety.
 const CORS_ORIGIN_RAW = process.env['CORS_ORIGIN'] || 'http://localhost:5173';
+// Normalise to lowercase — browsers send origins lowercased per the URL
+// spec, but operators sometimes write `https://PMcopilot.WTF` in env.
+// Comparing lowercased on both sides keeps misconfiguration from
+// silently denying real clients.
 const CORS_ALLOWLIST = CORS_ORIGIN_RAW
   .split(',')
-  .map((s) => s.trim())
+  .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 const NODE_ENV = process.env['NODE_ENV'] || 'development';
 const IS_PROD = NODE_ENV === 'production';
@@ -87,7 +91,9 @@ async function main() {
       // call cost-bearing API routes when env or claude-code session auth
       // is active server-side. Use an allowlist instead.
       if (CORS_ALLOWLIST.includes('*')) return cb(null, false);
-      if (CORS_ALLOWLIST.includes(origin)) return cb(null, true);
+      // Match case-insensitively — origin from browser is already lower,
+      // allowlist was lowered at startup. Belt + suspenders here.
+      if (CORS_ALLOWLIST.includes(origin.toLowerCase())) return cb(null, true);
       return cb(null, false);
     },
     credentials: false,

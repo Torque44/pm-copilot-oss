@@ -8,6 +8,7 @@
 
 import { getProvider } from '../providers/index';
 import { extractJson, type LLMProvider } from '../providers/types';
+import { extractRealizedValue, type RealizedValue } from './realizedValue';
 import type {
   BookGrounding,
   Citation,
@@ -111,6 +112,7 @@ HOW TO RESPOND BASED ON QUESTION TYPE
 
 ▸ "PAST RESOLUTION DATA" / "BASE RATE" / "WHAT HAPPENED WITH SIMILAR MARKETS" question — the user is asking about historical Polymarket outcomes for markets shaped like this one.
   → Use the [comp-N] citations directly. The Comparables block in the user prompt lists resolved markets with their outcomes (yes/no/unresolved) and resolved prices. Count yes vs no, surface the base rate, name a few of the most relevant comps. DO NOT refuse with "I don't have past resolution data" — you have it; it's in the prompt.
+  → SHAPE-AWARE RULE: when a comparable row carries a "threshold {comparator}{N}{unit}" segment AND a "realized {value}" segment, you MUST quote those specific numbers in the answer. Do NOT collapse them into a generic "50% base rate" line. Example: "Apr 21-27 ('≥200 tweets') — Musk hit ~213, resolved YES at 97¢ [comp-1]". When the realized value is marked "(inferred)", make that clear: "Mar 31 ('≥200') — implied ≥200 from YES outcome at 100¢ [comp-4]". Lead with the directly-comparable threshold band; the base rate at THAT band (not the full sample) is what the trader needs.
 
 ▸ HISTORICAL TWEET COUNTS / HANDLE-LEVEL STATS over time — these need live X / Twitter data that isn't in the supplied grounding (the [kol-N] tweets are RECENT, not a counted history).
   → Reply with ONE claim explaining the gap and the exact remediation: "I have recent tweets [kol-N] but not historical tweet counts. For tweet-volume timeseries on @<handle>, configure an xAI key in setup (live X search) or check tools like Social Blade." Do not invent a number.
@@ -264,6 +266,39 @@ function describeComparables(comps: AskComparable[] | undefined): string {
       : c.resolvedPrice != null ? `unresolved @ ${(c.resolvedPrice * 100).toFixed(0)}¢ YES`
       : 'unresolved';
     const endDate = c.endDate ? ` · ended ${c.endDate.slice(0, 10)}` : '';
+    // Shape + realized value when available — this is the structured
+    // per-comp output the answer template depends on. extractRealizedValue
+    // runs on the SHAPE-equipped comp; for non-shape comps we fall back
+    // to the old plain-title line.
+    if (c.shape) {
+      const realized: RealizedValue = extractRealizedValue(
+        // RealizedValue extractor reads .outcome + .resolvedPrice + payload.description.
+        // We synthesise a ComparableHit-shape proxy from the ask-side fields.
+        {
+          eventId: c.eventId,
+          title: c.title,
+          endDate: c.endDate,
+          outcome: c.outcome,
+          resolvedPrice: c.resolvedPrice,
+          score: c.score,
+          ...(c.slug ? { slug: c.slug } : {}),
+          ...(c.description ? { description: c.description } : {}),
+        } as Parameters<typeof extractRealizedValue>[0],
+        c.shape,
+      );
+      const realizedPart = realized.display
+        ? ` — realized ${realized.display}${realized.source === 'inferred-from-outcome' ? ' (inferred)' : ''}`
+        : '';
+      // Normalise the ASCII comparator (>=, <=) to Unicode (≥, ≤) so the
+      // LLM sees the same symbol form in the comparable rows as in the SYS
+      // prompt example. `>`, `<`, `between` pass through unchanged.
+      const opDisplay = c.shape.comparator === '>=' ? '≥'
+        : c.shape.comparator === '<=' ? '≤'
+        : c.shape.comparator;
+      const thresholdLabel = `${opDisplay}${c.shape.threshold}${c.shape.unit ? ` ${c.shape.unit}` : ''}`;
+      const priceTail = c.resolvedPrice != null ? ` @ ${(c.resolvedPrice * 100).toFixed(0)}¢` : '';
+      return `[comp-${i + 1}] ${c.title.slice(0, 100)} — threshold ${thresholdLabel}${realizedPart} — ${verdict}${priceTail}${endDate}`;
+    }
     return `[comp-${i + 1}] ${c.title.slice(0, 100)} — ${verdict}${endDate}`;
   }).join('\n');
   return `${header}\n${rows}`;
@@ -600,6 +635,13 @@ export type AskComparable = {
   resolvedPrice: number | null;
   slug?: string;
   score: number;
+  /** Parsed market shape when the title fits threshold-in-window pattern.
+   *  Surfaced into describeComparables() so the ask LLM can quote
+   *  threshold + realized value per [comp-N] cite. */
+  shape?: import('./marketShape').MarketShape | null;
+  /** Raw Gamma description text — read by realizedValue.ts to extract the
+   *  realized number when present. */
+  description?: string | null;
 };
 
 export type AskGrounding = {

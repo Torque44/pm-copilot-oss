@@ -16,12 +16,10 @@ export type MarketShape = {
   entity: string;
   /** Normalised metric noun ('tweets', 'temperature', 'price', 'snow'). */
   metric: string;
-  /** Comparator between metric and threshold. */
-  comparator: '>=' | '<=' | '>' | '<' | 'between';
-  /** Numeric threshold. For 'between' this is the lower bound. */
+  /** Comparison operator between the metric and the threshold. */
+  comparator: '>=' | '<=' | '>' | '<';
+  /** Numeric threshold the metric is compared against. */
   threshold: number;
-  /** Upper bound for 'between' comparators. */
-  thresholdUpper?: number;
   /** Display unit ('tweets', '°F', '$', 'in'). */
   unit?: string;
   /** Resolution window. start null = open-ended ('Will X hit Y by Z?').
@@ -40,16 +38,6 @@ const COMPARATOR_PATTERNS: Array<{ rx: RegExp; op: MarketShape['comparator'] }> 
   { rx: />/, op: '>' },
   { rx: /</, op: '<' },
 ];
-
-/** Strip comparator phrases so the remaining text can be tokenised for
- *  entity / metric extraction without "at least" leaking into the entity. */
-function stripComparators(s: string): string {
-  let out = s;
-  for (const { rx } of COMPARATOR_PATTERNS) {
-    out = out.replace(new RegExp(rx.source, 'gi'), ' ');
-  }
-  return out.replace(/\s+/g, ' ').trim();
-}
 
 function detectComparator(title: string): MarketShape['comparator'] | null {
   for (const { rx, op } of COMPARATOR_PATTERNS) {
@@ -194,6 +182,5 @@ export function parseMarketShape(market: MarketMeta): MarketShape | null {
     const result = fn(market.title);
     if (result) return { ...result, window: { start: null, end: market.endDate } };
   }
-  void stripComparators;
   return null;
 }

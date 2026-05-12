@@ -74,14 +74,12 @@ function inferFromOutcome(comp: ComparableHit, shape: MarketShape | null): Reali
     '<=': `≤ ${threshold}`,
     '>':  `> ${threshold}`,
     '<':  `< ${threshold}`,
-    'between': `≥ ${threshold}`, // simplification; between still met when YES
   };
   const noPair: Record<MarketShape['comparator'], string> = {
     '>=': `< ${threshold}`,
     '<=': `> ${threshold}`,
     '>':  `≤ ${threshold}`,
     '<':  `≥ ${threshold}`,
-    'between': `outside ${threshold}`,
   };
   const lead = comp.outcome === 'yes' ? yesPair[comparator] : noPair[comparator];
   const display = unitDisplay ? `${lead} ${unitDisplay}` : lead;

@@ -9,6 +9,7 @@
 import { getProvider } from '../providers/index';
 import { extractJson, type LLMProvider } from '../providers/types';
 import { extractRealizedValue, type RealizedValue } from './realizedValue';
+import type { MarketShape } from './marketShape';
 import type {
   BookGrounding,
   Citation,
@@ -638,7 +639,7 @@ export type AskComparable = {
   /** Parsed market shape when the title fits threshold-in-window pattern.
    *  Surfaced into describeComparables() so the ask LLM can quote
    *  threshold + realized value per [comp-N] cite. */
-  shape?: import('./marketShape').MarketShape | null;
+  shape?: MarketShape | null;
   /** Raw Gamma description text — read by realizedValue.ts to extract the
    *  realized number when present. */
   description?: string | null;

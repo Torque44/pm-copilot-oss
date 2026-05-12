@@ -523,6 +523,21 @@ table.dense .yes { color: var(--success); }
 table.dense .no  { color: var(--danger); }
 .muted { color: var(--text-muted); }
 .spread-row td { background: var(--surface); color: var(--text-muted); text-align: center; font-size: 10px; }
+.book-panel-wrap { display: flex; flex-direction: column; }
+.book-toggle {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 0;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+  transition: color 120ms, background 120ms;
+}
+.book-toggle:hover { color: var(--text); background: var(--surface); }
 
 /* citation flash */
 tr.flash, li.flash { animation: citation-flash 800ms ease-out; }

@@ -180,7 +180,14 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   const fanOut: Array<Promise<AgentResult>> = [
     runOne('market', (c) => runMarketAgent(c, primaryProvider)),
     runOne('holders', (c) => runHoldersAgent(c, primaryProvider)),
-    runOne('news', (c) => runNewsAgent(c, newsProvider, searcher)),
+    runOne('news', (c) => {
+      // Resolved markets pass a windowOverride so news searches the 30 days
+      // BEFORE resolution rather than "the last 30 days from today."
+      const newsOpts = isResolved && market.resolvedAt
+        ? { windowOverride: { endsAt: market.resolvedAt, days: 30 } }
+        : undefined;
+      return runNewsAgent(c, newsProvider, searcher, newsOpts);
+    }),
     // Comparables is deterministic (HTTP only, no LLM) — fans out with the
     // specialists so its result is ready when thesis runs.
     runOne('comparables', () => runComparablesAgent(ctx, comparablesInput)),

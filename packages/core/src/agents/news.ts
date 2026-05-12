@@ -134,10 +134,19 @@ async function fromUserFeed(
   }
 }
 
+export type NewsOpts = {
+  /** When set, news searches the `days`-day window ending at `endsAt` rather
+   *  than "the last 30 days from today." The supervisor passes this for
+   *  resolved markets — the trader cares about the leadup to resolution,
+   *  not "right now." */
+  windowOverride?: { endsAt: string; days: number };
+};
+
 export async function runNewsAgent(
   ctx: AgentContext,
   provider?: LLMProvider,
   searcher?: Searcher | null,
+  opts?: NewsOpts,
 ): Promise<AgentResult> {
   const started = Date.now();
   const { market, emit } = ctx;
@@ -178,7 +187,7 @@ export async function runNewsAgent(
   //    hallucinate from training data" path which is what we had before.
   const newsProvider = provider ?? getProvider();
   if (!newsProvider.capabilities.webSearch && searcher) {
-    return runNewsViaExa(ctx, started, newsProvider, searcher);
+    return runNewsViaExa(ctx, started, newsProvider, searcher, opts);
   }
   const allowedTools = newsProvider.capabilities.webSearch ? ['WebSearch'] : [];
 
@@ -193,17 +202,33 @@ export async function runNewsAgent(
   // 7 days" — without this, models can anchor "recent" to their training
   // cutoff and return 2024 news for a 2026-resolving market.
   const todayIso = new Date().toISOString().slice(0, 10);
+
+  // Resolved markets pass a windowOverride — search the 30 days BEFORE
+  // resolution rather than "the last 30 days from today." For active markets
+  // this is unset and we use the default rolling-30-day window.
+  let windowStart: string;
+  let windowEnd: string;
+  if (opts?.windowOverride) {
+    const endMs = Date.parse(opts.windowOverride.endsAt);
+    const startMs = endMs - opts.windowOverride.days * 24 * 60 * 60 * 1000;
+    windowStart = new Date(startMs).toISOString().slice(0, 10);
+    windowEnd = new Date(endMs).toISOString().slice(0, 10);
+  } else {
+    const startMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    windowStart = new Date(startMs).toISOString().slice(0, 10);
+    windowEnd = todayIso;
+  }
+
   const prompt = `Market title: "${market.title}"
 Resolves by: ${market.endDate ?? 'unknown'}
 Current YES price: ${market.yes != null ? (market.yes * 100).toFixed(1) + '¢' : 'n/a'}
 Today's date: ${todayIso}
+Search window: ${windowStart} → ${windowEnd}${opts?.windowOverride ? ' (resolution leadup — this market has already resolved)' : ''}
 
 Build a fast briefing for a trader looking at this contract.
-PREFER news from the last 7 days (vs ${todayIso}). Expand to last 30 days
-only if 7-day coverage is thin. Sort items[] newest-first by publishedAt.
-If the topic is niche/breaking and web search comes up thin, supplement
-from your training-data knowledge marked from:"training". Return the
-JSON shape specified in the system prompt.`;
+PREFER news from the search window above. Sort items[] newest-first by
+publishedAt. If web search comes up thin, return items: [] — the UI's
+empty-state takes over. Do NOT fall back to training-data knowledge.`;
 
   const res = await newsProvider.complete(prompt, {
     tier: 'fast',
@@ -378,10 +403,14 @@ async function runNewsViaExa(
   started: number,
   newsProvider: LLMProvider,
   searcher: Searcher,
+  opts?: NewsOpts,
 ): Promise<AgentResult> {
   const { market, emit } = ctx;
   const sub = classifyMarket(market.category ?? '', market.title);
   const profile = profileFor(sub);
+
+  // Resolved-market window override (Task 4) is read inline at the
+  // searcher.search() call site below — see `initialDays`.
 
   // Query construction: "{title} news" + (when known) the sub-category
   // shorthand. Exa's auto type does well with natural-language queries.
@@ -407,17 +436,20 @@ async function runNewsViaExa(
   // could move an active market), expand to 30 days only if 7 days returned
   // fewer than 4 hits. Then, if STILL thin, retry with the broader keyword
   // query.
+  // For resolved-market briefs (windowOverride set), start at the override
+  // window (typically 30d before resolution) and skip the expand step.
   let hits: SearchHit[] = [];
   let searchError: string | null = null;
-  let recencyUsedDays = 7;
+  const initialDays = opts?.windowOverride?.days ?? 7;
+  let recencyUsedDays = initialDays;
   try {
     hits = await searcher.search(titleQuery, {
       numResults: 10,
-      recencyHours: 24 * 7,
+      recencyHours: 24 * initialDays,
       category: 'news',
       withFullText: false,
     });
-    if (hits.length < 4) {
+    if (hits.length < 4 && !opts?.windowOverride) {
       // Niche or slow-news market — widen the window. Merge results so any
       // fresh hits already collected aren't lost when the 30d pass returns
       // mostly older items.

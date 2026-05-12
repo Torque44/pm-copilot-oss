@@ -33,6 +33,7 @@ import { runNewsAgent } from '@pm-copilot/core/agents/news';
 import { runComparablesAgent, type ComparableHit } from '@pm-copilot/core/agents/comparables';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import { byokProvider, bestWebSearchProvider } from '@pm-copilot/core/providers/byok';
+import { getExaSearcher } from '../exa.js';
 import {
   gammaToMarketMeta,
   getEventForMarketId,
@@ -343,6 +344,12 @@ export async function askHandler(req: Request, res: Response) {
     // holders / news / tweets so the ask agent can answer "past Polymarket
     // resolution data" questions directly via [comp-N] citations instead of
     // refusing with "I don't have access to that".
+    //
+    // Exa searcher closes the "no live web search in this chat" gap that
+    // the prior screenshot flagged — even when the user's primary LLM lacks
+    // webSearch capability, Exa fetches fresh sources for current-events
+    // questions and registers them as [ask-src-N] citations.
+    const askSearcher = getExaSearcher();
     await runAsk(
       market,
       { ...grounding, tweets, comparables: grounding.comparables },
@@ -350,6 +357,7 @@ export async function askHandler(req: Request, res: Response) {
       emit,
       askProvider,
       abortCtrl.signal,
+      askSearcher,
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';

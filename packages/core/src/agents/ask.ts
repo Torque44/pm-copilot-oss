@@ -10,6 +10,8 @@ import { getProvider } from '../providers/index';
 import { extractJson, type LLMProvider } from '../providers/types';
 import { extractRealizedValue, type RealizedValue } from './realizedValue';
 import type { MarketShape } from './marketShape';
+import type { Searcher } from '../providers/exa';
+import { isDenylisted } from '../sources/registry';
 import type {
   BookGrounding,
   Citation,
@@ -104,12 +106,13 @@ HOW TO RESPOND BASED ON QUESTION TYPE
 
   Each section is a SEPARATE entry in the claims array, each ≤ 60 words.
 
-▸ OUT-OF-GROUNDING factual question — asks for a SPECIFIC recent fact whose answer isn't in grounding AND can't be reasoned to from general knowledge.
+▸ OUT-OF-GROUNDING factual question — asks for a SPECIFIC recent fact whose answer isn't in the brief's grounding.
   Examples: "who won race 5 of the 2026 season by how many seconds?", "what was the close of TSLA today?"
 
-  → Reply with ONE claim. Honest about the gap, point to what IS in grounding, suggest where to find the fact.
+  → FIRST, check whether a LIVE WEB EVIDENCE block (Exa, [ask-src-N]) is included in the user prompt. If yes, answer from those sources and cite them. If no live evidence covers the question either, reply with ONE claim honest about the gap, point to what IS in grounding, suggest a remediation.
 
-  Example: {"claims":[{"text":"I don't have race-by-race result timing in this market's grounding — the news set covers Mercedes seat speculation and 2026 F1 rules [news-1] [news-2], not lap-time data. For specific race outcomes, check F1.com or enable live web search in setup.","citations":["news-1","news-2"]}]}
+  Example with live evidence: {"claims":[{"text":"Race 5 was the Miami Grand Prix on May 5 2026 — Antonelli won by 4.2s over Russell [ask-src-1]. That extends the Mercedes 1-2 streak referenced in the brief [news-3].","citations":["ask-src-1","news-3"]}]}
+  Example without live evidence: {"claims":[{"text":"I don't see race-by-race result timing in either the brief or the live web evidence for this question — the supplied news covers seat speculation [news-1] [news-2], not lap times. Try F1.com directly.","citations":["news-1","news-2"]}]}
 
 ▸ "PAST RESOLUTION DATA" / "BASE RATE" / "WHAT HAPPENED WITH SIMILAR MARKETS" question — the user is asking about historical Polymarket outcomes for markets shaped like this one.
   → Use the [comp-N] citations directly. The Comparables block in the user prompt lists resolved markets with their outcomes (yes/no/unresolved) and resolved prices. Count yes vs no, surface the base rate, name a few of the most relevant comps. DO NOT refuse with "I don't have past resolution data" — you have it; it's in the prompt.
@@ -135,6 +138,13 @@ CITATION PILLS (use verbatim, inside [brackets], in the text)
                                and resolved prices. Cite these when answering
                                "past resolution data" / "base rate" / "what
                                happened with similar markets" questions.
+- [ask-src-N]                  LIVE WEB EVIDENCE pulled via Exa AI for this
+                               specific question, last 30 days only. Surfaced
+                               only when a "LIVE WEB EVIDENCE" block appears
+                               in the user prompt. Cite these for current-
+                               events questions where the answer needs fresh
+                               public sources rather than (or in addition to)
+                               the brief's grounding.
 - [price-history]              recent time series
 
 ═══════════════════════════════════════════════════════════
@@ -680,6 +690,12 @@ export async function runAsk(
    *  client disconnect mid-ask aborts the in-flight LLM call instead of
    *  burning BYOK quota. Threaded into provider.complete via opts.signal. */
   signal?: AbortSignal,
+  /** Optional Exa searcher. When set, ask fires one search call against
+   *  `${question} ${market.title}` to pull live web sources before the LLM
+   *  synthesizes — closes the "no live Exa/web search is available in this
+   *  chat" gap. Each Exa hit registers as a [ask-src-N] citation the LLM
+   *  can reference. Cost: one Exa call per non-fast-path ask. */
+  searcher?: Searcher | null,
 ): Promise<AskAnswer> {
   const started = Date.now();
   emit({ t: 'ask:start' });
@@ -695,6 +711,18 @@ export async function runAsk(
 
   emit({ t: 'ask:progress', message: 'synthesising grounded answer…' });
 
+  // ──────────── EXA AUGMENTATION ────────────
+  // Fire one Exa search to fetch live current sources for the question. The
+  // brief's news grounding only covers the market title; Exa lets the model
+  // answer current-events questions ("did Trump tweet today?", "who won the
+  // F1 race?") with real sources rather than refusing or hallucinating. Each
+  // hit registers as [ask-src-N] in the citation registry; the LLM cites
+  // them by index. Drops items older than 30 days at the boundary (same
+  // freshness rule news.ts uses) so the model can't surface stale coverage.
+  const exaEvidence = searcher
+    ? await fetchExaEvidence(searcher, market, question, registry, signal)
+    : '';
+
   const prompt = `${describeMarket(market)}
 
 ${describeBook(grounding.book)}
@@ -708,6 +736,8 @@ ${describeNews(grounding.news)}
 ${describeTweets(grounding.tweets)}
 
 ${describeComparables(grounding.comparables)}
+
+${exaEvidence}
 
 QUESTION: ${question.trim()}
 
@@ -928,4 +958,78 @@ Respond ONLY with the JSON object described in the system prompt.`;
     emit({ t: 'ask:error', error: res.error ?? 'unknown', elapsedMs });
   }
   return answer;
+}
+
+/** Fire one Exa search to back-fill the ask context with live web sources.
+ *  Hits land in the registry as [ask-src-N] Citation rows the LLM can cite
+ *  by index in its claim text. The renderer at runAsk:919-937 already
+ *  knows how to surface ask-src-N entries as clickable pills in the chat
+ *  trailing-source row, so no UI changes needed.
+ *
+ *  Freshness gate: any hit with publishedDate older than 30 days is
+ *  dropped. Same rule news.ts uses on the brief side — current-event
+ *  questions should not surface stale coverage.
+ *
+ *  Returns a plaintext "evidence block" that's spliced into the prompt;
+ *  empty string when search returned nothing or searcher errored. */
+async function fetchExaEvidence(
+  searcher: Searcher,
+  market: MarketMeta,
+  question: string,
+  registry: Map<string, Citation>,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (signal?.aborted) return '';
+  // Query construction: the question carries the intent ("who won the F1
+  // race?"), the market title carries the topical anchor ("kimi antonelli
+  // 2026 f1 drivers"). Combining both gives Exa enough handle to rank
+  // recent on-topic news above generic coverage.
+  const query = `${question.trim()} ${market.title}`.slice(0, 280);
+  let hits: Awaited<ReturnType<Searcher['search']>> = [];
+  try {
+    hits = await searcher.search(query, {
+      numResults: 5,
+      recencyHours: 24 * 30,           // last 30 days only
+      category: 'news',
+      withFullText: false,
+    });
+  } catch {
+    return '';                           // graceful — same as no exa configured
+  }
+
+  const FRESH_MS = 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const fresh = hits
+    .filter((h) => Boolean(h.url) && Boolean(h.publishedDate))
+    .filter((h) => !isDenylisted(h.url))
+    .filter((h) => {
+      const t = Date.parse(h.publishedDate ?? '0');
+      return Number.isFinite(t) && now - t < FRESH_MS;
+    });
+
+  if (fresh.length === 0) return '';
+
+  // Register as [ask-src-N] citations. The renderer at the bottom of
+  // runAsk also flushes any registry ask-src-* entries into the answer's
+  // trailing source row, so a model that ignores them in claim text still
+  // surfaces them as a "sources used" footer.
+  const existingAskSrc = [...registry.keys()].filter((k) => k.startsWith('ask-src-')).length;
+  const evidenceLines: string[] = [];
+  fresh.forEach((h, i) => {
+    const id = `ask-src-${existingAskSrc + i + 1}`;
+    const domain = h.domain || (() => {
+      try { return new URL(h.url).hostname.replace(/^www\./, ''); } catch { return ''; }
+    })();
+    registry.set(id, {
+      id,
+      kind: 'news',
+      label: domain || id,
+      url: h.url,
+      payload: { source: 'exa-ask', url: h.url, host: domain, snippet: h.snippet, publishedDate: h.publishedDate },
+    });
+    const date = h.publishedDate ? h.publishedDate.slice(0, 10) : '';
+    evidenceLines.push(`  [${id}] ${domain}${date ? ` (${date})` : ''}: ${h.title} — ${h.snippet ?? ''}`);
+  });
+
+  return `LIVE WEB EVIDENCE (Exa, last 30 days, cite as [ask-src-N]):\n${evidenceLines.join('\n')}`;
 }

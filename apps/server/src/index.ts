@@ -135,17 +135,23 @@ async function main() {
   app.get('/api/verify-handle', rateLimit({ windowMs: 60 * 60 * 1000, max: 300, bucket: 'verify-handle' }), verifyHandleHandler);
 
   // ---- Ported routes ----
-  app.get('/api/markets', getMarketsHandler);
-  app.get('/api/markets-list', getMarketsListHandler);
-  app.get('/api/market', getMarketByIdHandler);
+  // Public market proxy routes — these forward user-controlled ids/categories
+  // into the in-memory cache, so without a limit a flood of unique inputs
+  // grows cache.ts indefinitely (now capped via MAX_CACHE_ENTRIES) AND burns
+  // Polymarket Gamma quota. 600/hr/ip is generous for honest browsing
+  // (left-rail switch + tag-tab navigation) and bounds the abuse surface.
+  const marketsLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 600, bucket: 'markets-proxy' });
+  app.get('/api/markets', marketsLimiter, getMarketsHandler);
+  app.get('/api/markets-list', marketsLimiter, getMarketsListHandler);
+  app.get('/api/market', marketsLimiter, getMarketByIdHandler);
   // 30 briefs per hour per IP — well above honest single-user load and
   // far below what an OpenAI-bill-draining bot would attempt.
   app.get('/api/brief', rateLimit({ windowMs: 60 * 60 * 1000, max: 30, bucket: 'brief' }), briefHandler);
   // 30 questions per hour per IP — same shape ask had inline, now via the
   // shared util so brief/auth-test reuse the same machinery.
   app.post('/api/ask', rateLimit({ windowMs: 60 * 60 * 1000, max: 30, bucket: 'ask' }), askHandler);
-  app.get('/api/events', getEventsListHandler);
-  app.get('/api/event', getEventByIdHandler);
+  app.get('/api/events', marketsLimiter, getEventsListHandler);
+  app.get('/api/event', marketsLimiter, getEventByIdHandler);
 
   // /api/event-stream (long-lived SSE relay) was removed in the
   // cf-azure-rewrite. The deploy story doesn't include long-lived

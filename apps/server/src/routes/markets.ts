@@ -96,6 +96,11 @@ export async function getMarketByIdHandler(req: Request, res: Response) {
   try {
     const id = String(req.query.id ?? '');
     if (!id) return res.status(400).json({ error: 'missing id' });
+    // Same id-shape validation as getEventByIdHandler — bounded length +
+    // safe charset prevents a flood of unique ids inflating the cache.
+    if (id.length > 64 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      return res.status(400).json({ error: 'invalid id' });
+    }
     // Simplest path: search both categories' cached lists
     const [sports, crypto] = await Promise.all([
       topMarketForTag('sports'),
@@ -119,6 +124,12 @@ export async function getEventByIdHandler(req: Request, res: Response) {
   try {
     const id = String(req.query.id ?? '');
     if (!id) return res.status(400).json({ error: 'missing id' });
+    // Validate shape — gamma event ids are short numeric/alphanumeric
+    // tokens. A crafted long id flowing into the cache key would inflate
+    // memory; reject early.
+    if (id.length > 64 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      return res.status(400).json({ error: 'invalid id' });
+    }
     const ev = await cached(`event:${id}`, TTL_MS, () => getEvent(id));
     if (!ev) return res.status(404).json({ error: 'event not found' });
     // Pick a sensible category bucket — the agent pipeline only cares about

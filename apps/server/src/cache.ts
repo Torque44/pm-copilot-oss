@@ -36,6 +36,15 @@ registerProducer(() => {
 // pile up indefinite waiters.
 const INFLIGHT_TIMEOUT_MS = 30_000;
 
+// Hard cap on the store size — without this, an attacker hitting
+// /api/event?id=<unique>&id=<unique>... grows the cache Map indefinitely
+// (each entry has its own TTL but they accumulate during the window). 5000
+// covers honest browsing (left-rail tabs ~ low hundreds of unique events)
+// with plenty of headroom; once exceeded, the oldest entry is evicted via
+// Map iteration order (insertion order in JS, which approximates LRU since
+// we re-insert on get below).
+const MAX_CACHE_ENTRIES = 5000;
+
 export async function cached<T>(
   key: string,
   ttlMs: number,
@@ -43,7 +52,13 @@ export async function cached<T>(
 ): Promise<T> {
   const now = Date.now();
   const hit = store.get(key) as Entry<T> | undefined;
-  if (hit && hit.expiresAt > now) return hit.value;
+  if (hit && hit.expiresAt > now) {
+    // LRU promote — re-insert moves the key to the tail of iteration order
+    // so eviction below removes truly-stale entries first.
+    store.delete(key);
+    store.set(key, hit);
+    return hit.value;
+  }
 
   const inflightHit = inflight.get(key) as Promise<T> | undefined;
   if (inflightHit) return inflightHit;
@@ -65,6 +80,13 @@ export async function cached<T>(
           );
         }),
       ]);
+      // Evict oldest before inserting if at cap. Map iteration order is
+      // insertion order, so .keys().next() gives the oldest. Combined with
+      // the LRU promote on get above, this approximates a true LRU.
+      if (store.size >= MAX_CACHE_ENTRIES) {
+        const oldest = store.keys().next().value;
+        if (oldest !== undefined) store.delete(oldest);
+      }
       store.set(key, { value, expiresAt: Date.now() + ttlMs });
       markDirty();
       return value;

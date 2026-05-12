@@ -113,11 +113,22 @@ const PROFILES: Record<MarketSubcategory, SourceProfile> = {
 
   sports: {
     domains: [
-      'espn.com', 'theathletic.com', 'si.com', 'cbssports.com', 'bleacherreport.com',
-      'foxsports.com', 'nbcsports.com', 'pff.com',
+      // major sports press — both .com and .co.uk variants kept explicit
+      // because Exa returns them with the actual TLD (bbc.co.uk vs bbc.com)
+      // and the allowlist match is exact-string today.
+      'espn.com', 'global.espn.com', 'theathletic.com', 'si.com', 'sportingnews.com',
+      'cbssports.com', 'bleacherreport.com', 'foxsports.com', 'nbcsports.com',
+      'pff.com', 'apnews.com', 'reuters.com', 'bbc.co.uk', 'bbc.com',
+      'cnn.com', 'cbsnews.com', 'nbcnews.com', 'cnbc.com', 'usatoday.com',
+      // formula 1 / motorsport — flagged unverified in user's screenshot
+      // because they weren't on the list. formula1 is the official feed;
+      // motorsport.com, autosport.com, motorsportmagazine.com are the
+      // canonical trade press.
+      'formula1.com', 'motorsport.com', 'autosport.com', 'motorsportmagazine.com',
+      'racefans.net', 'the-race.com', 'motorsportweek.com',
       // leagues:
       'nfl.com', 'nba.com', 'mlb.com', 'nhl.com', 'pgatour.com', 'wta.com', 'atptour.com',
-      'fifa.com', 'uefa.com', 'olympics.com',
+      'fifa.com', 'uefa.com', 'olympics.com', 'fia.com',
       // betting / data:
       'actionnetwork.com', 'sportradar.com', 'pinnacle.com',
     ],
@@ -135,7 +146,10 @@ const PROFILES: Record<MarketSubcategory, SourceProfile> = {
   politics: {
     domains: [
       ...COMMON_NEUTRAL_NEWS,
-      'politico.com', 'axios.com', 'thehill.com', 'nbcnews.com',
+      'politico.com', 'axios.com', 'thehill.com',
+      'nbcnews.com', 'cnn.com', 'cnbc.com', 'cbsnews.com', 'abcnews.go.com',
+      'usnews.com', 'usatoday.com',
+      'pbs.org', 'npr.org',
       'punchbowl.news', 'puck.news', 'realclearpolitics.com',
       'cookpolitical.com', 'centerforpolitics.org',
       'silverbulletin.com', '538.com',
@@ -157,7 +171,10 @@ const PROFILES: Record<MarketSubcategory, SourceProfile> = {
   geopolitics: {
     domains: [
       ...COMMON_NEUTRAL_NEWS,
-      'bbc.com', 'aljazeera.com',
+      'bbc.com', 'bbc.co.uk', 'aljazeera.com',
+      'cnn.com', 'cnbc.com', 'nbcnews.com', 'cbsnews.com', 'usnews.com',
+      'pbs.org', 'npr.org', 'abcnews.go.com',
+      'military.com', 'defenseone.com',
       'economist.com', 'foreignpolicy.com', 'foreignaffairs.com',
       // think tanks (high-credibility analysis):
       'cfr.org', 'brookings.edu', 'atlanticcouncil.org',
@@ -312,6 +329,15 @@ export function classifyMarket(category: string, title: string): MarketSubcatego
   ) {
     return 'culture';
   }
+
+  // Title-side sports detection — F1 / NFL / NBA / soccer markets sometimes
+  // arrive with category='other' (multi-outcome events, niche tags). Keyword
+  // match against the title so they still route to the sports profile and
+  // pick up trade-press domains (formula1.com, espn.com, theathletic.com)
+  // instead of falling through to 'other' and rendering everything as
+  // 'unverified'.
+  const SPORTS_RX = /\b(f1|formula\s*1|formula\s*one|grand\s+prix|drivers?\s+champion|constructors?\s+champion|nfl|nba|mlb|nhl|premier\s+league|epl|laliga|champions\s+league|world\s+cup|fifa|uefa|olympic|nascar|motogp|wnba|fia|verstappen|hamilton|leclerc|antonelli|russell|norris|alonso)\b/;
+  if (SPORTS_RX.test(t)) return 'sports';
 
   // politics → split into geopolitics/macro/politics
   if (c === 'politics') {

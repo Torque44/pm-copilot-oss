@@ -21,7 +21,11 @@ import { BoundedCache } from '../lib/boundedCache.js';
 type CacheEntry = { at: number; result: 'ok' | 'notfound' };
 const CACHE_MAX = 2000;
 const positiveCache = new BoundedCache<CacheEntry>(CACHE_MAX);
-const CACHE_TTL_MS = 60 * 60 * 1000;        // 1h
+// 5 min TTL — short enough that a recently-deleted handle expires from the
+// positive cache quickly (so a user re-typing the same handle doesn't see
+// a stale ✓ for an hour), long enough to absorb burst typing without
+// re-probing x.com on every keystroke.
+const CACHE_TTL_MS = 5 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 4_000;
 const VALID_HANDLE_RX = /^[A-Za-z0-9_]{1,15}$/;
 

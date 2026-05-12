@@ -164,6 +164,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   const comparablesInput: ComparablesInput = {
     marketTitle: market.title,
     category: market.category,
+    endDate: market.endDate,
   };
 
   const fanOut: Array<Promise<AgentResult>> = [

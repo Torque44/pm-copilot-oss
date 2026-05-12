@@ -237,7 +237,7 @@ async function ensureGrounding(
   // render per-comp threshold + realized-value rows when present, falling
   // back to plain-title rows otherwise.
   tasks.push(
-    runComparablesAgent(ctx, { marketTitle: market.title, category: market.category })
+    runComparablesAgent(ctx, { marketTitle: market.title, category: market.category, endDate: market.endDate })
       .then((r) => {
         have.comparables = r.output.citations
           .filter((c) => c.kind === 'comp' && c.payload)

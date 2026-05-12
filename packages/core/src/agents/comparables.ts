@@ -200,6 +200,10 @@ export type ComparableHit = {
 export type ComparablesInput = {
   marketTitle: string;
   category: string;
+  /** Optional ISO end-date of the query market — used by the shape-aware
+   *  scorer to bonus candidates whose time-to-resolution is in a similar
+   *  range. When omitted, the time-scale bonus is silently skipped. */
+  endDate?: string | null;
 };
 
 /**
@@ -241,18 +245,18 @@ export async function runComparablesAgent(
   // Returns null for non-threshold markets — those fall back to the
   // pure-keyword scorer below.
   const queryShape = parseMarketShape(
-    gammaToShapeStub('query', input.marketTitle, input.category as Category, null),
+    gammaToShapeStub('query', input.marketTitle, input.category as Category, input.endDate ?? null),
   );
 
-  // Window-duration estimate for the query market. When we have no start
-  // date in the parsed shape, treat the window as "unknown" (0). Used for
-  // the time-scale similarity bonus below.
-  const queryWindowMs = (() => {
-    if (!queryShape) return 0;
-    const end = queryShape.window.end ? Date.parse(queryShape.window.end) : 0;
-    const start = queryShape.window.start ? Date.parse(queryShape.window.start) : 0;
-    return start && end ? Math.max(0, end - start) : 0;
-  })();
+  // Time-to-resolution (from now) for the query market — used by the
+  // time-scale similarity bonus. A market resolving in 5 days vs 7 days
+  // are both "weekly-ish" (within 0.5x-2x of each other); 5 days vs 365
+  // days are clearly different scales. When the query market has no end
+  // date or the date is in the past, treat scale as unknown (0) and
+  // the bonus block silently skips.
+  const now = Date.now();
+  const queryEndMs = input.endDate ? Date.parse(input.endDate) : 0;
+  const queryWindowMs = queryEndMs ? Math.abs(queryEndMs - now) : 0;
 
   for (const ev of candidates) {
     const titleLower = (ev.title || '').toLowerCase();
@@ -318,12 +322,13 @@ export async function runComparablesAgent(
         hits += 1;
       }
 
-      // Same time-scale: window duration within WINDOW_RATIO of query's
-      // window. Daily / weekly / monthly markets group together; annual
-      // markets don't blur into weekly ones.
-      const candStart = candidateShape.window.start ? Date.parse(candidateShape.window.start) : 0;
-      const candEnd = candidateShape.window.end ? Date.parse(candidateShape.window.end) : 0;
-      const candWindowMs = candStart && candEnd ? Math.max(0, candEnd - candStart) : 0;
+      // Same time-scale: |endDate - now| magnitude within WINDOW_RATIO of
+      // the query's magnitude. Catches both future (resolves in 5 days) and
+      // recent past (resolved 3 days ago) resolution proximity groupings.
+      // Daily / weekly / monthly markets group together; annual markets
+      // don't blur into weekly ones.
+      const candEndMs = candidateShape.window.end ? Date.parse(candidateShape.window.end) : 0;
+      const candWindowMs = candEndMs ? Math.abs(candEndMs - now) : 0;
       if (queryWindowMs > 0 && candWindowMs > 0) {
         const ratio = candWindowMs / queryWindowMs;
         if (ratio >= WINDOW_RATIO.min && ratio <= WINDOW_RATIO.max) score += SHAPE_BONUS.timeScale;

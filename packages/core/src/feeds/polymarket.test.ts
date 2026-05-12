@@ -41,6 +41,18 @@ function mkEvent(over: Partial<GammaEvent> = {}): GammaEvent {
   };
 }
 
+describe('gammaToMarketMeta — eventSlug', () => {
+  it('exposes the parent event slug for the trade-on-polymarket link', () => {
+    // Multi-outcome events have per-candidate sub-market slugs that 404 on
+    // polymarket.com/event/<slug>. The event slug always resolves.
+    const m = mkMarket({ slug: 'will-kimi-antonelli-be-the-2026-f1-drivers-champion' });
+    const e = mkEvent({ slug: '2026-f1-drivers-champion' });
+    const meta = gammaToMarketMeta(e, m, 'sports');
+    expect(meta.slug).toBe('will-kimi-antonelli-be-the-2026-f1-drivers-champion');
+    expect(meta.eventSlug).toBe('2026-f1-drivers-champion');
+  });
+});
+
 describe('gammaToMarketMeta — resolvedAt', () => {
   it('sets resolvedAt to endDate when market is closed', () => {
     const m = mkMarket({ closed: true, endDate: '2026-04-15T12:00:00Z' });

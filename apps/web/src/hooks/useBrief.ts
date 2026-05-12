@@ -120,6 +120,7 @@ export function asMarket(x: unknown): Market | null {
     || (typeof o['description'] === 'string' && o['description'])
     || '';
   const slug = typeof o['slug'] === 'string' ? o['slug'] : undefined;
+  const eventSlug = typeof o['eventSlug'] === 'string' ? o['eventSlug'] : undefined;
   const resolvedAt = typeof o['resolvedAt'] === 'string' ? o['resolvedAt'] : null;
   const m: Market = {
     id,
@@ -132,6 +133,7 @@ export function asMarket(x: unknown): Market | null {
   if (yes !== undefined) m.yes = yes;
   if (no !== undefined) m.no = no;
   if (slug) m.slug = slug;
+  if (eventSlug) m.eventSlug = eventSlug;
   if (resolvedAt) m.resolvedAt = resolvedAt;
   return m;
 }

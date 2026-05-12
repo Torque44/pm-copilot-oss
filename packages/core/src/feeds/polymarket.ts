@@ -296,6 +296,12 @@ export function gammaToMarketMeta(
     tokenIdYes: tokens[0] ?? '',
     tokenIdNo: tokens[1] ?? '',
     slug: m.slug,
+    // Parent event slug — required for the "trade on polymarket" link to
+    // resolve. For binary events ev.slug === m.slug; for multi-outcome
+    // events (F1 driver, presidential primary, …) the sub-market slug is
+    // per-candidate and 404s at polymarket.com/event/<slug>. The event
+    // slug is the only one that always works.
+    eventSlug: ev.slug,
     // Inherit resolution copy from the parent event so the workbench can
     // surface the criteria string without a second fetch.
     resolutionWording: ev.description ?? null,

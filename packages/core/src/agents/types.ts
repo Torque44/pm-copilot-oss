@@ -52,6 +52,13 @@ export type MarketMeta = {
   tokenIdYes: string;
   tokenIdNo: string;
   slug: string;
+  /** Parent EVENT slug — the one that produces a working polymarket.com URL.
+   *  For binary events this equals `slug`; for multi-outcome events (F1
+   *  driver, presidential primary, etc.) the sub-market `slug` is per-
+   *  candidate and yields a 404 at polymarket.com/event/<slug>. The event
+   *  slug is the only one that always resolves. Optional only for non-
+   *  Polymarket venues; required for any "trade on polymarket" link. */
+  eventSlug?: string;
   /** Human-facing resolution copy. The Gamma event's `description` is the
    *  authoritative source on Polymarket; markets inherit it from the parent.
    *  Optional because some venues won't provide it. */

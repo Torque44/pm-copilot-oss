@@ -19,9 +19,15 @@ export type Market = {
   resolveIn: string;
   criteria: string;
   moreCount?: number;
-  /** Polymarket event slug — used to build the canonical
-   *  `https://polymarket.com/event/{slug}` deep link in the market header. */
+  /** Polymarket sub-market slug. For multi-outcome events this is the per-
+   *  candidate slug and does NOT resolve at polymarket.com/event/<slug>. Use
+   *  eventSlug below for the trade-on-polymarket link. */
   slug?: string;
+  /** Polymarket EVENT slug — the one that resolves at
+   *  `https://polymarket.com/event/{eventSlug}`. Set on every Polymarket
+   *  market; falls back to `slug` only for old cached briefs where eventSlug
+   *  isn't present (rare). */
+  eventSlug?: string;
   /** ISO timestamp when this market resolved (Polymarket closed=true). When
    *  set, the workbench shows a resolved banner and the brief flow skips
    *  sentiment + thesis. Undefined for active markets. */

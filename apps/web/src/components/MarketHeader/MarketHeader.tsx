@@ -48,10 +48,13 @@ export function MarketHeader({ market, inWatchlist, onToggleWatchlist }: MarketH
         <div className="mh-title-block">
           <span className="venue-chip mono">{market.venue}</span>
           <h1 className="mh-title">{market.title}</h1>
-          {market.slug && (
+          {(market.eventSlug || market.slug) && (
             <a
               className="mh-trade-btn mono"
-              href={`https://polymarket.com/event/${market.slug}`}
+              // EVENT slug resolves on polymarket.com; sub-market slug 404s
+              // for multi-outcome events (F1, primaries, etc.). Prefer
+              // eventSlug; fall back to slug only for old cached briefs.
+              href={`https://polymarket.com/event/${market.eventSlug ?? market.slug}`}
               target="_blank"
               rel="noopener noreferrer"
               title="open this market on polymarket.com"

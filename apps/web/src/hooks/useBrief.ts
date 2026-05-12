@@ -96,7 +96,7 @@ function isCitation(x: unknown): x is Citation {
   return k === 'book' || k === 'whale' || k === 'news' || k === 'kol' || k === 'comp';
 }
 
-function asMarket(x: unknown): Market | null {
+export function asMarket(x: unknown): Market | null {
   if (!x || typeof x !== 'object') return null;
   const o = x as Record<string, unknown>;
   // Server emits MarketMeta (slightly different shape than the UI Market).
@@ -120,6 +120,7 @@ function asMarket(x: unknown): Market | null {
     || (typeof o['description'] === 'string' && o['description'])
     || '';
   const slug = typeof o['slug'] === 'string' ? o['slug'] : undefined;
+  const resolvedAt = typeof o['resolvedAt'] === 'string' ? o['resolvedAt'] : null;
   const m: Market = {
     id,
     venue,
@@ -131,6 +132,7 @@ function asMarket(x: unknown): Market | null {
   if (yes !== undefined) m.yes = yes;
   if (no !== undefined) m.no = no;
   if (slug) m.slug = slug;
+  if (resolvedAt) m.resolvedAt = resolvedAt;
   return m;
 }
 

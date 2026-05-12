@@ -22,6 +22,10 @@ export type Market = {
   /** Polymarket event slug — used to build the canonical
    *  `https://polymarket.com/event/{slug}` deep link in the market header. */
   slug?: string;
+  /** ISO timestamp when this market resolved (Polymarket closed=true). When
+   *  set, the workbench shows a resolved banner and the brief flow skips
+   *  sentiment + thesis. Undefined for active markets. */
+  resolvedAt?: string | null;
 };
 
 export type EventOutcome = {

@@ -30,6 +30,7 @@ import { readGrounding, rememberGrounding } from '../groundingStore.js';
 import { runMarketAgent } from '@pm-copilot/core/agents/market';
 import { runHoldersAgent } from '@pm-copilot/core/agents/holders';
 import { runNewsAgent } from '@pm-copilot/core/agents/news';
+import { runComparablesAgent, type ComparableHit } from '@pm-copilot/core/agents/comparables';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import { byokProvider, bestWebSearchProvider } from '@pm-copilot/core/providers/byok';
 import {
@@ -184,17 +185,24 @@ async function resolveCanonicalMarket(marketId: string): Promise<MarketMeta | nu
 async function ensureGrounding(
   market: MarketMeta,
   emit: (ev: AskEvent) => void
-): Promise<{ book: BookGrounding | null; holders: HoldersGrounding | null; news: NewsGrounding | null }> {
+): Promise<{
+  book: BookGrounding | null;
+  holders: HoldersGrounding | null;
+  news: NewsGrounding | null;
+  comparables: ComparableHit[];
+}> {
   const existing = readGrounding(market.marketId);
   const have = {
     book: (existing?.book ?? null) as BookGrounding | null,
     holders: (existing?.holders ?? null) as HoldersGrounding | null,
     news: (existing?.news ?? null) as NewsGrounding | null,
+    comparables: [] as ComparableHit[],
   };
-  // If all three are present, we're done.
-  if (have.book && have.holders && have.news) return have;
+  const needComparables = true; // comparables aren't persisted via groundingStore today
 
-  emit({ t: 'ask:progress', message: 'fetching grounding (book / holders / news)…' });
+  if (have.book && have.holders && have.news && !needComparables) return have;
+
+  emit({ t: 'ask:progress', message: 'fetching grounding (book / holders / news / comparables)…' });
 
   // Swallow supervisor-style events silently; we only need the raw groundings.
   const silent = (_ev: AgentEvent) => { /* drop */ };
@@ -216,6 +224,20 @@ async function ensureGrounding(
     have.news = g;
     rememberGrounding(market.marketId, 'news', g);
   }).catch(() => { /* swallow */ }));
+  // Comparables fetch — deterministic HTTP, no LLM, ~200ms. Reads the
+  // comparable citation payloads off the comparables agent's section output.
+  // Without this, ask responses claimed "no past Polymarket resolution data"
+  // even though the comparables agent had exactly that data on the brief side.
+  tasks.push(
+    runComparablesAgent(ctx, { marketTitle: market.title, category: market.category })
+      .then((r) => {
+        have.comparables = r.output.citations
+          .filter((c) => c.kind === 'comp' && c.payload)
+          .map((c) => c.payload as ComparableHit)
+          .filter((p) => p && typeof p.eventId === 'string' && typeof p.title === 'string');
+      })
+      .catch(() => { /* swallow */ }),
+  );
   await Promise.all(tasks);
 
   return have;
@@ -297,7 +319,17 @@ export async function askHandler(req: Request, res: Response) {
     // priority rules (perplexity > xai > null).
     const routing = byokProvider(req.byok ?? {});
     const askProvider = bestWebSearchProvider(routing);
-    await runAsk(market, { ...grounding, tweets }, question, emit, askProvider);
+    // Pass comparables (resolved-market base-rate anchors) alongside book /
+    // holders / news / tweets so the ask agent can answer "past Polymarket
+    // resolution data" questions directly via [comp-N] citations instead of
+    // refusing with "I don't have access to that".
+    await runAsk(
+      market,
+      { ...grounding, tweets, comparables: grounding.comparables },
+      question,
+      emit,
+      askProvider,
+    );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';
     events.push({ t: 'ask:error', error: msg, elapsedMs: 0 });

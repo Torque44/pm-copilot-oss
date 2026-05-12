@@ -109,6 +109,12 @@ HOW TO RESPOND BASED ON QUESTION TYPE
 
   Example: {"claims":[{"text":"I don't have race-by-race result timing in this market's grounding — the news set covers Mercedes seat speculation and 2026 F1 rules [news-1] [news-2], not lap-time data. For specific race outcomes, check F1.com or enable live web search in setup.","citations":["news-1","news-2"]}]}
 
+▸ "PAST RESOLUTION DATA" / "BASE RATE" / "WHAT HAPPENED WITH SIMILAR MARKETS" question — the user is asking about historical Polymarket outcomes for markets shaped like this one.
+  → Use the [comp-N] citations directly. The Comparables block in the user prompt lists resolved markets with their outcomes (yes/no/unresolved) and resolved prices. Count yes vs no, surface the base rate, name a few of the most relevant comps. DO NOT refuse with "I don't have past resolution data" — you have it; it's in the prompt.
+
+▸ HISTORICAL TWEET COUNTS / HANDLE-LEVEL STATS over time — these need live X / Twitter data that isn't in the supplied grounding (the [kol-N] tweets are RECENT, not a counted history).
+  → Reply with ONE claim explaining the gap and the exact remediation: "I have recent tweets [kol-N] but not historical tweet counts. For tweet-volume timeseries on @<handle>, configure an xAI key in setup (live X search) or check tools like Social Blade." Do not invent a number.
+
 When in doubt between OUT-OF-GROUNDING and ANALYTICAL, lean ANALYTICAL. The user almost always wants reasoning, not a refusal.
 
 ═══════════════════════════════════════════════════════════
@@ -121,6 +127,11 @@ CITATION PILLS (use verbatim, inside [brackets], in the text)
 - [whale-stats]                aggregate concentration + side bias
 - [news-N]                     news item N (1-indexed)
 - [kol-N]                      tweet N (1-indexed) from a vetted X handle
+- [comp-N]                     resolved-market comparable N — past Polymarket
+                               markets with similar shape, their outcomes,
+                               and resolved prices. Cite these when answering
+                               "past resolution data" / "base rate" / "what
+                               happened with similar markets" questions.
 - [price-history]              recent time series
 
 ═══════════════════════════════════════════════════════════
@@ -230,6 +241,34 @@ function describeMarket(m: MarketMeta): string {
 - Ends: ${m.endDate ?? '—'}`;
 }
 
+/** Render resolved-market comparables for the ask prompt. Each row is one
+ *  [comp-N] citation the LLM can reference. Includes outcome + resolved
+ *  price so "past Polymarket resolution data" questions can be answered
+ *  directly instead of refused as "no historical data available". */
+function describeComparables(comps: AskComparable[] | undefined): string {
+  if (!comps || comps.length === 0) {
+    return 'Resolved comparables: none surfaced for this market.';
+  }
+  const top = comps.slice(0, 10);
+  const yesCount = top.filter((c) => c.outcome === 'yes').length;
+  const noCount = top.filter((c) => c.outcome === 'no').length;
+  const resolved = yesCount + noCount;
+  const baseRate = resolved >= 3 ? Math.round((yesCount / resolved) * 100) : null;
+  const header = baseRate != null
+    ? `Resolved comparables (n=${resolved} resolved, base rate ${baseRate}% YES):`
+    : `Resolved comparables (${top.length} surfaced, ${resolved} with outcomes):`;
+  const rows = top.map((c, i) => {
+    const verdict =
+      c.outcome === 'yes' ? 'resolved YES'
+      : c.outcome === 'no' ? 'resolved NO'
+      : c.resolvedPrice != null ? `unresolved @ ${(c.resolvedPrice * 100).toFixed(0)}¢ YES`
+      : 'unresolved';
+    const endDate = c.endDate ? ` · ended ${c.endDate.slice(0, 10)}` : '';
+    return `[comp-${i + 1}] ${c.title.slice(0, 100)} — ${verdict}${endDate}`;
+  }).join('\n');
+  return `${header}\n${rows}`;
+}
+
 /**
  * Collect raw payloads for every pill we could plausibly cite, so the frontend
  * popovers can render the same way Brief pills do.
@@ -238,7 +277,8 @@ function buildCitationRegistry(
   book: BookGrounding | null,
   holders: HoldersGrounding | null,
   news: NewsGrounding | null,
-  tweets?: AskTweet[]
+  tweets?: AskTweet[],
+  comparables?: AskComparable[]
 ): Map<string, Citation> {
   const m = new Map<string, Citation>();
   if (book) {
@@ -298,6 +338,19 @@ function buildCitationRegistry(
         payload: t,
       };
       if (t.url) cit.url = t.url;
+      m.set(id, cit);
+    });
+  }
+  if (comparables) {
+    comparables.forEach((c, i) => {
+      const id = `comp-${i + 1}`;
+      const cit: Citation = {
+        id,
+        kind: 'comp',
+        label: c.title.slice(0, 80),
+        payload: c,
+      };
+      if (c.slug) cit.url = `https://polymarket.com/event/${c.slug}`;
       m.set(id, cit);
     });
   }
@@ -537,6 +590,18 @@ function fastPath(
   return null;
 }
 
+/** A resolved-market comparable. Shape mirrors comparables.ts ComparableHit
+ *  but kept locally typed here to avoid a packages/core circular import. */
+export type AskComparable = {
+  eventId: string;
+  title: string;
+  endDate: string | null;
+  outcome: 'yes' | 'no' | 'unresolved';
+  resolvedPrice: number | null;
+  slug?: string;
+  score: number;
+};
+
 export type AskGrounding = {
   book: BookGrounding | null;
   holders: HoldersGrounding | null;
@@ -545,6 +610,11 @@ export type AskGrounding = {
    *  the LLM is given the [kol-N] citation set; when absent the SYS prompt
    *  tells the model X data isn't available so it doesn't fabricate. */
   tweets?: AskTweet[];
+  /** Resolved-market comparables from the comparables agent. When present
+   *  the LLM gets the [comp-N] citation set so questions like "past
+   *  Polymarket resolution data for similar markets" can be answered
+   *  directly instead of refused. */
+  comparables?: AskComparable[];
 };
 
 export async function runAsk(
@@ -562,7 +632,7 @@ export async function runAsk(
   emit({ t: 'ask:start' });
 
   // Try the deterministic fast path first — never times out, never fails.
-  const registry = buildCitationRegistry(grounding.book, grounding.holders, grounding.news, grounding.tweets);
+  const registry = buildCitationRegistry(grounding.book, grounding.holders, grounding.news, grounding.tweets, grounding.comparables);
   const fast = fastPath(question, grounding, registry);
   if (fast) {
     const elapsedMs = Date.now() - started;
@@ -583,6 +653,8 @@ ${describeHolders(grounding.holders)}
 ${describeNews(grounding.news)}
 
 ${describeTweets(grounding.tweets)}
+
+${describeComparables(grounding.comparables)}
 
 QUESTION: ${question.trim()}
 

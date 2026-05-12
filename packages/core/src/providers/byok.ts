@@ -40,7 +40,7 @@ export type AgentRouting = {
  *  OPENAI_API_KEY set (and no explicit PROVIDER var) would silently default
  *  to 'anthropic' and fail every request — a real footgun for future
  *  redeploys. */
-function sniffEnvPrimary(): string | null {
+export function sniffEnvPrimary(): string | null {
   if (process.env['ANTHROPIC_API_KEY']) return 'anthropic';
   if (process.env['GOOGLE_API_KEY'] || process.env['GEMINI_API_KEY']) return 'google';
   if (process.env['OPENAI_API_KEY']) return 'openai';
@@ -48,9 +48,16 @@ function sniffEnvPrimary(): string | null {
   return null;
 }
 
+/** Single source of truth for "which provider is the primary for this
+ *  request?" — used by byokProvider for actual routing AND by
+ *  health-providers for the dot-label probe. Prevents drift where one
+ *  defaults to 'anthropic' and the other sniffs env. */
+export function resolvePrimaryName(headers: BYOKHeaders): string {
+  return headers.primary || process.env['PROVIDER'] || sniffEnvPrimary() || 'anthropic';
+}
+
 export function byokProvider(headers: BYOKHeaders): AgentRouting {
-  const primaryName =
-    headers.primary || process.env['PROVIDER'] || sniffEnvPrimary() || 'anthropic';
+  const primaryName = resolvePrimaryName(headers);
   const primary = makeOneProvider(primaryName, headers.primaryKey);
 
   const perplexityKey = headers.perplexityKey || process.env['PERPLEXITY_API_KEY'] || null;

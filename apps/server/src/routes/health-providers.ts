@@ -25,7 +25,7 @@
 
 import type { Request, Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
-import { byokProvider } from '@pm-copilot/core/providers/byok';
+import { byokProvider, resolvePrimaryName } from '@pm-copilot/core/providers/byok';
 import { makeAnthropicProvider } from '@pm-copilot/core';
 import { sanitizeProviderError } from '../lib/sanitizeError.js';
 
@@ -101,8 +101,12 @@ async function probe(
 
 export async function healthProvidersHandler(req: Request, res: Response) {
   // Always probe the user's currently-configured primary (BYOK or env-var).
+  // Use the SAME primary-resolution logic byokProvider uses (resolvePrimaryName)
+  // so the probe label always matches the actual routing. Previously this
+  // hardcoded 'anthropic' as the env fallback, which mislabelled OpenAI-only
+  // deploys without an explicit PROVIDER var (audit M6, codex).
   const routing = byokProvider(req.byok ?? {});
-  const primaryName = req.byok?.primary || process.env['PROVIDER'] || 'anthropic';
+  const primaryName = resolvePrimaryName(req.byok ?? {});
 
   const checks: Record<string, ProviderProbe> = {};
   checks[primaryName] = await probe(

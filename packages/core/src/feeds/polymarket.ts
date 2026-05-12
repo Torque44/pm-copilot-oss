@@ -295,6 +295,10 @@ export function gammaToMarketMeta(
     // surface the criteria string without a second fetch.
     resolutionWording: ev.description ?? null,
     resolutionSource: ev.resolutionSource ?? null,
+    // Resolved markets get a non-null resolvedAt. Sub-market endDate first
+    // (single-outcome events normalise to it), event endDate as fallback for
+    // multi-outcome events where the sub-market lacks its own endDate.
+    resolvedAt: m.closed === true ? (m.endDate || ev.endDate || null) : null,
   };
 }
 

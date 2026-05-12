@@ -58,6 +58,12 @@ export type MarketMeta = {
   resolutionWording?: string | null;
   /** Where the market resolves from (e.g. UMA, Binance, Federal Reserve press). */
   resolutionSource?: string | null;
+  /** ISO timestamp when this market resolved (closed=true on Gamma). Null
+   *  for active markets. The supervisor branches on this: when set, sentiment
+   *  and thesis are skipped, and news searches the 30 days BEFORE this date
+   *  rather than "right now." Driven entirely by the Gamma payload — no UI
+   *  override. */
+  resolvedAt?: string | null;
 };
 
 /**

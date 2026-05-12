@@ -20,6 +20,7 @@ import type {
   Category,
   Citation,
   Claim,
+  MarketMeta,
   SectionOut,
 } from './types';
 import { listEventsBroad, type GammaEvent, type PolyTag } from '../feeds/polymarket';
@@ -86,6 +87,56 @@ const SYNONYMS: Record<string, string[]> = {
 function expand(tok: string): string[] {
   const extra = SYNONYMS[tok];
   return extra ? [tok, ...extra] : [tok];
+}
+
+/** Shape-similarity bonus weights. Added on top of the keyword/synonym
+ *  score when both the query market and the candidate parse to a
+ *  threshold-in-window shape. Tunable — adjust here, not inline. */
+const SHAPE_BONUS = {
+  /** Same entity AND same metric ("Musk tweet count" vs "Musk tweet count"). */
+  entityAndMetric: 5.0,
+  /** Same metric only ("any tweet count" vs "Musk tweet count"). */
+  metricOnly: 2.5,
+  /** Window duration within WINDOW_RATIO of the query market's window. */
+  timeScale: 1.0,
+  /** Threshold within THRESHOLD_RATIO of the query market's threshold. */
+  threshold: 0.5,
+} as const;
+
+/** Time-scale similarity bounds: weekly markets match other weekly windows,
+ *  daily match daily, monthly match monthly. Excludes annual-vs-weekly drift. */
+const WINDOW_RATIO = { min: 0.5, max: 2.0 } as const;
+
+/** Threshold proximity bounds: ≥200 matches ≥150 and ≥250 (within ~1.5×)
+ *  but not ≥10 or ≥1000. */
+const THRESHOLD_RATIO = { min: 0.67, max: 1.5 } as const;
+
+/** Minimal MarketMeta stub for the shape parser. parseMarketShape only
+ *  reads `title` and `endDate` — the rest are placeholders to satisfy
+ *  the MarketMeta type. Used twice in the scoring loop: once for the
+ *  query market (before the loop) and once per candidate event. */
+function gammaToShapeStub(
+  id: string,
+  title: string,
+  category: Category,
+  endDate: string | null,
+): MarketMeta {
+  return {
+    marketId: id,
+    eventId: id,
+    venue: 'polymarket',
+    title,
+    category,
+    yes: 0,
+    no: 0,
+    volume24hr: 0,
+    volumeTotal: 0,
+    endDate: endDate ?? '',
+    conditionId: '',
+    tokenIdYes: '',
+    tokenIdNo: '',
+    slug: '',
+  };
 }
 
 function tokenize(s: string): string[] {
@@ -184,6 +235,25 @@ export async function runComparablesAgent(
   // "ceasefire" in the candidate.
   const queryTitleLower = input.marketTitle.toLowerCase();
   const scored: ComparableHit[] = [];
+
+  // Parse the QUERY market's shape once. Used inside the loop to score
+  // each candidate by shape similarity in addition to keyword overlap.
+  // Returns null for non-threshold markets — those fall back to the
+  // pure-keyword scorer below.
+  const queryShape = parseMarketShape(
+    gammaToShapeStub('query', input.marketTitle, input.category as Category, null),
+  );
+
+  // Window-duration estimate for the query market. When we have no start
+  // date in the parsed shape, treat the window as "unknown" (0). Used for
+  // the time-scale similarity bonus below.
+  const queryWindowMs = (() => {
+    if (!queryShape) return 0;
+    const end = queryShape.window.end ? Date.parse(queryShape.window.end) : 0;
+    const start = queryShape.window.start ? Date.parse(queryShape.window.start) : 0;
+    return start && end ? Math.max(0, end - start) : 0;
+  })();
+
   for (const ev of candidates) {
     const titleLower = (ev.title || '').toLowerCase();
     if (!titleLower) continue;
@@ -228,29 +298,48 @@ export async function runComparablesAgent(
         }
       }
     }
+
+    // Shape-aware bonus. Only fires when both the query market and this
+    // candidate parse to threshold-in-window shapes. Falls through silently
+    // (no bonus, no penalty) when either side doesn't parse — the keyword
+    // scorer above is the floor.
+    const candidateShape = queryShape ? parseMarketShape(
+      gammaToShapeStub(ev.id, ev.title, input.category as Category, ev.endDate ?? null),
+    ) : null;
+
+    if (queryShape && candidateShape) {
+      // Same entity AND same metric — same KIND of bet on the same subject.
+      if (queryShape.entity === candidateShape.entity && queryShape.metric === candidateShape.metric) {
+        score += SHAPE_BONUS.entityAndMetric;
+        hits += 1;
+      } else if (queryShape.metric === candidateShape.metric) {
+        // Same metric, different entity — same bet shape, different subject.
+        score += SHAPE_BONUS.metricOnly;
+        hits += 1;
+      }
+
+      // Same time-scale: window duration within WINDOW_RATIO of query's
+      // window. Daily / weekly / monthly markets group together; annual
+      // markets don't blur into weekly ones.
+      const candStart = candidateShape.window.start ? Date.parse(candidateShape.window.start) : 0;
+      const candEnd = candidateShape.window.end ? Date.parse(candidateShape.window.end) : 0;
+      const candWindowMs = candStart && candEnd ? Math.max(0, candEnd - candStart) : 0;
+      if (queryWindowMs > 0 && candWindowMs > 0) {
+        const ratio = candWindowMs / queryWindowMs;
+        if (ratio >= WINDOW_RATIO.min && ratio <= WINDOW_RATIO.max) score += SHAPE_BONUS.timeScale;
+      }
+
+      // Threshold proximity: candidate within THRESHOLD_RATIO of query's
+      // threshold. ≥200 matches ≥150 and ≥250 but not ≥10 or ≥1000.
+      if (queryShape.threshold > 0 && candidateShape.threshold > 0) {
+        const tRatio = candidateShape.threshold / queryShape.threshold;
+        if (tRatio >= THRESHOLD_RATIO.min && tRatio <= THRESHOLD_RATIO.max) score += SHAPE_BONUS.threshold;
+      }
+    }
+
     if (hits === 0) continue;
 
     const outcome = inferOutcome(ev);
-    // Parse the comparable's shape from its title for downstream
-    // shape-aware ask answers. parseMarketShape needs a MarketMeta but we
-    // only have a GammaEvent here — build a minimal stub. The parser only
-    // reads `title` and `endDate`.
-    const compShape = parseMarketShape({
-      marketId: ev.id,
-      eventId: ev.id,
-      venue: 'polymarket',
-      title: ev.title,
-      category: input.category as Category,
-      yes: 0,
-      no: 0,
-      volume24hr: 0,
-      volumeTotal: 0,
-      endDate: ev.endDate ?? '',
-      conditionId: '',
-      tokenIdYes: '',
-      tokenIdNo: '',
-      slug: ev.slug ?? '',
-    });
     scored.push({
       eventId: ev.id,
       title: ev.title,
@@ -259,7 +348,7 @@ export async function runComparablesAgent(
       resolvedPrice: pickResolvedPrice(ev),
       ...(ev.slug ? { slug: ev.slug } : {}),
       score,
-      ...(compShape ? { shape: compShape } : {}),
+      ...(candidateShape ? { shape: candidateShape } : {}),
       ...(ev.description ? { description: ev.description } : {}),
     });
   }

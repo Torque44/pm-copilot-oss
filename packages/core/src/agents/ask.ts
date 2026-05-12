@@ -851,7 +851,13 @@ Respond ONLY with the JSON object described in the system prompt.`;
     } else {
       fallback = fallback.slice(0, 1500);
     }
-    claims.push({ text: fallback, citations: [] });
+    // Scrub fake citations from the raw model text before surfacing. The
+    // fallback path skips the normal sectioned-claims scrubber so a model
+    // emitting [news-999] (hallucinated) gets its brackets stripped here.
+    // Backfill declared citations from any real pills it included.
+    const scrubbed = scrubInlineCitations(fallback, registry);
+    const fallbackCitations = extractValidPillIds(scrubbed, registry);
+    claims.push({ text: scrubbed, citations: fallbackCitations });
   }
 
   if (!claims.length) {

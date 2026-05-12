@@ -78,6 +78,13 @@ export type MCPServerConfig = {
   url?: string;
   /** Env vars to inject into the child process (stdio only). */
   env?: Record<string, string>;
+  /** Opt-in to inheriting the parent process env. **DEFAULT: false** — by
+   *  default the subprocess only sees PATH + a small allowlist (LANG, HOME,
+   *  USERPROFILE, TEMP, TMP, SystemRoot) plus anything explicitly set in
+   *  `env` above. Setting `inheritEnv: true` passes the full parent env
+   *  (provider keys, ADMIN_TOKEN, deploy secrets) into the subprocess — only
+   *  enable if you fully trust the MCP server binary. */
+  inheritEnv?: boolean;
   /** Optional: tool-name mapping. Keys are DataFeed methods, values are the
    *  MCP tool name to invoke for that method. If omitted, the loader uses
    *  conventional names (e.g. method `getOrderbook` -> tool `get_orderbook`). */

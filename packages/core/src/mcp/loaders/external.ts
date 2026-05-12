@@ -54,6 +54,42 @@ const DEFAULT_TOOLS: Record<string, string> = {
   getNews: 'get_news',
 };
 
+/** Variables an MCP subprocess generally needs to function (find binaries,
+ *  resolve home dir, write to temp) but that don't carry product secrets.
+ *  Everything else from process.env is dropped unless `inheritEnv: true`. */
+const ENV_PASSTHROUGH_KEYS = [
+  'PATH', 'PATHEXT',          // resolve binaries
+  'HOME', 'USERPROFILE',      // resolve ~
+  'TEMP', 'TMP', 'TMPDIR',    // scratch space
+  'LANG', 'LC_ALL', 'LC_CTYPE', // locale for unicode handles
+  'SystemRoot', 'SYSTEMROOT', 'COMSPEC', // Windows runtime
+  'NODE_OPTIONS',             // node-based MCP servers may need flags
+];
+
+export function buildSubprocessEnv(cfg: MCPServerConfig): Record<string, string> {
+  // Opt-in to full env inheritance for operators who trust the binary.
+  if (cfg.inheritEnv === true) {
+    const merged: Record<string, string> = {};
+    for (const [k, v] of Object.entries(process.env)) {
+      if (typeof v === 'string') merged[k] = v;
+    }
+    for (const [k, v] of Object.entries(cfg.env ?? {})) {
+      merged[k] = v;
+    }
+    return merged;
+  }
+  // Default: tight allowlist + explicit cfg.env injections.
+  const out: Record<string, string> = {};
+  for (const key of ENV_PASSTHROUGH_KEYS) {
+    const v = process.env[key];
+    if (typeof v === 'string') out[key] = v;
+  }
+  for (const [k, v] of Object.entries(cfg.env ?? {})) {
+    out[k] = v;
+  }
+  return out;
+}
+
 class StdioTransport {
   private child: ChildProcess | null = null;
   private buf = '';
@@ -65,7 +101,16 @@ class StdioTransport {
   start(): void {
     if (this.child) return;
     this.child = spawn(this.cfg.command ?? 'echo', this.cfg.args ?? [], {
-      env: { ...process.env, ...(this.cfg.env ?? {}) },
+      // SECURITY: by default we do NOT inherit the parent env. An MCP
+      // subprocess that inherits process.env gets every provider key, the
+      // admin token, and any deploy secret. Operators must opt in via
+      // `inheritEnv: true` in mcp.config.json if they trust the binary. The
+      // small allowlist below preserves PATH (so the spawn works at all),
+      // locale (so non-ASCII handles don't garble), and temp/home (so a
+      // misbehaving MCP can still write its own scratch files without
+      // exploding). cfg.env always overrides — it's how users inject the
+      // narrow set of secrets THEIR MCP actually needs.
+      env: buildSubprocessEnv(this.cfg),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });

@@ -128,8 +128,11 @@ export async function listEventsBroad(
 }
 
 export async function getEvent(id: string): Promise<GammaEvent> {
-  // Gamma doesn't expose /events/:id directly — use the array filter endpoint
-  const arr = await get<GammaEvent[]>(`${GAMMA}/events?id=${id}`);
+  // Gamma doesn't expose /events/:id directly — use the array filter endpoint.
+  // encodeURIComponent defends against a crafted id (e.g. `1&closed=true`)
+  // injecting extra query params; Gamma IDs are normally numeric but the
+  // resolver path takes user input upstream.
+  const arr = await get<GammaEvent[]>(`${GAMMA}/events?id=${encodeURIComponent(id)}`);
   if (!arr?.length) throw new Error(`event ${id} not found`);
   return arr[0]!;
 }
@@ -239,7 +242,9 @@ export type HoldersGroup = {
 };
 
 export async function getHolders(conditionId: string, limit = 20): Promise<HoldersGroup[]> {
-  return get<HoldersGroup[]>(`${DATA}/holders?market=${conditionId}&limit=${limit}`);
+  // encodeURIComponent on conditionId — same defense-in-depth as getEvent.
+  // limit is bounded numeric so we still let it through verbatim.
+  return get<HoldersGroup[]>(`${DATA}/holders?market=${encodeURIComponent(conditionId)}&limit=${limit}`);
 }
 
 // --- helpers: pick the best binary sub-market and normalize to MarketMeta ---

@@ -105,10 +105,21 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
 
   const sentimentEnabled = Boolean(routing?.sentiment);
 
+  // Resolved markets short-circuit sentiment + thesis. Both agents produce
+  // their worst hallucinations when there's no real-time data to ground in
+  // (the market already paid out — there IS no "current X conversation" or
+  // "what could move it"). News still runs but against the resolution
+  // leadup window (Task 4 windowOverride). Synthesis still runs and is
+  // told via prompt this is a resolved-market brief.
+  const isResolved = Boolean(market.resolvedAt);
+
   // Emit start for the agents the UI should render as pending. Sentiment only
-  // appears when xAI is configured; thesis always appears (runs on primary).
-  const startedAgents: AgentId[] = ['market', 'holders', 'news', 'comparables', 'thesis', 'synthesis'];
-  if (sentimentEnabled) startedAgents.splice(3, 0, 'sentiment');
+  // appears when xAI is configured AND the market isn't resolved. Thesis
+  // appears for active markets only.
+  const startedAgents: AgentId[] = isResolved
+    ? ['market', 'holders', 'news', 'comparables', 'synthesis']
+    : ['market', 'holders', 'news', 'comparables', 'thesis', 'synthesis'];
+  if (sentimentEnabled && !isResolved) startedAgents.splice(3, 0, 'sentiment');
   for (const a of startedAgents) emit({ t: 'agent:start', agent: a });
 
   const ctx: AgentContext = { market, emit };
@@ -174,7 +185,7 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
     // specialists so its result is ready when thesis runs.
     runOne('comparables', () => runComparablesAgent(ctx, comparablesInput)),
   ];
-  if (sentimentEnabled && routing) {
+  if (sentimentEnabled && routing && !isResolved) {
     fanOut.push(
       runOne('sentiment', () => runSentimentAgent(ctx, routing.sentiment, sentimentInput)),
     );
@@ -187,11 +198,13 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
     return;
   }
   // fanOut order: market, holders, news, comparables, [sentiment]
+  // Sentiment only appears when sentimentEnabled AND !isResolved (see fanOut
+  // assembly above).
   const marketR = results[0]!;
   const holdersR = results[1]!;
   const newsR = results[2]!;
   const comparablesR = results[3]!;
-  const sentimentR = sentimentEnabled ? results[4] ?? null : null;
+  const sentimentR = sentimentEnabled && !isResolved ? results[4] ?? null : null;
 
   // Stash the raw grounding per-market so /api/ask can reuse it. The cast is
   // safe because each agent only ever returns its own grounding kind.
@@ -249,9 +262,12 @@ export async function runSupervisor(opts: SupervisorOpts): Promise<void> {
   // merged Wave 1 citations. Neither depends on the other, so we fan them out
   // together and shave ~5s off the cold-load wall-clock.
   const synthStart = Date.now();
-  const thesisP = runOne('thesis', () =>
-    runThesisAgent(ctx, thesisProvider, thesisInput),
-  );
+  // Thesis is forward-looking ("what could move it") — meaningless for a
+  // settled market. Skip entirely when resolved; the agent isn't in
+  // startedAgents either, so the UI never shows a dot for it.
+  const thesisP: Promise<AgentResult | null> = isResolved
+    ? Promise.resolve(null)
+    : runOne('thesis', () => runThesisAgent(ctx, thesisProvider, thesisInput));
   const synthesisP = (async () => {
     try {
       const synth = await runSynthesis(

@@ -1,66 +1,31 @@
-// SentimentAgent — Grok live X-search.
+// SentimentAgent — two-pass design to eliminate the LLM URL fabrication
+// surface.
 //
-// Uses xAI/Grok's Live Search API (search_parameters: {mode:'on', sources:[
-// {type:'x'}]}) so Grok pulls fresh tweets relevant to the market at request
-// time. We no longer depend on a curated stub feed for primary input — the
-// stub is now only used as a fallback when:
-//   1. The provider isn't xAI (only xAI has live X access today)
-//   2. Live search returns nothing
+// Pass 1: xAI Grok with liveSearch ON, minimal prompt. The model's job is
+//   just to trigger live X-search. We capture res.citations[] (URLs Grok
+//   ACTUALLY pulled) and ignore the model's response text entirely.
 //
-// Output: 3-5 short claims with [kol·N] citations linking to real tweet URLs
-// Grok cited during search.
+// Pass 2: liveSearch OFF. The model is given the pre-fetched URLs as
+//   numbered evidence ([kol·1] through [kol·N]) and asked to write claims
+//   that cite by index. No URLs come out of the model. Anything that leaks
+//   through gets filtered by a URL-provenance safety net.
+//
+// This is the structural fix for the "@Reuters/2023 fabrications" bug —
+// the model can't invent tweet URLs because we never ask it to produce
+// them.
 
 import type {
   AgentContext,
   AgentResult,
   Citation,
   Claim,
-  SectionOut,
 } from './types';
 import type { LLMProvider } from '../providers/types';
 import {
   classifyMarket,
   isAllowlistedHandle,
   profileFor,
-  type MarketSubcategory,
 } from '../sources/registry';
-
-/**
- * Build a category-aware system prompt for the sentiment agent. The handle
- * allowlist comes from sources/registry — same source-of-truth as the news
- * agent, so the trader sees the same vetted voices on both panels. Posts
- * from off-list handles are filtered out by post-process.
- */
-function systemPromptForSub(sub: MarketSubcategory, marketTitle: string): string {
-  const profile = profileFor(sub);
-  const allowed = profile.handles.slice(0, 24).join(', ');
-  return `You are a sentiment analyst for prediction-market traders. Summarise what authoritative X voices have been posting about "${marketTitle}". Live X search is enabled and restricted to the vetted handles below — use the actual recent posts the search tool returns.
-
-Source rules — STRICT:
-- ONLY cite from these vetted handles: ${allowed}.
-- ${profile.hint}
-- Quote or paraphrase ACTUAL posts the live search returns. Do NOT invent quotes from training memory.
-- If live search returns no relevant posts from the vetted set, return fewer claims (or zero) rather than fabricate.
-- NEVER cite anonymous retail, "alpha" groups, pump/shill, or unidentifiable handles.
-
-Rules:
-- Output 3-5 short claims about the prevailing view among these source types (or fewer if the search yielded less).
-- Each claim MUST end with one or more citation tags [kol·N] referencing a specific account you're attributing to (1 = first attributed source, 2 = second, …).
-- For each [kol·N], populate \`tweets\` with:
-    handle  — the actual X handle (no @ prefix), must be from the vetted list above
-    excerpt — verbatim or near-verbatim quote from the post the search returned (≤240 chars).
-    url     — the actual post URL the search surfaced
-    ts      — ISO timestamp of the post when available, else empty string
-- Aggregate "lean" describes the consensus implied by these posts for the YES side of the market.
-
-Return JSON ONLY, no prose:
-{
-  "claims": [{ "text": "<claim with [kol·N]>", "citations": ["kol·1"] }],
-  "tweets": [{ "n": 1, "handle": "...", "excerpt": "...", "url": "https://x.com/...", "ts": "" }],
-  "lean": "yes" | "no" | "split" | "unclear",
-  "confidence": "high" | "med" | "low"
-}`;
-}
 
 export type SentimentInput = {
   marketTitle: string;
@@ -70,9 +35,9 @@ export type SentimentInput = {
   yesPrice: number | null;
   noPrice: number | null;
   endDate: string | null;
-  /** Optional pre-curated tweets used as a fallback when live search isn't
-   *  available (e.g. provider isn't xAI). The stub feed in
-   *  packages/core/src/mcp/loaders/x-stub-data.json populates this. */
+  /** Legacy bundled-tweet fallback. Unused in the two-pass path but kept
+   *  in the signature for backwards compat with the server's supervisor
+   *  call site. */
   tweets?: Array<{
     handle: string;
     text: string;
@@ -81,19 +46,6 @@ export type SentimentInput = {
     likes?: number;
     replies?: number;
   }>;
-};
-
-type ParsedResponse = {
-  claims?: Array<{ text?: string; citations?: string[] }>;
-  tweets?: Array<{
-    n?: number;
-    handle?: string;
-    excerpt?: string;
-    url?: string;
-    ts?: string;
-  }>;
-  lean?: string;
-  confidence?: string;
 };
 
 export async function runSentimentAgent(
@@ -107,12 +59,7 @@ export async function runSentimentAgent(
     return {
       agent: 'sentiment',
       output: {
-        claims: [
-          {
-            text: 'sentiment agent disabled — add an xAI/Grok key in setup to unlock live X search.',
-            citations: [],
-          },
-        ],
+        claims: [{ text: 'sentiment agent disabled — add an xAI/Grok key in setup to unlock live X search.', citations: [] }],
         citations: [],
       },
       grounding: null,
@@ -121,224 +68,104 @@ export async function runSentimentAgent(
     };
   }
 
-  // Pull market context the model needs to phrase the search.
-  const yesStr = typeof input.yesPrice === 'number' ? `${(input.yesPrice * 100).toFixed(1)}%` : '?';
-  const noStr = typeof input.noPrice === 'number' ? `${(input.noPrice * 100).toFixed(1)}%` : '?';
-  const endStr = input.endDate ? `resolves by ${input.endDate.slice(0, 10)}` : '';
-
-  const userPrompt = `Market: "${input.marketTitle}"
-Current price: YES ${yesStr} / NO ${noStr}${endStr ? ' · ' + endStr : ''}
-
-Search X for recent (last 14 days) posts that:
-  - Discuss this market directly OR
-  - Discuss the underlying question / event with conviction
-  - Especially from accounts that trade prediction markets, follow the topic closely, or have macro/policy expertise
-
-Surface 3-5 representative takes that capture the conversation.`;
-
   const sub = classifyMarket(input.category, input.marketTitle);
-  const sysPrompt = systemPromptForSub(sub, input.marketTitle);
-
-  // Live X-search via xAI's Live Search API. We restrict to the vetted-handles
-  // allowlist for this sub-category (sources/registry) so Grok only pulls posts
-  // from accounts the user already trusts on the news side. fromDays=14
-  // matches the system prompt's "last 14 days" instruction. The xai provider
-  // gracefully retries without search_parameters if xAI rejects the shape, so
-  // a future API change degrades to training-data knowledge instead of erroring.
   const profile = profileFor(sub);
   const vettedHandles = profile.handles.slice(0, 25);
-  const res = await provider.complete(userPrompt, {
-    tier: 'reasoning',
-    systemPrompt: sysPrompt,
-    jsonOnly: true,
-    timeoutMs: 90_000,
+
+  // ──────────────────────── PASS 1 ────────────────────────
+  // Trigger Grok live X-search. The model's text response is ignored —
+  // we only consume res.citations[] (real URLs Grok pulled).
+  const pass1Prompt = `Find recent X posts about: "${input.marketTitle}". Reply in 1-2 plain sentences summarising what you found — no quotes, no URLs in your reply.`;
+  const pass1 = await provider.complete(pass1Prompt, {
+    tier: 'fast',
+    timeoutMs: 60_000,
     liveSearch: {
       mode: 'on',
       sources: ['x'],
       xHandles: vettedHandles,
       fromDays: 14,
-      maxResults: 15,
+      maxResults: 20,
       returnCitations: true,
     },
   });
 
-  let parsed: ParsedResponse | null = null;
-  if (res.ok && res.text) {
-    try {
-      const m = res.text.match(/\{[\s\S]*\}/);
-      if (m) parsed = JSON.parse(m[0]) as ParsedResponse;
-    } catch {
-      /* fall through */
-    }
+  const grokCitations: string[] = pass1.citations ?? [];
+  type RegistryEntry = { id: string; handle: string; url: string; n: number };
+  const registry: RegistryEntry[] = [];
+  for (const url of grokCitations) {
+    const handle = parseHandleFromTweetUrl(url);
+    if (!handle) continue;
+    if (!isAllowlistedHandle(sub, handle)) continue;
+    const n = registry.length + 1;
+    registry.push({ id: `kol·${n}`, handle, url, n });
   }
 
-  // Build citation list from the model's reported tweets. Each entry maps
-  // n → kol·N so the [kol·N] tags inside claims resolve to real tweet URLs.
-  // Off-allowlist handles are dropped silently — this enforces the same
-  // curated voice list the prompt asked for.
-  const citations: Citation[] = [];
-  const tweetsRaw = Array.isArray(parsed?.tweets) ? parsed!.tweets : [];
-  for (const t of tweetsRaw) {
-    if (typeof t.n !== 'number' || !t.url) continue;
-    const handle = (t.handle || '').replace(/^@/, '').trim();
-    if (!handle || !isAllowlistedHandle(sub, handle)) continue;
-    const id = `kol·${t.n}`;
-    const cit: Citation = {
-      id,
-      kind: 'kol',
-      label: `@${handle}`,
-      payload: {
-        handle,
-        text: t.excerpt || '',
-        url: t.url,
-        createdAt: t.ts || '',
-      },
-      url: t.url,
-    };
-    citations.push(cit);
-  }
-
-  const validIds = new Set(citations.map((c) => c.id));
-  const claims: Claim[] = Array.isArray(parsed?.claims)
-    ? parsed!.claims
-        .map((c) => ({
-          text: String(c.text || '').trim(),
-          citations: Array.isArray(c.citations)
-            ? c.citations.filter((id) => validIds.has(id))
-            : [],
-        }))
-        .filter((c) => c.text.length > 0)
-        .slice(0, 5)
-    : [];
-
-  // If xAI silently fell back from live X-search to training data, the
-  // citations list will be empty even on `ok=true`. Surface that loudly
-  // as the first claim — the user trusted "live X" and got training-era
-  // recall instead, which is a different (and weaker) source of truth.
-  const liveSearchDisabled = (res.warnings ?? []).some((w) =>
-    w.startsWith('xai-live-search-disabled'),
-  );
-  if (liveSearchDisabled) {
-    claims.unshift({
-      text:
-        'xAI live-search was unavailable for this run — sentiment below is from the model\'s training data, not real-time X. Discount accordingly until the live API recovers.',
-      citations: [],
-    });
-  }
-
-  // If live search returned nothing AND we have a fallback stub, re-run
-  // against the stub. This rescues niche markets when Grok finds zero hits.
-  if (claims.length === 0 && input.tweets && input.tweets.length > 0) {
-    const stubResult = await runWithStubTweets(ctx, provider, input);
-    return stubResult;
-  }
-
-  if (claims.length === 0) {
-    // Log occurrence + error class only — never the market title or raw
-    // model text (repo policy).
-    const errMsg = res.error || '';
-    const cls = res.ok ? 'empty'
-      : /401|403|unauthor|invalid.*key/i.test(errMsg) ? 'auth'
-      : /timeout|aborted/i.test(errMsg) ? 'timeout'
-      : /429|rate.*limit|quota/i.test(errMsg) ? 'rate-limit'
-      : 'provider-error';
-    console.warn(`[sentiment] empty result class=${cls} elapsed=${Date.now() - started}ms`);
+  if (registry.length === 0) {
+    // No real evidence → honest empty. Skip Pass 2 entirely.
     return {
       agent: 'sentiment',
       output: {
-        claims: [
-          {
-            text: 'no recent X conversation surfaced. try again in a few minutes — fresh posts arrive throughout the day.',
-            citations: [],
-          },
-        ],
+        claims: [{ text: 'no recent X conversation surfaced from vetted handles in the last 14 days for this market.', citations: [] }],
         citations: [],
       },
       grounding: null,
       elapsedMs: Date.now() - started,
-      ...(res.ok ? {} : { error: res.error }),
     };
   }
 
-  const output: SectionOut = { claims, citations };
-  return {
-    agent: 'sentiment',
-    output,
-    grounding: null,
-    elapsedMs: Date.now() - started,
-  };
-}
+  // ──────────────────────── PASS 2 ────────────────────────
+  // liveSearch OFF. Model gets the registry as numbered evidence and
+  // writes claims by [kol·N] index only.
+  const evidence = registry.map((r) => `[${r.id}] @${r.handle} — ${r.url}`).join('\n');
+  const pass2Sys = `You summarise pre-fetched X posts for a prediction-market trader. The evidence below is real. Write 3-5 short claims about the prevailing view among these vetted voices, citing by index.
 
-/** Fallback path: re-run sentiment using the bundled stub tweets when Grok's
- *  live search came back empty. This is only invoked for very niche markets
- *  where the curated stub happens to have relevant entries. */
-async function runWithStubTweets(
-  _ctx: AgentContext,
-  provider: LLMProvider,
-  input: SentimentInput,
-): Promise<AgentResult> {
-  const started = Date.now();
-  // Stub tweets must pass the same allowlist gate the live-search path
-  // applies — otherwise an unvetted seed tweet smuggled into the stub
-  // bundle would surface as a "vetted X handle" citation in the UI.
-  const sub = classifyMarket(input.category, input.marketTitle);
-  const allowed = (input.tweets ?? []).filter((t) =>
-    isAllowlistedHandle(sub, (t.handle || '').replace(/^@/, '').trim()),
+Allowed citations: ${registry.map((r) => `[${r.id}]`).join(' ')}
+
+Rules:
+- Reference posts ONLY by [kol·N]. Do NOT emit URLs, handles, or your own commentary about source identity.
+- Each claim cites at least one [kol·N] from the supplied list.
+- Keep claims neutral; let the trader form their own view.
+
+Return JSON ONLY:
+{
+  "claims": [{ "text": "...", "citations": ["kol·N"] }],
+  "lean": "yes" | "no" | "split" | "unclear",
+  "confidence": "high" | "med" | "low"
+}`;
+
+  const pass2 = await provider.complete(
+    `Market: "${input.marketTitle}"\nEvidence:\n${evidence}\n\nReturn the JSON.`,
+    {
+      tier: 'fast',
+      systemPrompt: pass2Sys,
+      jsonOnly: true,
+      timeoutMs: 30_000,
+      // liveSearch intentionally omitted — pure summarisation.
+    },
   );
-  if (allowed.length === 0) {
-    return {
-      agent: 'sentiment',
-      output: { claims: [], citations: [] },
-      grounding: null,
-      elapsedMs: 0,
-    };
-  }
 
-  const citations: Citation[] = allowed.map((t, i) => ({
-    id: `kol·${i + 1}`,
+  // Build citations directly from the registry. The model NEVER produces
+  // URLs in this pass; we use its claim text + citation indexes only.
+  const citations: Citation[] = registry.map((r): Citation => ({
+    id: r.id,
     kind: 'kol',
-    label: `@${t.handle}`,
-    payload: t,
-    url: t.url,
+    label: `@${r.handle}`,
+    payload: { handle: r.handle, text: '', url: r.url, createdAt: '' },
+    url: r.url,
   }));
 
-  const stubSys = `You are a prediction-market sentiment analyst. Read the supplied tweets and output 3-5 short claims about the prevailing trader take. Every claim must cite tweets by [kol·N] where N is the 1-indexed entry. Return JSON: { "claims": [{"text":"...","citations":["kol·N"]}], "lean":"yes|no|split|unclear", "confidence":"high|med|low" }`;
-
-  const userPayload = JSON.stringify({
-    market: {
-      title: input.marketTitle,
-      yes: input.yesPrice,
-      no: input.noPrice,
-      ends: input.endDate,
-    },
-    tweets: allowed.map((t, i) => ({
-      idx: i + 1,
-      handle: t.handle,
-      text: t.text.slice(0, 280),
-      url: t.url,
-      ts: t.createdAt,
-    })),
-  });
-
-  const res = await provider.complete(userPayload, {
-    tier: 'fast',
-    systemPrompt: stubSys,
-    jsonOnly: true,
-    timeoutMs: 30_000,
-  });
-
-  type StubResp = { claims?: Array<{ text?: string; citations?: string[] }> };
-  let parsed: StubResp | null = null;
-  if (res.ok && res.text) {
+  type ParsedResp = { claims?: Array<{ text?: string; citations?: string[] }> };
+  let parsed: ParsedResp | null = null;
+  if (pass2.ok && pass2.text) {
     try {
-      const m = res.text.match(/\{[\s\S]*\}/);
-      if (m) parsed = JSON.parse(m[0]) as StubResp;
-    } catch {
-      /* fall through */
-    }
+      const m = pass2.text.match(/\{[\s\S]*\}/);
+      if (m) parsed = JSON.parse(m[0]) as ParsedResp;
+    } catch { /* fall through */ }
   }
 
-  const validIds = new Set(citations.map((c) => c.id));
+  const validIds = new Set(registry.map((r) => r.id));
+  const registryUrls = new Set(registry.map((r) => r.url));
+
   const claims: Claim[] = Array.isArray(parsed?.claims)
     ? parsed!.claims
         .map((c) => ({
@@ -348,6 +175,13 @@ async function runWithStubTweets(
             : [],
         }))
         .filter((c) => c.text.length > 0)
+        // Safety net: drop any claim whose text leaks a URL not in the
+        // registry. Pass-2 sys prompt forbids URLs entirely; if one slips
+        // in we drop the whole claim rather than partially trust it.
+        .filter((c) => {
+          const urlsInClaim = c.text.match(/https?:\/\/\S+/g) ?? [];
+          return urlsInClaim.every((u) => registryUrls.has(u));
+        })
         .slice(0, 5)
     : [];
 
@@ -355,11 +189,12 @@ async function runWithStubTweets(
     return {
       agent: 'sentiment',
       output: {
-        claims: [{ text: 'no relevant X conversation in the bundled feed for this market.', citations: [] }],
+        claims: [{ text: 'no recent X conversation surfaced. try again in a few minutes — fresh posts arrive throughout the day.', citations: [] }],
         citations: [],
       },
       grounding: null,
       elapsedMs: Date.now() - started,
+      ...(pass2.ok ? {} : { error: pass2.error }),
     };
   }
 
@@ -369,4 +204,19 @@ async function runWithStubTweets(
     grounding: null,
     elapsedMs: Date.now() - started,
   };
+}
+
+/** Parse @handle from an X/Twitter post URL.
+ *  Accepts https://x.com/{handle}/status/{id} and twitter.com variants. */
+function parseHandleFromTweetUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    if (host !== 'x.com' && host !== 'twitter.com') return null;
+    const parts = u.pathname.split('/').filter(Boolean);
+    if (parts.length < 3 || parts[1] !== 'status') return null;
+    return parts[0] ?? null;
+  } catch {
+    return null;
+  }
 }

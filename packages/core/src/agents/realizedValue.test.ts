@@ -119,4 +119,22 @@ describe('extractRealizedValue', () => {
     const r = extractRealizedValue(comp, shape);
     expect(r.value).toBe(187);
   });
+
+  it('reads top-level description (the real ComparableHit shape)', () => {
+    const comp = mkComp({
+      description: 'Market settled at 199 tweets — resolved NO.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, shape);
+    expect(r.value).toBe(199);
+    expect(r.source).toBe('gamma-note');
+  });
+
+  it('reads top-level resolutionWording when description is absent', () => {
+    const comp = mkComp({
+      resolutionWording: 'Recorded 144 tweets over the window.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, shape);
+    expect(r.value).toBe(144);
+    expect(r.source).toBe('gamma-note');
+  });
 });

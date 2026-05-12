@@ -27,14 +27,25 @@ const PATTERNS_NUMBER: RegExp[] = [
 ];
 
 function tryGammaNote(comp: ComparableHit, shape: MarketShape | null): RealizedValue | null {
+  // ComparableHit carries description + resolutionWording as TOP-LEVEL
+  // optional fields (added in Task 5). We also tolerate a nested
+  // `payload.description` shape for back-compat with older test fixtures
+  // and any future Citation-style wrapper that nests Gamma fields.
+  const topDescription = (comp as { description?: unknown }).description;
+  const topResolution = (comp as { resolutionWording?: unknown }).resolutionWording;
   const payload = (comp as { payload?: unknown }).payload;
-  if (!payload || typeof payload !== 'object') return null;
-  const obj = payload as { description?: unknown; resolutionWording?: unknown };
+  const nested = payload && typeof payload === 'object'
+    ? payload as { description?: unknown; resolutionWording?: unknown }
+    : null;
+
   const text = [
-    typeof obj.description === 'string' ? obj.description : '',
-    typeof obj.resolutionWording === 'string' ? obj.resolutionWording : '',
+    typeof topDescription === 'string' ? topDescription : '',
+    typeof topResolution === 'string' ? topResolution : '',
+    nested && typeof nested.description === 'string' ? nested.description : '',
+    nested && typeof nested.resolutionWording === 'string' ? nested.resolutionWording : '',
   ].filter(Boolean).join(' ');
   if (!text) return null;
+
   for (const rx of PATTERNS_NUMBER) {
     const m = rx.exec(text);
     if (!m) continue;

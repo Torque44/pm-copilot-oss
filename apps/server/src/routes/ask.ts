@@ -266,25 +266,13 @@ export async function askHandler(req: Request, res: Response) {
     res.status(400).json({ error: 'question required' });
     return;
   }
-  // Re-resolve canonical metadata server-side. The client's `market` object
-  // (if attached for backward compat) is intentionally NOT trusted: agent
-  // prompts use the canonical title and prices, the grounding store keys
-  // off the canonical marketId, and any spoofed token IDs from a crafted
-  // caller would never reach the supervisor.
-  const market = await resolveCanonicalMarket(marketId);
-  if (!market) {
-    res.status(404).json({ error: `market ${marketId} not found` });
-    return;
-  }
 
   // ── Defense layer 1: off-topic gate ──
-  // The per-IP rate limit runs as route middleware (see index.ts wiring);
-  // we never reach this handler if the caller is over the cap.
-  //
-  // Cheap, runs before any LLM call. Pure regex denylist for obvious
-  // non-market questions (math homework, code generation, jokes, etc.).
-  // Returns a canned single-claim refusal in the ask response shape so
-  // the client renders it as a normal chat reply instead of a 4xx error.
+  // Cheap regex denylist for obvious non-market questions (math homework,
+  // code generation, jokes, etc.). Runs BEFORE market resolution so an
+  // off-topic spammer doesn't burn polymarket gamma cache lookups before
+  // hitting the canned refusal. Returns the refusal in the ask response
+  // shape so the client renders it as a normal chat reply.
   if (isOffTopic(question)) {
     // Log occurrence only — never include the question text itself, per
     // the no-LLM-content-in-logs policy.
@@ -301,6 +289,17 @@ export async function askHandler(req: Request, res: Response) {
       },
     ];
     res.json({ events, complete: true } satisfies AskResponse);
+    return;
+  }
+
+  // Re-resolve canonical metadata server-side. The client's `market` object
+  // (if attached for backward compat) is intentionally NOT trusted: agent
+  // prompts use the canonical title and prices, the grounding store keys
+  // off the canonical marketId, and any spoofed token IDs from a crafted
+  // caller would never reach the supervisor.
+  const market = await resolveCanonicalMarket(marketId);
+  if (!market) {
+    res.status(404).json({ error: `market ${marketId} not found` });
     return;
   }
 

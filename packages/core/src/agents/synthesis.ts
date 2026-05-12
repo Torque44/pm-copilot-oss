@@ -66,6 +66,16 @@ type SynthRaw = {
   confidence?: 'high' | 'med' | 'low' | string;
 };
 
+/** Canonical citation-id form for cross-agent comparison. Upstream agents
+ *  emit mid-dot IDs (`whale·1`, `news·1`, `kol·1`, `comp·1`); the inline
+ *  pill regex in Chat.tsx + synthesis below produces hyphen-lowercase
+ *  IDs after parsing. Canonicalising both sides to the hyphen form makes
+ *  Set.has() comparisons agree regardless of which form the upstream
+ *  emits. */
+export function canonCitationId(raw: string): string {
+  return raw.replace(/[\[\]]/g, '').trim().replace(/·/g, '-').toLowerCase();
+}
+
 export async function runSynthesis(
   inp: SynthIn,
   ctx: AgentContext,
@@ -73,13 +83,18 @@ export async function runSynthesis(
 ): Promise<AgentResult & { brief: Brief }> {
   const started = Date.now();
 
-  // Merge all citations into one lookup; dedupe by id (later wins).
+  // Merge all citations into one lookup; dedupe by canonical id (later wins).
+  // Canonicalising on the .id field too means downstream claim.citations[]
+  // entries (which we'll also canonicalise) point to citations the UI can
+  // actually find via Set.has() / Map.get() lookups. Without this, the
+  // hyphen-form claim references would miss the mid-dot citation IDs.
   const allCitations: Citation[] = [];
   const seenIds = new Set<string>();
   for (const c of [...inp.market_section.citations, ...inp.holders_section.citations, ...inp.news_section.citations]) {
-    if (seenIds.has(c.id)) continue;
-    seenIds.add(c.id);
-    allCitations.push(c);
+    const canonical = canonCitationId(c.id);
+    if (seenIds.has(canonical)) continue;
+    seenIds.add(canonical);
+    allCitations.push({ ...c, id: canonical });
   }
 
   const validIds = new Set(allCitations.map(c => c.id));
@@ -140,13 +155,12 @@ function buildBrief(
 ): Brief {
   // Same inline-pill regex Chat.tsx uses; we mirror it server-side so a
   // hallucinated [news-999] in claim text gets its brackets stripped before
-  // it ever reaches the UI.
+  // it ever reaches the UI. validIds is also canonicalised so the two
+  // checks agree.
   const INLINE_PILL_RE = /\[([a-z0-9]+(?:[·-][a-z0-9]+)*)\]/gi;
-  const canonId = (raw: string): string =>
-    raw.replace(/[\[\]]/g, '').trim().replace(/·/g, '-').toLowerCase();
   const scrubText = (text: string): string =>
     text.replace(INLINE_PILL_RE, (match, raw: string) => {
-      const id = canonId(raw);
+      const id = canonCitationId(raw);
       return validIds.has(id) ? `[${id}]` : raw;
     });
 
@@ -159,7 +173,7 @@ function buildBrief(
         text,
         citations: Array.isArray(c.citations)
           ? Array.from(new Set(c.citations
-            .map(id => String(id).replace(/[\[\]]/g, '').trim())
+            .map(id => canonCitationId(String(id)))
             .filter(id => validIds.has(id))))
           : [],
       };

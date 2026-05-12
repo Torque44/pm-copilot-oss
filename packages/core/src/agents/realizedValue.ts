@@ -41,16 +41,16 @@ const METRIC_PATTERNS: Record<string, RegExp[]> = {
     /\b\$([\d,]+(?:\.\d+)?)\s+(?:was|recorded|reached|achieved)/i,
   ],
   snow: [
-    /\b(?:received|recorded|measured)\s+(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|in|mm|cm)\b/i,
-    /\b(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|in|mm|cm)\s+(?:of\s+)?(?:snow|rain|precipitation)\s+(?:was|recorded|fell)/i,
+    /\b(?:received|recorded|measured|got|saw)\s+(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|mm|cm)\s+(?:of\s+)?snow\b/i,
+    /\b(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|mm|cm)\s+(?:of\s+)?snow\s+(?:was|recorded|fell|measured)/i,
   ],
   rain: [
-    /\b(?:received|recorded|measured)\s+(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|in|mm|cm)\b/i,
-    /\b(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|in|mm|cm)\s+(?:of\s+)?(?:snow|rain|precipitation)\s+(?:was|recorded|fell)/i,
+    /\b(?:received|recorded|measured|got|saw)\s+(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|mm|cm)\s+(?:of\s+)?rain\b/i,
+    /\b(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|mm|cm)\s+(?:of\s+)?rain\s+(?:was|recorded|fell|measured)/i,
   ],
   precipitation: [
-    /\b(?:received|recorded|measured)\s+(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|in|mm|cm)\b/i,
-    /\b(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|in|mm|cm)\s+(?:of\s+)?(?:snow|rain|precipitation)\s+(?:was|recorded|fell)/i,
+    /\b(?:received|recorded|measured|got)\s+(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|mm|cm)\s+(?:of\s+)?precipitation\b/i,
+    /\b(\d+(?:\.\d+)?)\s*(?:inch(?:es)?|mm|cm)\s+(?:of\s+)?precipitation\s+(?:was|recorded|fell|measured)/i,
   ],
 };
 

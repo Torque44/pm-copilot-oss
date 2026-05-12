@@ -187,4 +187,38 @@ describe('extractRealizedValue', () => {
     const r = extractRealizedValue(comp, tempShape);
     expect(r.display).toBe('≥ 95°F'); // not "≥ 95 °F"
   });
+
+  // ───── C3a regression: snow shape does NOT match rain in description ─────
+  it('snow shape does not match a rain figure (C3a re-audit)', () => {
+    const snowShape: MarketShape = {
+      ...shape,
+      metric: 'snow',
+      threshold: 1,
+      unit: 'in',
+    };
+    const comp = mkComp({
+      outcome: 'yes',
+      description: 'The city received 5 inches of rain over the period.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, snowShape);
+    // Should fall through to inferFromOutcome (snow regex requires "snow" noun)
+    expect(r.source).toBe('inferred-from-outcome');
+  });
+
+  // ───── C3b regression: "5 in late January" doesn't false-match as inches ─────
+  it('does NOT match bare "in" as the unit token (C3b re-audit)', () => {
+    const snowShape: MarketShape = {
+      ...shape,
+      metric: 'snow',
+      threshold: 1,
+      unit: 'in',
+    };
+    const comp = mkComp({
+      outcome: 'yes',
+      description: 'Snow was measured 5 in late January but the threshold was met.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, snowShape);
+    // Bare "in" is no longer a valid unit; should fall through to inference.
+    expect(r.source).toBe('inferred-from-outcome');
+  });
 });

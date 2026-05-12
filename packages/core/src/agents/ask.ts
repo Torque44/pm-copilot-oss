@@ -297,7 +297,13 @@ function describeComparables(comps: AskComparable[] | undefined): string {
         : c.shape.comparator === '<=' ? '≤'
         : c.shape.comparator;
       const thresholdLabel = `${opDisplay}${c.shape.threshold}${c.shape.unit ? ` ${c.shape.unit}` : ''}`;
-      const priceTail = c.resolvedPrice != null ? ` @ ${(c.resolvedPrice * 100).toFixed(0)}¢` : '';
+      // priceTail appends "@ X¢" for resolved comps only. For unresolved
+      // comps the verdict string already includes the price (e.g.
+      // "unresolved @ 50¢ YES"), so doubling it produces "@ 50¢ YES @ 50¢".
+      const showPriceTail = c.outcome === 'yes' || c.outcome === 'no';
+      const priceTail = (showPriceTail && c.resolvedPrice != null)
+        ? ` @ ${(c.resolvedPrice * 100).toFixed(0)}¢`
+        : '';
       return `[comp-${i + 1}] ${c.title.slice(0, 100)} — threshold ${thresholdLabel}${realizedPart} — ${verdict}${priceTail}${endDate}`;
     }
     return `[comp-${i + 1}] ${c.title.slice(0, 100)} — ${verdict}${endDate}`;

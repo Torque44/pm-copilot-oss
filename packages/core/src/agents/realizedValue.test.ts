@@ -30,9 +30,9 @@ function mkComp(over: Partial<ComparableHit> & { payload?: unknown } = {}): Comp
 }
 
 describe('extractRealizedValue', () => {
-  it('parses "settled at N" from Gamma description', () => {
+  it('parses "recorded N tweets" from Gamma description (tweets-anchored)', () => {
     const comp = mkComp({
-      payload: { description: 'This market settled at 213 tweets as of Apr 27 UTC.' } as unknown,
+      payload: { description: 'Musk recorded 213 tweets as of Apr 27 UTC.' } as unknown,
     });
     const r = extractRealizedValue(comp, shape);
     expect(r.value).toBe(213);
@@ -40,13 +40,16 @@ describe('extractRealizedValue', () => {
     expect(r.display).toBe('213 tweets');
   });
 
-  it('parses "final count: N" from Gamma description', () => {
+  it('falls through to inferred when description has no tweets-anchored count', () => {
+    // "final count: N" and "settled at N" no longer match — they aren't
+    // anchored by the metric noun and would false-positive on prices/percents.
     const comp = mkComp({
       payload: { description: 'Final count: 178. Resolved YES.' } as unknown,
     });
     const r = extractRealizedValue(comp, shape);
-    expect(r.value).toBe(178);
-    expect(r.source).toBe('gamma-note');
+    expect(r.value).toBeNull();
+    expect(r.source).toBe('inferred-from-outcome');
+    expect(r.display).toBe('≥ 200 tweets');
   });
 
   it('infers ">= threshold" when YES outcome with no parseable note', () => {
@@ -96,18 +99,17 @@ describe('extractRealizedValue', () => {
   });
 
   it('does not grab an incidental tweet count appearing in description prose', () => {
-    // Description mentions "50 tweets" incidentally before the real
-    // resolution number. The anchored 'tweets' pattern should NOT match
-    // the bare "50 tweets" — but P0 ("settled at N") should fire on the
-    // real number. Verify tier-1 picks the right one.
+    // "50 tweets" doesn't match the anchored regex (needs preceding verb).
+    // "settled at 213" also doesn't match (no metric noun anchor).
+    // Falls through to inferred-from-outcome.
     const comp = mkComp({
       payload: {
         description: 'A user noted 50 tweets in the comments earlier. Market settled at 213 as of Apr 27 UTC.'
       } as unknown,
     });
     const r = extractRealizedValue(comp, shape);
-    expect(r.value).toBe(213); // not 50
-    expect(r.source).toBe('gamma-note');
+    expect(r.source).toBe('inferred-from-outcome');
+    expect(r.value).toBeNull();
   });
 
   it('matches anchored "recorded N tweets" phrasing', () => {
@@ -121,8 +123,9 @@ describe('extractRealizedValue', () => {
   });
 
   it('reads top-level description (the real ComparableHit shape)', () => {
+    // Uses tweets-anchored phrasing so shape-aware regex fires.
     const comp = mkComp({
-      description: 'Market settled at 199 tweets — resolved NO.',
+      description: 'Musk posted 199 tweets — resolved NO.',
     } as Parameters<typeof mkComp>[0]);
     const r = extractRealizedValue(comp, shape);
     expect(r.value).toBe(199);
@@ -136,5 +139,52 @@ describe('extractRealizedValue', () => {
     const r = extractRealizedValue(comp, shape);
     expect(r.value).toBe(144);
     expect(r.source).toBe('gamma-note');
+  });
+
+  // ───── C3 regression: percent / cents / probabilities don't false-positive ─────
+  it('does NOT match "settled at 100% YES" as realized count (C3 audit)', () => {
+    const comp = mkComp({
+      description: 'Market settled at 100% YES — resolved YES on Apr 27.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, shape);
+    // shape.metric is 'tweets'; the % string doesn't match the tweets regex.
+    // Falls through to inferFromOutcome → '≥ 200 tweets'.
+    expect(r.source).toBe('inferred-from-outcome');
+    expect(r.value).toBeNull();
+  });
+
+  it('does NOT match "closed at 95¢ YES" as realized count (C3 audit)', () => {
+    const comp = mkComp({
+      description: 'Closed at 95¢ YES after 14 days. Resolved YES.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, shape);
+    expect(r.source).toBe('inferred-from-outcome');
+  });
+
+  it('does NOT match "settled at 5pm UTC" as realized count (C3 audit)', () => {
+    const comp = mkComp({
+      description: 'Market settled at 5pm UTC on Apr 27. Resolved YES.',
+    } as Parameters<typeof mkComp>[0]);
+    const r = extractRealizedValue(comp, shape);
+    expect(r.source).toBe('inferred-from-outcome');
+  });
+
+  // ───── I1 regression: clean unit formatting in inferFromOutcome ─────
+  it('formats $ with comma + leading $ in inferred display (I1 audit)', () => {
+    const priceShape: MarketShape = {
+      ...shape, metric: 'price', threshold: 100000, unit: '$',
+    };
+    const comp = mkComp({ outcome: 'yes', resolvedPrice: 1.0 });
+    const r = extractRealizedValue(comp, priceShape);
+    expect(r.display).toBe('≥ $100,000'); // not "≥ 100000 $"
+  });
+
+  it('formats °F without extra space in inferred display (I1 audit)', () => {
+    const tempShape: MarketShape = {
+      ...shape, metric: 'temperature', threshold: 95, unit: '°F',
+    };
+    const comp = mkComp({ outcome: 'yes', resolvedPrice: 0.97 });
+    const r = extractRealizedValue(comp, tempShape);
+    expect(r.display).toBe('≥ 95°F'); // not "≥ 95 °F"
   });
 });

@@ -119,6 +119,7 @@ function asMarket(x: unknown): Market | null {
     || (typeof o['criteria'] === 'string' && o['criteria'])
     || (typeof o['description'] === 'string' && o['description'])
     || '';
+  const slug = typeof o['slug'] === 'string' ? o['slug'] : undefined;
   const m: Market = {
     id,
     venue,
@@ -129,6 +130,7 @@ function asMarket(x: unknown): Market | null {
   };
   if (yes !== undefined) m.yes = yes;
   if (no !== undefined) m.no = no;
+  if (slug) m.slug = slug;
   return m;
 }
 

@@ -24,6 +24,17 @@ export function MarketHeader({ market, inWatchlist, onToggleWatchlist }: MarketH
         <div className="mh-title-block">
           <span className="venue-chip mono">{market.venue}</span>
           <h1 className="mh-title">{market.title}</h1>
+          {market.slug && (
+            <a
+              className="mh-trade-btn mono"
+              href={`https://polymarket.com/event/${market.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="open this market on polymarket.com"
+            >
+              trade on polymarket ↗
+            </a>
+          )}
           {onToggleWatchlist && (
             <button
               type="button"

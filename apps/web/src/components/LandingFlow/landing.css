@@ -644,19 +644,20 @@ h1.headline .accent { color: var(--citation); }
   font-family: var(--font-mono);
 }
 .cta-row-real {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  align-items: stretch;
   border: 1px solid var(--border-strong);
   background: var(--bg);
 }
-.cta-row-real span {
-  min-width: 0;
-  padding: 14px 16px;
+.cta-row-real .cta-prompt {
+  flex: 0 0 auto;
+  padding: 14px 0 14px 16px;
   color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: var(--font-mono);
+  font-size: 13px;
+}
+.cta-row-real .cta-input {
+  padding: 14px 12px;
   font-size: 13px;
 }
 .cta-row-real button {
@@ -671,6 +672,11 @@ h1.headline .accent { color: var(--citation); }
   cursor: pointer;
 }
 .cta-row-real button:hover { background: var(--citation); }
+.cta-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .cta-checks {
   margin-top: 18px;
   display: flex;

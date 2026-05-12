@@ -687,7 +687,7 @@ export function LandingFlow({
                   <input
                     type="text"
                     className="cta-input mono"
-                    placeholder="paste polymarket url or press enter to sign in"
+                    placeholder="paste a polymarket url…"
                     value={heroInput}
                     onChange={(e) => { setHeroInput(e.target.value); setHeroError(null); }}
                     spellCheck={false}
@@ -698,6 +698,9 @@ export function LandingFlow({
                     {heroBusy ? 'resolving…' : heroInput.trim() ? 'open market →' : 'sign in →'}
                   </button>
                 </form>
+                <div className="cta-hint mono">
+                  paste a market url to brief it · or leave blank and press enter to sign in
+                </div>
                 <div className="cta-checks">
                   <span>no orders</span>
                   <span>no signing</span>

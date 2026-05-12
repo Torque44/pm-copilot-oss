@@ -19,6 +19,9 @@ export type Market = {
   resolveIn: string;
   criteria: string;
   moreCount?: number;
+  /** Polymarket event slug — used to build the canonical
+   *  `https://polymarket.com/event/{slug}` deep link in the market header. */
+  slug?: string;
 };
 
 export type EventOutcome = {

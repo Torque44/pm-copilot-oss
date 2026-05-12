@@ -311,6 +311,18 @@ body, html { height: 100%; overflow: hidden; }
   background: rgba(251, 191, 36, 0.08);
 }
 .mh-watch-btn.on:hover { background: rgba(251, 191, 36, 0.16); }
+/* Deep-link to the source market on polymarket.com. Brand-cyan pill so it
+   stands out as the primary "leave to trade" CTA — research → execute lives
+   here. */
+.mh-trade-btn {
+  font-size: 11px; padding: 3px 10px; border: 1px solid var(--citation);
+  border-radius: 3px; color: var(--citation); background: rgba(117, 208, 234, 0.08);
+  text-decoration: none; flex-shrink: 0; white-space: nowrap;
+  transition: color 120ms, background 120ms, border-color 120ms;
+}
+.mh-trade-btn:hover {
+  background: var(--citation); color: var(--bg); border-color: var(--citation);
+}
 .mh-prices { display: flex; gap: 16px; }
 .mh-price-block { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .mh-side { font-size: 10px; color: var(--text-muted); }

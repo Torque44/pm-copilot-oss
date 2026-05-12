@@ -184,7 +184,8 @@ async function resolveCanonicalMarket(marketId: string): Promise<MarketMeta | nu
  */
 async function ensureGrounding(
   market: MarketMeta,
-  emit: (ev: AskEvent) => void
+  emit: (ev: AskEvent) => void,
+  signal?: AbortSignal,
 ): Promise<{
   book: BookGrounding | null;
   holders: HoldersGrounding | null;
@@ -205,8 +206,11 @@ async function ensureGrounding(
   emit({ t: 'ask:progress', message: 'fetching grounding (book / holders / news / comparables)…' });
 
   // Swallow supervisor-style events silently; we only need the raw groundings.
+  // Thread the route's abort signal so a client disconnect cancels in-flight
+  // LLM calls inside market/holders/news agents instead of running to
+  // completion (M8 contract — AgentContext.signal is optional).
   const silent = (_ev: AgentEvent) => { /* drop */ };
-  const ctx = { market, emit: silent };
+  const ctx = { market, emit: silent, ...(signal ? { signal } : {}) };
 
   const tasks: Promise<void>[] = [];
   if (!have.book) tasks.push(runMarketAgent(ctx).then((r) => {
@@ -300,6 +304,15 @@ export async function askHandler(req: Request, res: Response) {
     return;
   }
 
+  // Wire a route-level AbortController so a client disconnect (browser tab
+  // close, network drop, navigation away) cancels in-flight LLM/HTTP work
+  // instead of burning BYOK quota on an answer no one is reading. Brief
+  // already does this (M8); ask was overlooked until codex's audit (H2).
+  const abortCtrl = new AbortController();
+  req.on('close', () => {
+    if (!res.writableEnded) abortCtrl.abort();
+  });
+
   // Collect every emitted event into an array. The final ask:done envelope
   // (or ask:error if it failed) holds the structured answer the client
   // renders in the chat panel.
@@ -308,7 +321,7 @@ export async function askHandler(req: Request, res: Response) {
 
   let complete = true;
   try {
-    const grounding = await ensureGrounding(market, emit);
+    const grounding = await ensureGrounding(market, emit, abortCtrl.signal);
     // Pull in the bundled stub tweets so questions about "vetted X handles
     // posting on this market" get a non-empty answer. xactions / live-search
     // would override this at registration time; for now this is the canonical
@@ -337,6 +350,7 @@ export async function askHandler(req: Request, res: Response) {
       question,
       emit,
       askProvider,
+      abortCtrl.signal,
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'ask failed';
@@ -344,6 +358,10 @@ export async function askHandler(req: Request, res: Response) {
     complete = false;
   }
 
+  // Skip writing the response if the client already disconnected — Express
+  // would log an "Cannot set headers after they are sent" or write to a
+  // closed socket otherwise.
+  if (res.writableEnded || abortCtrl.signal.aborted) return;
   const body: AskResponse = { events, complete };
   res.json(body);
 }

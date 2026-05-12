@@ -676,6 +676,10 @@ export async function runAsk(
    *  this provider instead of the global default. Falls back to getProvider()
    *  when omitted. */
   provider?: LLMProvider | null,
+  /** Optional abort signal. The server wires this from req.on('close') so a
+   *  client disconnect mid-ask aborts the in-flight LLM call instead of
+   *  burning BYOK quota. Threaded into provider.complete via opts.signal. */
+  signal?: AbortSignal,
 ): Promise<AskAnswer> {
   const started = Date.now();
   emit({ t: 'ask:start' });
@@ -727,6 +731,7 @@ Respond ONLY with the JSON object described in the system prompt.`;
     jsonOnly: true,
     timeoutMs: 120_000,
     lane: 'ask',
+    ...(signal ? { signal } : {}),
   };
   if (llm.capabilities?.webSearch) {
     askOpts.liveSearch = {

@@ -6,11 +6,12 @@ Run:   python docs/diagrams/build.py
 Writes pmcopilot-architecture.excalidraw alongside this script with the
 REAL vendor logos (from docs/diagrams/logos/*.png, prepared once by
 prepare_logos.py) embedded as base64 data URLs so the file is fully
-self-contained — no external image fetches when opened at excalidraw.com.
+self-contained.
 
-Aesthetic: hand-drawn (Excalifont, roughness 2, lowercase, pastel
-fills) — match the playful look of the original 'how pm-copilot works'
-sketch.
+Aesthetic: clean professional layout — inspired by Stripe / Vercel /
+Cloudflare architecture diagrams.  Pastel fills, sentence case text,
+tight grid spacing, real brand logos.  Coordinates match render_png.py
+so the .excalidraw and the .png show the same thing.
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ def png_data_url(path: Path) -> str:
     return f"data:image/png;base64,{b64}"
 
 
-# logo id  ->  filename in logos/
 LOGOS = {
     "logo-anthropic":  "anthropic.png",
     "logo-openai":     "openai.png",
@@ -64,7 +64,7 @@ def seed() -> int:
     _seed[0] += 1
     return _seed[0]
 
-def rect(x, y, w, h, fill, stroke="#1e1e1e", stroke_w=2, rad=3, roughness=2, _id=None):
+def rect(x, y, w, h, fill, stroke="#28282b", stroke_w=2, rad=3, roughness=1, _id=None):
     return {
         "type": "rectangle",
         "version": 1, "versionNonce": seed(),
@@ -81,7 +81,7 @@ def rect(x, y, w, h, fill, stroke="#1e1e1e", stroke_w=2, rad=3, roughness=2, _id
         "link": None, "locked": False,
     }
 
-def text(x, y, w, h, body, size=20, color="#1e1e1e", align="center"):
+def text(x, y, w, h, body, size=18, color="#28282b", align="center", font_family=5):
     return {
         "type": "text",
         "version": 1, "versionNonce": seed(),
@@ -93,13 +93,13 @@ def text(x, y, w, h, body, size=20, color="#1e1e1e", align="center"):
         "seed": seed(), "groupIds": [], "frameId": None,
         "roundness": None, "boundElements": [], "updated": NOW_MS,
         "link": None, "locked": False,
-        "fontSize": size, "fontFamily": 5,      # 5 = Excalifont (hand-drawn)
+        "fontSize": size, "fontFamily": font_family,
         "text": body, "textAlign": align, "verticalAlign": "top",
         "containerId": None, "originalText": body,
         "lineHeight": 1.25, "baseline": int(size * 0.9),
     }
 
-def arrow(x1, y1, x2, y2, stroke="#1e1e1e", stroke_w=2, style="solid", roughness=2):
+def arrow(x1, y1, x2, y2, stroke="#28282b", stroke_w=2, style="solid", roughness=1):
     return {
         "type": "arrow",
         "version": 1, "versionNonce": seed(),
@@ -134,162 +134,158 @@ def image(x, y, size, file_id):
     }
 
 
-# ---- layout ------------------------------------------------------------
-# canvas ~ 2600 × 1900.   lowercase text throughout — playful sketch vibe.
+# ---- layout (matches render_png.py) -----------------------------------
+W, H = 2400, 1620
+AGENT_W = 360
+GAP = 24
+total_w = 5 * AGENT_W + 4 * GAP
+start_x = (W - total_w) // 2
+center_x = W // 2
 
 elements: list = []
 
-# Title
-elements.append(text(700, 30, 1200, 70, "how pmcopilot.wtf works", size=52))
-elements.append(text(500, 105, 1600, 30, "7 agents  ·  3 search backends  ·  byok llm  ·  every claim cites a real source row, enforced in code",
-                     size=20, color="#666666"))
+# ── Title ────────────────────────────────────────────────────────────
+elements.append(text(0, 30, W, 50, "pmcopilot.wtf · architecture", size=42))
+elements.append(text(0, 90, W, 28,
+                     "7 agents · 3 search backends · BYOK LLM · every claim cites a real source row, enforced in code",
+                     size=18, color="#6e6e76"))
 
 # ── L1: USER ─────────────────────────────────────────────────────────
-elements.append(rect(1050, 195, 500, 95, "#fef3c7"))
-elements.append(text(1060, 220, 480, 60, "1.  you\npaste a polymarket url  ·  ask a question", size=22))
+y = 150
+elements.append(rect(center_x - 240, y, 480, 76, "#fef3c7"))
+elements.append(text(center_x - 240, y + 12, 480, 28, "1.  You", size=22))
+elements.append(text(center_x - 240, y + 46, 480, 22, "Paste a Polymarket URL  ·  Ask a question", size=16))
+
+# arrow user → supervisor
+elements.append(arrow(center_x, y + 78, center_x, y + 102, stroke_w=3))
 
 # ── L2: SUPERVISOR ───────────────────────────────────────────────────
-elements.append(rect(1050, 335, 500, 95, "#dbeafe"))
-elements.append(text(1060, 360, 480, 60, "2.  supervisor\nsanitize title  ·  resolve venue  ·  fan out wave 1", size=22))
+y2 = 254
+elements.append(rect(center_x - 240, y2, 480, 76, "#dbeafe"))
+elements.append(text(center_x - 240, y2 + 12, 480, 28, "2.  Supervisor", size=22))
+elements.append(text(center_x - 240, y2 + 46, 480, 22, "Sanitize title  ·  Resolve venue  ·  Fan out wave 1", size=16))
 
 # ── L3: WAVE 1 AGENTS (5 boxes) ──────────────────────────────────────
-W = 380
-GAP = 50
-total_w = 5 * W + 4 * GAP
-start_x = (2600 - total_w) // 2
-agent_y = 500
-agent_h = 145
+agent_y = 372
+agent_h = 132
 agent_specs = [
-    ("(a)  market",       "orderbook · imbalance ·\nliquidity depth · spread · 24h vol",     "#c7d2fe"),
-    ("(b)  holders",      "top-5 wallets · concentration ·\nside-bias · ens labels",         "#ddd6fe"),
-    ("(c)  news",         "self-healing chain\n3 backends × retry × 6h cache",               "#fef9c3"),
-    ("(d)  sentiment",    "vetted x handles · 14d ·\ntwo-pass · url provenance",             "#d1fae5"),
-    ("(e)  comparables",  "no llm · resolved markets ·\nthreshold-shape · bayesian rate",    "#e5e7eb"),
+    ("(a)  Market",      "Orderbook · imbalance ·\nliquidity depth · spread · 24h vol",  "#c7d2fe"),
+    ("(b)  Holders",     "Top-5 wallets · concentration ·\nside-bias · ENS labels",      "#ddd6fe"),
+    ("(c)  News",        "Self-healing chain\n3 backends × retry × 6h cache",            "#fef9c3"),
+    ("(d)  Sentiment",   "Vetted X handles · 14d ·\ntwo-pass · URL provenance",          "#d1fae5"),
+    ("(e)  Comparables", "No LLM · resolved markets ·\nthreshold-shape · Bayesian rate", "#e5e7eb"),
 ]
 for i, (title_, body, fill) in enumerate(agent_specs):
-    x = start_x + i * (W + GAP)
-    elements.append(rect(x, agent_y, W, agent_h, fill))
-    elements.append(text(x + 10, agent_y + 18, W - 20, 110, f"{title_}\n\n{body}", size=20))
+    x = start_x + i * (AGENT_W + GAP)
+    elements.append(rect(x, agent_y, AGENT_W, agent_h, fill))
+    elements.append(text(x + 12, agent_y + 14, AGENT_W - 24, 30, title_, size=21, align="left"))
+    elements.append(text(x + 12, agent_y + 54, AGENT_W - 24, 70, body, size=15, align="left"))
+    # arrow supervisor → agent
+    cx = x + AGENT_W // 2
+    elements.append(arrow(center_x, y2 + 76, cx, agent_y - 4, stroke_w=2))
 
-# ── L4: DATA SOURCES per-agent (logos + label) ───────────────────────
-src_y = 695
-src_h = 135
+# ── L4: DATA SOURCES per-agent ───────────────────────────────────────
+src_y = 528
+src_h = 120
 src_specs = [
-    # (label, [(logo_id, caption)])
-    ("clob orderbook + gamma meta",              [("logo-polymarket", "polymarket")]),
-    ("data api  ·  holders endpoint",            [("logo-polymarket", "polymarket")]),
-    ("exa  →  pm comments  →  provider web",     [("logo-exa", "exa ai"), ("logo-polymarket", "polymarket")]),
-    ("grok live x-search  ·  vetted handles",    [("logo-xai", "xai grok"), ("logo-x", "x")]),
-    ("gamma resolved-market scan",               [("logo-polymarket", "polymarket")]),
+    ("CLOB orderbook  +  Gamma meta",        [("logo-polymarket", "polymarket")]),
+    ("Data API  ·  holders endpoint",        [("logo-polymarket", "polymarket")]),
+    ("Exa  →  PM comments  →  Provider Web", [("logo-exa", "exa"), ("logo-polymarket", "polymarket")]),
+    ("Grok Live X-Search  ·  vetted handles",[("logo-xai", "xai grok"), ("logo-x", "x")]),
+    ("Gamma  ·  resolved-market scan",       [("logo-polymarket", "polymarket")]),
 ]
 for i, (caption, logos) in enumerate(src_specs):
-    x = start_x + i * (W + GAP)
-    elements.append(rect(x, src_y, W, src_h, "#f9fafb", stroke="#525252", stroke_w=1))
-    # Logo row (real brand PNGs)
-    logo_size = 56
-    logo_total = len(logos) * logo_size + (len(logos) - 1) * 16
-    logo_start = x + (W - logo_total) // 2
+    x = start_x + i * (AGENT_W + GAP)
+    elements.append(rect(x, src_y, AGENT_W, src_h, "#fafafc", stroke="#aaaab4", stroke_w=1))
+    sz = 48
+    gap = 14
+    total_lw = len(logos) * sz + (len(logos) - 1) * gap
+    lx = x + (AGENT_W - total_lw) // 2
     for j, (lid, _name) in enumerate(logos):
-        elements.append(image(logo_start + j * (logo_size + 16), src_y + 14, logo_size, lid))
-    elements.append(text(x + 10, src_y + 82, W - 20, 48, caption, size=15, color="#374151"))
+        elements.append(image(lx + j * (sz + gap), src_y + 12, sz, lid))
+    elements.append(text(x + 12, src_y + 70, AGENT_W - 24, 40, caption, size=15, color="#465064"))
+    # dotted connector agent → source
+    cx = x + AGENT_W // 2
+    elements.append(arrow(cx, agent_y + agent_h + 2, cx, src_y - 2, stroke="#7c7c88", stroke_w=1, style="dotted"))
 
-# vertical arrows: each agent → its data-source box
-for i in range(5):
-    cx = start_x + i * (W + GAP) + W // 2
-    elements.append(arrow(cx, agent_y + agent_h + 5, cx, src_y - 5, stroke="#525252", stroke_w=1, style="dotted"))
-
-# ── L5: BYOK LLM bus (full width) ────────────────────────────────────
-# OpenAI is the active shipping provider; the rest are BYOK-only.
-bus_y = 880
-bus_h = 165
-bus_x = start_x
-bus_w = total_w
-elements.append(rect(bus_x, bus_y, bus_w, bus_h, "#e0e7ff", stroke_w=2))
-elements.append(text(bus_x + 10, bus_y + 12, bus_w - 20, 30,
-                     "primary llm   ·   currently shipping with openai   ·   byok",
+# ── L5: BYOK LLM bus — all 5 in one tight row ────────────────────────
+bus_y = 678
+bus_h = 152
+elements.append(rect(start_x, bus_y, total_w, bus_h, "#e0e7ff"))
+elements.append(text(start_x, bus_y + 14, total_w, 30,
+                     "Primary LLM  ·  BYOK (your key, your bill)",
                      size=22))
 
-# Active default: OpenAI logo (left)
-left_cx = bus_x + 260
-elements.append(image(left_cx - 38, bus_y + 60, 76, "logo-openai"))
-
-# Vertical dashed divider
-elements.append(arrow(bus_x + 530, bus_y + 50, bus_x + 530, bus_y + 135,
-                      stroke="#9999aa", stroke_w=1, style="dashed", roughness=1))
-
-# Right side: BYOK header + 4 small logos
-right_x0 = bus_x + 570
-elements.append(text(right_x0, bus_y + 50, bus_w - (right_x0 - bus_x) - 20, 24,
-                     "also works with your own key — bring any of:",
-                     size=16, color="#374151", align="left"))
-
-byok_logos = [
-    ("logo-anthropic", "anthropic",  "#cc785c"),
-    ("logo-google",    "gemini",     "#1a73e8"),
-    ("logo-xai",       "xai grok",   "#000000"),
-    ("logo-perplexity","perplexity", "#20808d"),
+llm_logos = [
+    ("logo-openai",     "ChatGPT",   "default", "#108a72"),
+    ("logo-anthropic",  "Claude",    "byok",    "#cc785c"),
+    ("logo-google",     "Gemini",    "byok",    "#1a73e8"),
+    ("logo-xai",        "Grok",      "byok",    "#000000"),
+    ("logo-perplexity", "Sonar",     "byok",    "#20808d"),
 ]
-right_w = bus_w - (right_x0 - bus_x) - 40
-slot_w = right_w // 4
-for j, (lid, name, color) in enumerate(byok_logos):
-    cx = right_x0 + j * slot_w + slot_w // 2
-    elements.append(image(cx - 24, bus_y + 78, 48, lid))
-    elements.append(text(cx - 100, bus_y + 132, 200, 20, name, size=13, color=color))
+slot_w = total_w // 5
+for j, (lid, label, tag, color) in enumerate(llm_logos):
+    cx = start_x + j * slot_w + slot_w // 2
+    elements.append(image(cx - 28, bus_y + 50, 56, lid))
+    elements.append(text(cx - 100, bus_y + 110, 200, 22, label, size=16, color=color))
+    tag_color = "#108a72" if tag == "default" else "#82828c"
+    elements.append(text(cx - 80, bus_y + 130, 160, 18, tag, size=12, color=tag_color))
 
-# footnote
-elements.append(text(bus_x + 10, bus_y + bus_h - 22, bus_w - 20, 16,
-                     "keys aes-gcm in indexeddb  ·  sent per-request as headers  ·  never logged  ·  never persisted server-side",
-                     size=12, color="#666666"))
+# central arrow into bus
+elements.append(arrow(center_x, src_y + src_h + 2, center_x, bus_y - 2, stroke_w=3))
 
-# arrow from data sources → bus (one centered)
-elements.append(arrow(1300, src_y + src_h + 5, 1300, bus_y - 5, stroke_w=2))
-
-# ── L6: THESIS (wave 2) ──────────────────────────────────────────────
-thesis_y = 1115
-elements.append(rect(900, thesis_y, 800, 105, "#fbcfe8"))
-elements.append(text(910, thesis_y + 18, 780, 75,
-                     "(f)  thesis    wave 2 — depends on wave 1\n\nsupports vs challenges  ·  direction score  ·  cites by id only",
-                     size=20))
-elements.append(arrow(1300, bus_y + bus_h + 5, 1300, thesis_y - 5))
+# ── L6: THESIS ──────────────────────────────────────────────────────
+elements.append(arrow(center_x, bus_y + bus_h + 2, center_x, 858, stroke_w=3))
+thesis_y = 860
+elements.append(rect(center_x - 380, thesis_y, 760, 80, "#fbcfe8"))
+elements.append(text(center_x - 380, thesis_y + 12, 760, 28, "(f)  Thesis     —     Wave 2", size=22))
+elements.append(text(center_x - 380, thesis_y + 46, 760, 22,
+                     "Supports vs challenges  ·  direction score  ·  cites by id only",
+                     size=16))
 
 # ── L7: SYNTHESIS (highlighted) ──────────────────────────────────────
-synth_y = 1260
-elements.append(rect(750, synth_y, 1100, 145, "#fed7aa", stroke="#d97706", stroke_w=3))
-elements.append(text(760, synth_y + 20, 1080, 110,
-                     "(g)  synthesis — the brief writer\n\ncan cite ONLY ids that exist in upstream evidence\ninvented citations are stripped server-side before render",
-                     size=22, color="#7c2d12"))
-elements.append(arrow(1300, thesis_y + 110, 1300, synth_y - 5))
+elements.append(arrow(center_x, thesis_y + 82, center_x, 968, stroke_w=3))
+synth_y = 970
+elements.append(rect(center_x - 520, synth_y, 1040, 110, "#fed7aa", stroke="#d97706", stroke_w=3))
+elements.append(text(center_x - 520, synth_y + 16, 1040, 30,
+                     "(g)  Synthesis  —  the brief writer",
+                     size=24, color="#7c2d12"))
+elements.append(text(center_x - 520, synth_y + 58, 1040, 22,
+                     "Can cite ONLY ids that exist in upstream evidence  ·  invented citations stripped server-side",
+                     size=15, color="#7c2d12"))
 
-# ── L8: OUTPUT ───────────────────────────────────────────────────────
-brief_y = 1455
-elements.append(rect(1000, brief_y, 600, 105, "#bbf7d0"))
-elements.append(text(1010, brief_y + 22, 580, 70,
-                     "3.  grounded brief\nevery claim is a clickable cite chip — to a real source row",
-                     size=22, color="#14532d"))
-elements.append(arrow(1300, synth_y + 150, 1300, brief_y - 5))
+# ── L8: BRIEF ───────────────────────────────────────────────────────
+elements.append(arrow(center_x, synth_y + 112, center_x, 1108, stroke_w=3))
+brief_y = 1110
+elements.append(rect(center_x - 320, brief_y, 640, 80, "#bbf7d0"))
+elements.append(text(center_x - 320, brief_y + 12, 640, 28, "3.  Grounded Brief", size=22, color="#14532d"))
+elements.append(text(center_x - 320, brief_y + 46, 640, 22,
+                     "Every claim is a clickable cite chip — back to a real source row",
+                     size=16, color="#14532d"))
 
-# ── L9: INVARIANT CALLOUT CARDS (4 across) ───────────────────────────
-inv_y = 1605
-card_w = (total_w - 3 * 30) // 4
+# ── L9: INVARIANTS (4 cards) ─────────────────────────────────────────
+inv_y = 1230
+card_w = (total_w - 3 * 24) // 4
 inv_specs = [
-    ("🚫  no fabrication",
-     "upstream agents build a citation registry from real tool\noutput. the llm only references by index — invented ids\nstripped before render. sentiment url provenance via\ngrok's actual citations[] array."),
-    ("📰  source denylist",
-     "wikipedia, reddit, substack, medium, forbes contributor,\nyahoo aggregator — blocked at agent boundary. curated\nallowlist surfaces trader-grade outlets only; off-list\nsurvivors flagged 'unverified'."),
-    ("♻️  self-healing news",
-     "exa retries 3× × 3 query variants × 429 retry-after.\nfalls through to polymarket comments → provider web.\n6h lru cache hides transient failures behind prior\nsuccess. honest diagnostic only when truly stuck."),
-    ("✅  resolved markets",
-     "sentiment + thesis SKIPPED — both produce their worst\nhallucinations when there's no real-time data to ground\nin. news searches the leadup window (30d before\nresolution), not 'right now'."),
+    ("No fabrication",
+     "Upstream agents build a citation registry from\nreal tool output. The LLM only references by\nindex — invented ids stripped before render."),
+    ("Source denylist",
+     "Wikipedia, Reddit, Substack, Medium, Forbes\ncontributor blocked at agent boundary. Curated\nallowlist surfaces trader-grade outlets only."),
+    ("Self-healing news",
+     "Exa retries 3× × 3 query variants × 429 Retry-\nAfter. Falls through to PM comments → provider\nweb. 6h LRU cache hides transient failures."),
+    ("Resolved markets",
+     "Sentiment + thesis SKIPPED — both produce their\nworst hallucinations without real-time data.\nNews searches 30d before resolution."),
 ]
 for i, (head, body) in enumerate(inv_specs):
-    x = start_x + i * (card_w + 30)
-    elements.append(rect(x, inv_y, card_w, 135, "#ffffff", stroke_w=1, roughness=2))
-    elements.append(text(x + 12, inv_y + 12, card_w - 24, 115, f"{head}\n\n{body}", size=15, align="left"))
+    x = start_x + i * (card_w + 24)
+    elements.append(rect(x, inv_y, card_w, 158, "#fcfcfd", stroke="#aaaab4", stroke_w=1))
+    elements.append(text(x + 16, inv_y + 14, card_w - 32, 28, head, size=18, align="left"))
+    elements.append(text(x + 16, inv_y + 50, card_w - 32, 96, body, size=14, color="#465064", align="left"))
 
 # footer
-elements.append(text(800, 1770, 1000, 22,
-                     "pmcopilot.wtf   ·   github.com/Torque44/pm-copilot-oss",
-                     size=14, color="#999999"))
+elements.append(text(0, H - 42, W, 22,
+                     "pmcopilot.wtf  ·  github.com/Torque44/pm-copilot-oss  ·  keys AES-GCM in IndexedDB · sent as headers · never logged",
+                     size=14, color="#9a9aa3"))
 
 
 # ---- write the file ---------------------------------------------------
@@ -300,7 +296,7 @@ doc = {
     "elements": elements,
     "appState": {
         "gridSize": None,
-        "viewBackgroundColor": "#faf8f3",   # warm cream — matches handdrawn vibe
+        "viewBackgroundColor": "#ffffff",
     },
     "files": files,
 }

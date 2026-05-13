@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Render docs/diagrams/pmcopilot-architecture.png directly with Pillow.
+"""Render docs/diagrams/pmcopilot-architecture.png with Pillow.
 
-Doesn't depend on Excalidraw — emits a clean PNG of the same
-architecture (same boxes, REAL brand logos from logos/, arrows,
-invariant cards).  Hand-drawn / playful aesthetic to match the
-'how pm-copilot works' sketch.
+Clean, professional layout — inspired by Stripe / Vercel / Cloudflare
+architecture diagrams.  No handwriting font, tight grid spacing, pastel
+fills, real brand logos from logos/.
 
 Run:  python docs/diagrams/render_png.py
 """
@@ -16,25 +15,16 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "pmcopilot-architecture.png"
 LOGOS = HERE / "logos"
-W, H = 2600, 1880
-BG = (250, 248, 243)        # warm cream — matches hand-drawn vibe
+W, H = 2400, 1620
+BG = (255, 255, 255)
 
 
-# ----- font loader ------------------------------------------------------
-# Excalidraw / lowercase hand-drawn aesthetic. We try Comic Sans first
-# (closest to "playful sketch" widely installed on Windows), then fall
-# back to clean modern sans.
 def f(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
     bold = weight == "bold"
-    # Comic Sans gives the "kid's-sketchbook" feel; Segoe Print is even
-    # closer to handwritten if available; otherwise Segoe UI.
     candidates = (
-        ["C:\\Windows\\Fonts\\segoesc.ttf",   # Segoe Script (cursive)
-         "C:\\Windows\\Fonts\\segoepr.ttf",   # Segoe Print
-         "C:\\Windows\\Fonts\\comicbd.ttf" if bold else "C:\\Windows\\Fonts\\comic.ttf",
-         "C:\\Windows\\Fonts\\segoeuib.ttf" if bold else "C:\\Windows\\Fonts\\segoeui.ttf",
-         "arial.ttf"]
-    )
+        ["C:\\Windows\\Fonts\\segoeuib.ttf"] if bold
+        else ["C:\\Windows\\Fonts\\segoeui.ttf"]
+    ) + ["arial.ttf"]
     for path in candidates:
         try:
             return ImageFont.truetype(path, size)
@@ -48,15 +38,12 @@ d = ImageDraw.Draw(img, "RGBA")
 
 
 # ----- primitives -------------------------------------------------------
-def box(x, y, w, h, fill, stroke=(30, 30, 30), stroke_w=3, radius=18):
-    """Hand-drawn-ish rounded rectangle: slight double-stroke offset to
-    fake the wobble of an Excalidraw sketch."""
-    d.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=fill, outline=stroke, width=stroke_w)
-    # subtle inner shadow line (handdrawn look — second pass slightly offset)
-    d.rounded_rectangle([x + 2, y + 1, x + w + 1, y + h + 1], radius=radius, outline=stroke + (40,) if len(stroke) == 3 else stroke, width=1)
+def box(x, y, w, h, fill, stroke=(40, 40, 40), stroke_w=2, radius=12):
+    d.rounded_rectangle([x, y, x + w, y + h], radius=radius,
+                        fill=fill, outline=stroke, width=stroke_w)
 
 
-def text(x, y, w, body, size=20, color=(30, 30, 30), align="center", weight="regular"):
+def text(x, y, w, body, size=18, color=(40, 40, 40), align="center", weight="regular", line_h=1.45):
     font = f(size, weight)
     for line in body.split("\n"):
         bbox = d.textbbox((0, 0), line, font=font)
@@ -68,10 +55,10 @@ def text(x, y, w, body, size=20, color=(30, 30, 30), align="center", weight="reg
         else:
             tx = x
         d.text((tx, y), line, fill=color, font=font)
-        y += int(th * 1.55)
+        y += int(th * line_h)
 
 
-def arrow(x1, y1, x2, y2, color=(30, 30, 30), w=3, style="solid"):
+def arrow(x1, y1, x2, y2, color=(40, 40, 40), w=3, style="solid"):
     import math
     if style == "dotted":
         steps = max(int(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 / 10), 1)
@@ -85,7 +72,7 @@ def arrow(x1, y1, x2, y2, color=(30, 30, 30), w=3, style="solid"):
             )
     else:
         d.line([(x1, y1), (x2, y2)], fill=color, width=w)
-    head = 14
+    head = 11
     ang = math.atan2(y2 - y1, x2 - x1)
     ax1 = x2 - head * math.cos(ang - math.pi / 6)
     ay1 = y2 - head * math.sin(ang - math.pi / 6)
@@ -94,7 +81,6 @@ def arrow(x1, y1, x2, y2, color=(30, 30, 30), w=3, style="solid"):
     d.polygon([(x2, y2), (ax1, ay1), (ax2, ay2)], fill=color)
 
 
-# logo cache
 _logo_cache: dict[str, Image.Image] = {}
 def logo(name: str) -> Image.Image:
     if name not in _logo_cache:
@@ -102,193 +88,173 @@ def logo(name: str) -> Image.Image:
     return _logo_cache[name]
 
 def paste_logo(name: str, cx: int, cy: int, target_size: int):
-    """Paste logo PNG centered at (cx,cy) at target_size px."""
-    im = logo(name)
-    im = im.resize((target_size, target_size), Image.LANCZOS)
+    im = logo(name).resize((target_size, target_size), Image.LANCZOS)
     img.paste(im, (cx - target_size // 2, cy - target_size // 2), im)
 
 
+# ----- grid -------------------------------------------------------------
+AGENT_W = 360
+GAP = 24
+total_w = 5 * AGENT_W + 4 * GAP    # 1896
+start_x = (W - total_w) // 2       # 252
+center_x = W // 2                  # 1200
+
+
 # ============== HEADER ==============
-text(0, 35, W, "how pmcopilot.wtf works", size=58, weight="bold")
-text(0, 115, W,
-     "7 agents  ·  3 search backends  ·  byok llm  ·  every claim cites a real source row, enforced in code",
-     size=22, color=(110, 110, 110))
+text(0, 30, W, "pmcopilot.wtf · architecture", size=42, weight="bold")
+text(0, 86, W,
+     "7 agents · 3 search backends · BYOK LLM · every claim cites a real source row, enforced in code",
+     size=18, color=(110, 110, 110))
 
 
 # ============== L1: USER ==============
-box(1050, 200, 500, 95, (254, 243, 199))
-text(1050, 218, 500, "1.   you", size=26, weight="bold")
-text(1050, 257, 500, "paste a polymarket url   ·   ask a question", size=20)
+y = 150
+box(center_x - 240, y, 480, 76, (254, 243, 199))
+text(center_x - 240, y + 12, 480, "1.  You", size=22, weight="bold")
+text(center_x - 240, y + 44, 480, "Paste a Polymarket URL  ·  Ask a question", size=16)
 
 
 # ============== L2: SUPERVISOR ==============
-box(1050, 340, 500, 95, (219, 234, 254))
-text(1050, 358, 500, "2.   supervisor", size=26, weight="bold")
-text(1050, 397, 500, "sanitize title  ·  resolve venue  ·  fan out wave 1", size=20)
-
-
-arrow(1300, 297, 1300, 338, w=4)
+arrow(center_x, 226 + 2, center_x, 252 + 2, w=3)
+y = 254
+box(center_x - 240, y, 480, 76, (219, 234, 254))
+text(center_x - 240, y + 12, 480, "2.  Supervisor", size=22, weight="bold")
+text(center_x - 240, y + 44, 480, "Sanitize title  ·  Resolve venue  ·  Fan out wave 1", size=16)
 
 
 # ============== L3: WAVE 1 (5 agents) ==============
-agent_W, agent_H, GAP = 380, 150, 50
-total_w = 5 * agent_W + 4 * GAP
-start_x = (W - total_w) // 2
-agent_y = 510
+agent_y = 372
+agent_H = 132
 agents = [
-    ("(a)  market",      "orderbook · imbalance ·\nliquidity depth · spread · 24h vol",  (199, 210, 254)),
-    ("(b)  holders",     "top-5 wallets · concentration ·\nside-bias · ens labels",      (221, 214, 254)),
-    ("(c)  news",        "self-healing chain\n3 backends × retry × 6h cache",            (254, 249, 195)),
-    ("(d)  sentiment",   "vetted x handles · 14d ·\ntwo-pass · url provenance",          (209, 250, 229)),
-    ("(e)  comparables", "no llm · resolved markets ·\nthreshold-shape · bayesian rate", (229, 231, 235)),
+    ("(a)  Market",      "Orderbook · imbalance ·\nliquidity depth · spread · 24h vol",  (199, 210, 254)),
+    ("(b)  Holders",     "Top-5 wallets · concentration ·\nside-bias · ENS labels",      (221, 214, 254)),
+    ("(c)  News",        "Self-healing chain\n3 backends × retry × 6h cache",            (254, 249, 195)),
+    ("(d)  Sentiment",   "Vetted X handles · 14d ·\ntwo-pass · URL provenance",          (209, 250, 229)),
+    ("(e)  Comparables", "No LLM · resolved markets ·\nthreshold-shape · Bayesian rate", (229, 231, 235)),
 ]
 for i, (title_, body, fill) in enumerate(agents):
-    x = start_x + i * (agent_W + GAP)
-    box(x, agent_y, agent_W, agent_H, fill)
-    text(x + 10, agent_y + 18, agent_W - 20, title_, size=24, weight="bold")
-    text(x + 10, agent_y + 75, agent_W - 20, body, size=18)
-
-
-# arrows from supervisor to each agent
-for i in range(5):
-    cx = start_x + i * (agent_W + GAP) + agent_W // 2
-    arrow(1300, 437, cx, agent_y - 5, w=3)
+    x = start_x + i * (AGENT_W + GAP)
+    box(x, agent_y, AGENT_W, agent_H, fill)
+    text(x + 12, agent_y + 14, AGENT_W - 24, title_, size=21, weight="bold", align="left")
+    text(x + 12, agent_y + 54, AGENT_W - 24, body, size=15, align="left")
+    # arrow from supervisor → agent
+    cx = x + AGENT_W // 2
+    arrow(center_x, 330 + 2, cx, agent_y - 4, w=2)
 
 
 # ============== L4: DATA SOURCES per-agent (real logos) ==============
-src_y = 700
-src_H = 145
+src_y = 528
+src_H = 120
 src_specs = [
-    ("clob orderbook  +  gamma meta",                          ["polymarket"]),
-    ("data api  ·  holders endpoint",                          ["polymarket"]),
-    ("exa  →  pm comments  →  provider web",                   ["exa", "polymarket"]),
-    ("grok live x-search  ·  vetted handles",                  ["xai", "x"]),
-    ("gamma  ·  resolved-market scan",                         ["polymarket"]),
+    ("CLOB orderbook  +  Gamma meta",                  ["polymarket"]),
+    ("Data API  ·  holders endpoint",                  ["polymarket"]),
+    ("Exa  →  PM comments  →  Provider Web",           ["exa", "polymarket"]),
+    ("Grok Live X-Search  ·  vetted handles",          ["xai", "x"]),
+    ("Gamma  ·  resolved-market scan",                 ["polymarket"]),
 ]
-for i, (label, logo_names) in enumerate(src_specs):
-    x = start_x + i * (agent_W + GAP)
-    box(x, src_y, agent_W, src_H, (249, 250, 251), stroke=(82, 82, 82), stroke_w=2)
-    # paste real logos centered horizontally
-    sz = 60
-    gap = 18
-    total_lw = len(logo_names) * sz + (len(logo_names) - 1) * gap
-    lx = x + (agent_W - total_lw) // 2 + sz // 2
-    for j, name in enumerate(logo_names):
-        paste_logo(name, lx + j * (sz + gap), src_y + 42, sz)
-    text(x + 10, src_y + 95, agent_W - 20, label, size=17, color=(55, 65, 81))
-    # dotted arrow from agent → source
-    cx = x + agent_W // 2
-    arrow(cx, agent_y + agent_H + 5, cx, src_y - 5, color=(82, 82, 82), w=2, style="dotted")
+for i, (label, names) in enumerate(src_specs):
+    x = start_x + i * (AGENT_W + GAP)
+    box(x, src_y, AGENT_W, src_H, (250, 250, 252), stroke=(170, 170, 180), stroke_w=1, radius=10)
+    sz = 48
+    gap = 14
+    total_lw = len(names) * sz + (len(names) - 1) * gap
+    lx = x + (AGENT_W - total_lw) // 2 + sz // 2
+    for j, name in enumerate(names):
+        paste_logo(name, lx + j * (sz + gap), src_y + 36, sz)
+    text(x + 12, src_y + 78, AGENT_W - 24, label, size=15, color=(70, 80, 100))
+    # dotted connector agent → source
+    cx = x + AGENT_W // 2
+    arrow(cx, agent_y + agent_H + 2, cx, src_y - 2, color=(120, 120, 130), w=2, style="dotted")
 
 
-# ============== L5: BYOK LLM BUS ==============
-# OpenAI is the active shipping provider; the rest are BYOK-only.
-# Compact layout — no redundant labels, no overflow.
-bus_y = 905
-bus_H = 170
-bus_x = start_x
-bus_W = total_w
-box(bus_x, bus_y, bus_W, bus_H, (224, 231, 255))
-text(bus_x, bus_y + 12, bus_W,
-     "primary llm    ·    currently shipping with openai    ·    byok",
-     size=24, weight="bold")
+# ============== L5: BYOK LLM BUS — all 5 in one tight row ==============
+bus_y = 678
+bus_H = 152
+box(start_x, bus_y, total_w, bus_H, (224, 231, 255))
 
-# --- left section: OpenAI logo (active default) ---
-left_cx = bus_x + 280
-paste_logo("openai", left_cx, bus_y + 95, 78)
+# Title
+text(start_x, bus_y + 14, total_w,
+     "Primary LLM  ·  BYOK (your key, your bill)",
+     size=22, weight="bold")
 
-# vertical dashed divider
-for yy in range(bus_y + 55, bus_y + 138, 8):
-    d.line([(bus_x + 560, yy), (bus_x + 560, yy + 4)], fill=(160, 160, 180), width=2)
-
-# --- right section: BYOK label + 4 smaller logos in a row ---
-right_x0 = bus_x + 600
-right_W = bus_W - (right_x0 - bus_x) - 30
-text(right_x0, bus_y + 55, right_W,
-     "also works with your own key — bring any of:",
-     size=18, color=(55, 65, 81), align="left", weight="bold")
-
-byok_logos = [
-    ("anthropic",  "anthropic",  (204, 120, 92)),
-    ("gemini",     "gemini",     (26, 115, 232)),
-    ("xai",        "xai grok",   (0, 0, 0)),
-    ("perplexity", "perplexity", (32, 128, 141)),
+# 5 logos in a single row, evenly spaced
+llm = [
+    ("openai",     "ChatGPT",    "default", (16, 138, 114)),
+    ("anthropic",  "Claude",     "byok",    (204, 120, 92)),
+    ("gemini",     "Gemini",     "byok",    (26, 115, 232)),
+    ("xai",        "Grok",       "byok",    (0, 0, 0)),
+    ("perplexity", "Sonar",      "byok",    (32, 128, 141)),
 ]
-slot_w = right_W // 4
-for j, (name, label, color) in enumerate(byok_logos):
-    cx = right_x0 + j * slot_w + slot_w // 2
-    paste_logo(name, cx, bus_y + 110, 48)
-    text(cx - 90, bus_y + 138, 180, label, size=14, color=color, weight="bold")
+logo_sz = 56
+slot_w = total_w // 5
+for j, (name, label, tag, color) in enumerate(llm):
+    cx = start_x + j * slot_w + slot_w // 2
+    paste_logo(name, cx, bus_y + 78, logo_sz)
+    text(cx - 100, bus_y + 110, 200, label, size=16, color=color, weight="bold")
+    tag_color = (16, 138, 114) if tag == "default" else (130, 130, 140)
+    text(cx - 80, bus_y + 130, 160, tag, size=12, color=tag_color)
 
-text(bus_x + 10, bus_y + bus_H - 22, bus_W - 20,
-     "keys aes-gcm in indexeddb  ·  sent per-request as headers  ·  never logged  ·  never persisted server-side",
-     size=13, color=(110, 110, 110))
-
-# arrow into bus from sources
-arrow((bus_x + bus_W // 2), src_y + src_H + 5, (bus_x + bus_W // 2), bus_y - 5, w=4)
+# central arrow into bus
+arrow(center_x, src_y + src_H + 2, center_x, bus_y - 2, w=3)
 
 
 # ============== L6: THESIS ==============
-thesis_y = 1115
-box(900, thesis_y, 800, 110, (251, 207, 232))
-text(900, thesis_y + 14, 800, "(f)   thesis      wave 2 — depends on wave 1",
-     size=24, weight="bold")
-text(900, thesis_y + 60, 800,
-     "supports vs challenges  ·  direction score  ·  cites by id only",
-     size=18)
-
-arrow(1300, bus_y + bus_H + 5, 1300, thesis_y - 5, w=4)
+arrow(center_x, bus_y + bus_H + 2, center_x, 858, w=3)
+thesis_y = 860
+box(center_x - 380, thesis_y, 760, 80, (251, 207, 232))
+text(center_x - 380, thesis_y + 10, 760, "(f)  Thesis     —     Wave 2", size=22, weight="bold")
+text(center_x - 380, thesis_y + 44, 760,
+     "Supports vs challenges  ·  direction score  ·  cites by id only",
+     size=16)
 
 
 # ============== L7: SYNTHESIS (highlighted) ==============
-synth_y = 1265
-box(750, synth_y, 1100, 160, (254, 215, 170), stroke=(217, 119, 6), stroke_w=5)
-text(750, synth_y + 20, 1100, "(g)   synthesis  —  the brief writer",
-     size=30, weight="bold", color=(124, 45, 18))
-text(750, synth_y + 80, 1100,
-     "can cite ONLY ids that exist in upstream evidence\ninvented citations stripped server-side before render",
-     size=20, color=(124, 45, 18))
-
-arrow(1300, thesis_y + 115, 1300, synth_y - 5, w=4)
+arrow(center_x, thesis_y + 80 + 2, center_x, 968, w=3)
+synth_y = 970
+box(center_x - 520, synth_y, 1040, 110, (254, 215, 170), stroke=(217, 119, 6), stroke_w=3)
+text(center_x - 520, synth_y + 14, 1040,
+     "(g)  Synthesis  —  the brief writer",
+     size=24, weight="bold", color=(124, 45, 18))
+text(center_x - 520, synth_y + 56, 1040,
+     "Can cite ONLY ids that exist in upstream evidence  ·  invented citations stripped server-side",
+     size=15, color=(124, 45, 18))
 
 
 # ============== L8: BRIEF ==============
-brief_y = 1470
-box(1000, brief_y, 600, 105, (187, 247, 208))
-text(1000, brief_y + 16, 600, "3.   grounded brief",
-     size=26, weight="bold", color=(20, 83, 45))
-text(1000, brief_y + 60, 600,
-     "every claim is a clickable cite chip — to a real source row",
-     size=18, color=(20, 83, 45))
-
-arrow(1300, synth_y + 165, 1300, brief_y - 5, w=4)
+arrow(center_x, synth_y + 110 + 2, center_x, 1108, w=3)
+brief_y = 1110
+box(center_x - 320, brief_y, 640, 80, (187, 247, 208))
+text(center_x - 320, brief_y + 10, 640, "3.  Grounded Brief", size=22, weight="bold", color=(20, 83, 45))
+text(center_x - 320, brief_y + 44, 640,
+     "Every claim is a clickable cite chip — back to a real source row",
+     size=16, color=(20, 83, 45))
 
 
 # ============== L9: INVARIANTS (4 cards) ==============
-inv_y = 1625
-card_W = (total_w - 3 * 30) // 4
+inv_y = 1230
+card_W = (total_w - 3 * 24) // 4
 invariants = [
-    ("🚫  no fabrication",
-     "upstream agents build a citation\nregistry from real tool output.\nthe llm only references by index —\ninvented ids stripped before render."),
-    ("📰  source denylist",
-     "wikipedia, reddit, substack,\nmedium, forbes contributor blocked\nat agent boundary. curated allowlist\nsurfaces trader-grade outlets only."),
-    ("♻️  self-healing news",
-     "exa retries 3× × 3 query variants ×\n429 retry-after. falls through to\npm comments → provider web. 6h lru\ncache hides transient failures."),
-    ("✅  resolved markets",
-     "sentiment + thesis SKIPPED — both\nproduce their worst hallucinations\nwithout real-time data. news\nsearches 30d before resolution."),
+    ("No fabrication",
+     "Upstream agents build a citation registry from real\ntool output. The LLM only references by index —\ninvented ids stripped before render."),
+    ("Source denylist",
+     "Wikipedia, Reddit, Substack, Medium, Forbes\ncontributor blocked at agent boundary. Curated\nallowlist surfaces trader-grade outlets only."),
+    ("Self-healing news",
+     "Exa retries 3× × 3 query variants × 429 Retry-After.\nFalls through to PM comments → provider web.\n6h LRU cache hides transient failures."),
+    ("Resolved markets",
+     "Sentiment + thesis SKIPPED — both produce their\nworst hallucinations without real-time data. News\nsearches 30d before resolution."),
 ]
 for i, (head, body) in enumerate(invariants):
-    x = start_x + i * (card_W + 30)
-    box(x, inv_y, card_W, 175, (255, 255, 255), stroke=(30, 30, 30), stroke_w=2)
-    text(x + 16, inv_y + 14, card_W - 32, head, size=19, weight="bold", align="left")
-    text(x + 16, inv_y + 56, card_W - 32, body, size=15, color=(55, 65, 81), align="left")
+    x = start_x + i * (card_W + 24)
+    box(x, inv_y, card_W, 158, (252, 252, 253), stroke=(170, 170, 180), stroke_w=1, radius=10)
+    text(x + 16, inv_y + 14, card_W - 32, head, size=18, weight="bold", align="left")
+    text(x + 16, inv_y + 50, card_W - 32, body, size=14, color=(70, 80, 100), align="left", line_h=1.55)
 
 
 # ============== FOOTER ==============
-text(0, H - 50, W, "pmcopilot.wtf   ·   github.com/Torque44/pm-copilot-oss",
-     size=18, color=(150, 150, 150))
+text(0, H - 42, W,
+     "pmcopilot.wtf  ·  github.com/Torque44/pm-copilot-oss  ·  keys AES-GCM in IndexedDB · sent as headers · never logged",
+     size=14, color=(150, 150, 150))
 
 
-# ---- save ----
 img.convert("RGB").save(OUT, "PNG", optimize=True)
 print(f"wrote {OUT}  ({OUT.stat().st_size // 1024} KB, {W}×{H})")

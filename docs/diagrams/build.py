@@ -201,43 +201,45 @@ for i in range(5):
 # ── L5: BYOK LLM bus (full width) ────────────────────────────────────
 # OpenAI is the active shipping provider; the rest are BYOK-only.
 bus_y = 880
-bus_h = 220
+bus_h = 165
 bus_x = start_x
 bus_w = total_w
 elements.append(rect(bus_x, bus_y, bus_w, bus_h, "#e0e7ff", stroke_w=2))
-elements.append(text(bus_x + 10, bus_y + 16, bus_w - 20, 32, "primary llm   ·   currently shipping with openai", size=24))
+elements.append(text(bus_x + 10, bus_y + 12, bus_w - 20, 30,
+                     "primary llm   ·   currently shipping with openai   ·   byok",
+                     size=22))
 
-# Big OpenAI logo on the left half
-left_cx = bus_x + 280
-elements.append(image(left_cx - 55, bus_y + 60, 110, "logo-openai"))
-elements.append(text(left_cx - 220, bus_y + 180, 440, 22, "openai chatgpt  ·  default", size=18, color="#0d8a72"))
+# Active default: OpenAI logo (left)
+left_cx = bus_x + 260
+elements.append(image(left_cx - 38, bus_y + 60, 76, "logo-openai"))
 
-# Vertical divider
-elements.append(arrow(bus_x + 570, bus_y + 60, bus_x + 570, bus_y + 175, stroke="#9999aa", stroke_w=1, style="dashed", roughness=1))
+# Vertical dashed divider
+elements.append(arrow(bus_x + 530, bus_y + 50, bus_x + 530, bus_y + 135,
+                      stroke="#9999aa", stroke_w=1, style="dashed", roughness=1))
 
-# Right side: BYOK label + 4 muted logos in a row
-right_x0 = bus_x + 620
-elements.append(text(right_x0, bus_y + 60, bus_w - (right_x0 - bus_x) - 20, 26,
-                     "also works with your own key — bring any of these:",
-                     size=18, color="#374151", align="left"))
+# Right side: BYOK header + 4 small logos
+right_x0 = bus_x + 570
+elements.append(text(right_x0, bus_y + 50, bus_w - (right_x0 - bus_x) - 20, 24,
+                     "also works with your own key — bring any of:",
+                     size=16, color="#374151", align="left"))
 
 byok_logos = [
-    ("logo-anthropic", "anthropic claude",  "#cc785c"),
-    ("logo-google",    "google gemini",     "#1a73e8"),
-    ("logo-xai",       "xai grok",          "#000000"),
-    ("logo-perplexity","perplexity sonar",  "#20808d"),
+    ("logo-anthropic", "anthropic",  "#cc785c"),
+    ("logo-google",    "gemini",     "#1a73e8"),
+    ("logo-xai",       "xai grok",   "#000000"),
+    ("logo-perplexity","perplexity", "#20808d"),
 ]
 right_w = bus_w - (right_x0 - bus_x) - 40
 slot_w = right_w // 4
 for j, (lid, name, color) in enumerate(byok_logos):
     cx = right_x0 + j * slot_w + slot_w // 2
-    elements.append(image(cx - 30, bus_y + 100, 60, lid))
-    elements.append(text(cx - 140, bus_y + 168, 280, 22, name, size=15, color=color))
+    elements.append(image(cx - 24, bus_y + 78, 48, lid))
+    elements.append(text(cx - 100, bus_y + 132, 200, 20, name, size=13, color=color))
 
-# small footnote
-elements.append(text(bus_x + 10, bus_y + bus_h - 25, bus_w - 20, 18,
+# footnote
+elements.append(text(bus_x + 10, bus_y + bus_h - 22, bus_w - 20, 16,
                      "keys aes-gcm in indexeddb  ·  sent per-request as headers  ·  never logged  ·  never persisted server-side",
-                     size=14, color="#666666"))
+                     size=12, color="#666666"))
 
 # arrow from data sources → bus (one centered)
 elements.append(arrow(1300, src_y + src_h + 5, 1300, bus_y - 5, stroke_w=2))

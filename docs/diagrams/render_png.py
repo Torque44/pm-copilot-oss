@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "pmcopilot-architecture.png"
 LOGOS = HERE / "logos"
-W, H = 2600, 1920
+W, H = 2600, 1880
 BG = (250, 248, 243)        # warm cream — matches hand-drawn vibe
 
 
@@ -183,54 +183,53 @@ for i, (label, logo_names) in enumerate(src_specs):
 
 # ============== L5: BYOK LLM BUS ==============
 # OpenAI is the active shipping provider; the rest are BYOK-only.
+# Compact layout — no redundant labels, no overflow.
 bus_y = 905
-bus_H = 220
+bus_H = 170
 bus_x = start_x
 bus_W = total_w
 box(bus_x, bus_y, bus_W, bus_H, (224, 231, 255))
-text(bus_x, bus_y + 18, bus_W, "primary llm    ·    currently shipping with openai",
-     size=28, weight="bold")
+text(bus_x, bus_y + 12, bus_W,
+     "primary llm    ·    currently shipping with openai    ·    byok",
+     size=24, weight="bold")
 
-# --- left half: big OpenAI logo (the active default) ---
-left_cx = bus_x + 310
-paste_logo("openai", left_cx, bus_y + 110, 110)
-text(left_cx - 240, bus_y + 178, 480, "openai chatgpt   ·   default",
-     size=20, color=(13, 138, 114), weight="bold")
+# --- left section: OpenAI logo (active default) ---
+left_cx = bus_x + 280
+paste_logo("openai", left_cx, bus_y + 95, 78)
 
-# vertical divider
-import math
-for yy in range(bus_y + 65, bus_y + 180, 9):
-    d.line([(bus_x + 640, yy), (bus_x + 640, yy + 5)], fill=(160, 160, 180), width=2)
+# vertical dashed divider
+for yy in range(bus_y + 55, bus_y + 138, 8):
+    d.line([(bus_x + 560, yy), (bus_x + 560, yy + 4)], fill=(160, 160, 180), width=2)
 
-# --- right half: BYOK label + 4 smaller logos in a row ---
-right_x0 = bus_x + 685
+# --- right section: BYOK label + 4 smaller logos in a row ---
+right_x0 = bus_x + 600
 right_W = bus_W - (right_x0 - bus_x) - 30
-text(right_x0, bus_y + 65, right_W,
-     "also works with your own key — bring any of these:",
-     size=20, color=(55, 65, 81), align="left", weight="bold")
+text(right_x0, bus_y + 55, right_W,
+     "also works with your own key — bring any of:",
+     size=18, color=(55, 65, 81), align="left", weight="bold")
 
 byok_logos = [
-    ("anthropic",  "anthropic claude",  (204, 120, 92)),
-    ("gemini",     "google gemini",     (26, 115, 232)),
-    ("xai",        "xai grok",          (0, 0, 0)),
-    ("perplexity", "perplexity sonar",  (32, 128, 141)),
+    ("anthropic",  "anthropic",  (204, 120, 92)),
+    ("gemini",     "gemini",     (26, 115, 232)),
+    ("xai",        "xai grok",   (0, 0, 0)),
+    ("perplexity", "perplexity", (32, 128, 141)),
 ]
 slot_w = right_W // 4
 for j, (name, label, color) in enumerate(byok_logos):
     cx = right_x0 + j * slot_w + slot_w // 2
-    paste_logo(name, cx, bus_y + 122, 64)
-    text(cx - 180, bus_y + 178, 360, label, size=16, color=color, weight="bold")
+    paste_logo(name, cx, bus_y + 110, 48)
+    text(cx - 90, bus_y + 138, 180, label, size=14, color=color, weight="bold")
 
-text(bus_x + 10, bus_y + bus_H - 32, bus_W - 20,
+text(bus_x + 10, bus_y + bus_H - 22, bus_W - 20,
      "keys aes-gcm in indexeddb  ·  sent per-request as headers  ·  never logged  ·  never persisted server-side",
-     size=16, color=(110, 110, 110))
+     size=13, color=(110, 110, 110))
 
 # arrow into bus from sources
 arrow((bus_x + bus_W // 2), src_y + src_H + 5, (bus_x + bus_W // 2), bus_y - 5, w=4)
 
 
 # ============== L6: THESIS ==============
-thesis_y = 1165
+thesis_y = 1115
 box(900, thesis_y, 800, 110, (251, 207, 232))
 text(900, thesis_y + 14, 800, "(f)   thesis      wave 2 — depends on wave 1",
      size=24, weight="bold")
@@ -242,7 +241,7 @@ arrow(1300, bus_y + bus_H + 5, 1300, thesis_y - 5, w=4)
 
 
 # ============== L7: SYNTHESIS (highlighted) ==============
-synth_y = 1315
+synth_y = 1265
 box(750, synth_y, 1100, 160, (254, 215, 170), stroke=(217, 119, 6), stroke_w=5)
 text(750, synth_y + 20, 1100, "(g)   synthesis  —  the brief writer",
      size=30, weight="bold", color=(124, 45, 18))
@@ -254,7 +253,7 @@ arrow(1300, thesis_y + 115, 1300, synth_y - 5, w=4)
 
 
 # ============== L8: BRIEF ==============
-brief_y = 1520
+brief_y = 1470
 box(1000, brief_y, 600, 105, (187, 247, 208))
 text(1000, brief_y + 16, 600, "3.   grounded brief",
      size=26, weight="bold", color=(20, 83, 45))
@@ -266,7 +265,7 @@ arrow(1300, synth_y + 165, 1300, brief_y - 5, w=4)
 
 
 # ============== L9: INVARIANTS (4 cards) ==============
-inv_y = 1675
+inv_y = 1625
 card_W = (total_w - 3 * 30) // 4
 invariants = [
     ("🚫  no fabrication",

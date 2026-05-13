@@ -69,6 +69,12 @@ export const DENYLIST_DOMAINS: ReadonlySet<string> = new Set([
   'forbes.com',           // contributor model, low trust per article
 ]);
 
+// Global newswire + major TV news — allowlisted for EVERY sub-category
+// because they cover sports, politics, macro, geopolitics, tech, culture
+// at trader-grade quality. Without this, users saw "unverified" on
+// cnn.com / espn.co.uk / sky.news on an F1 brief — those are legitimate
+// sources, just not in the niche per-category list. Moving them to the
+// common pool fixes the badge across every sub-category.
 const COMMON_NEUTRAL_NEWS = [
   'reuters.com',
   'apnews.com',
@@ -77,6 +83,14 @@ const COMMON_NEUTRAL_NEWS = [
   'ft.com',
   'nytimes.com',
   'washingtonpost.com',
+  // TV networks (global)
+  'cnn.com', 'cnbc.com', 'nbcnews.com', 'cbsnews.com', 'abcnews.go.com',
+  'bbc.com', 'bbc.co.uk',
+  // global aggregators + wires
+  'news.sky.com', 'theguardian.com', 'aljazeera.com',
+  'usatoday.com', 'usnews.com', 'pbs.org', 'npr.org',
+  // ESPN family (international TLDs)
+  'espn.com', 'espn.co.uk', 'global.espn.com',
 ];
 
 const COMMON_NEUTRAL_HANDLES = [

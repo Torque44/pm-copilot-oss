@@ -156,10 +156,20 @@ export async function getEventForMarketId(
   // embedded `events: [{id, ticker, ...}]` array — the FIRST event in that
   // array is the parent. We fetch the parent event separately so callers
   // get a fully-hydrated GammaEvent (with all sibling markets attached).
+  //
+  // CRITICAL: Gamma's /markets?id= EXCLUDES closed markets by default. A
+  // user pasting the URL of a resolved market hits 404 unless we
+  // explicitly opt in with closed=true. Try the open-default first
+  // (cheaper happy path for active markets); fall back to closed=true so
+  // resolved-market briefs work end-to-end.
   type GammaMarketWithEvents = GammaMarket & {
     events?: Array<{ id: string }>;
   };
-  const arr = await get<GammaMarketWithEvents[]>(`${GAMMA}/markets?id=${encodeURIComponent(marketId)}`);
+  const id = encodeURIComponent(marketId);
+  let arr = await get<GammaMarketWithEvents[]>(`${GAMMA}/markets?id=${id}`);
+  if (!arr?.length) {
+    arr = await get<GammaMarketWithEvents[]>(`${GAMMA}/markets?id=${id}&closed=true`);
+  }
   const m = arr?.[0];
   if (!m) return null;
   const parentEventId = m.events?.[0]?.id;

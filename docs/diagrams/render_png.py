@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "pmcopilot-architecture.png"
 LOGOS = HERE / "logos"
-W, H = 2400, 1660
+W, H = 2400, 1690
 BG = (255, 255, 255)
 
 
@@ -118,30 +118,31 @@ center_x = W // 2                  # 1200
 
 # ============== HEADER ==============
 # Small label "how it works" + big brand "pmcopilot.wtf" below.
+# Generous gaps between heading rows.
 text(0, 24, W, "how it works", size=28, color=(110, 110, 110))
-text(0, 62, W, "pmcopilot.wtf", size=72, weight="bold")
-text(0, 158, W,
+text(0, 82, W, "pmcopilot.wtf", size=72, weight="bold")
+text(0, 192, W,
      "7 agents · 3 search backends · BYOK LLM · every claim cites a real source row, enforced in code",
      size=18, color=(110, 110, 110))
 
 
 # ============== L1: USER ==============
-y = 220
+y = 250
 box(center_x - 240, y, 480, 76, (254, 243, 199))
 text(center_x - 240, y + 12, 480, "1.  You", size=22, weight="bold")
 text(center_x - 240, y + 44, 480, "Paste a Polymarket URL  ·  Ask a question", size=16)
 
 
 # ============== L2: SUPERVISOR ==============
-arrow(center_x, 296 + 2, center_x, 322 + 2, w=3)
-y = 324
+arrow(center_x, 326 + 2, center_x, 352 + 2, w=3)
+y = 354
 box(center_x - 240, y, 480, 76, (219, 234, 254))
 text(center_x - 240, y + 12, 480, "2.  Supervisor", size=22, weight="bold")
 text(center_x - 240, y + 44, 480, "Sanitize title  ·  Resolve venue  ·  Fan out wave 1", size=16)
 
 
 # ============== L3: WAVE 1 (5 agents) ==============
-agent_y = 442
+agent_y = 472
 agent_H = 132
 agents = [
     ("(a)  Market",      "Orderbook · imbalance ·\nliquidity depth · spread · 24h vol",  (199, 210, 254)),
@@ -157,11 +158,11 @@ for i, (title_, body, fill) in enumerate(agents):
     text(x + 12, agent_y + 54, AGENT_W - 24, body, size=15, align="left")
     # arrow from supervisor → agent
     cx = x + AGENT_W // 2
-    arrow(center_x, 400 + 2, cx, agent_y - 4, w=2)
+    arrow(center_x, 430 + 2, cx, agent_y - 4, w=2)
 
 
 # ============== L4: DATA SOURCES per-agent (real logos) ==============
-src_y = 598
+src_y = 628
 src_H = 120
 src_specs = [
     ("CLOB orderbook  +  Gamma meta",                  ["polymarket"]),
@@ -186,7 +187,7 @@ for i, (label, names) in enumerate(src_specs):
 
 
 # ============== L5: BYOK LLM BUS — all 5 in one tight row ==============
-bus_y = 748
+bus_y = 778
 bus_H = 152
 box(start_x, bus_y, total_w, bus_H, (224, 231, 255))
 
@@ -217,8 +218,8 @@ arrow(center_x, src_y + src_H + 2, center_x, bus_y - 2, w=3)
 
 
 # ============== L6: THESIS ==============
-arrow(center_x, bus_y + bus_H + 2, center_x, 928, w=3)
-thesis_y = 930
+arrow(center_x, bus_y + bus_H + 2, center_x, 958, w=3)
+thesis_y = 960
 box(center_x - 380, thesis_y, 760, 80, (251, 207, 232))
 text(center_x - 380, thesis_y + 10, 760, "(f)  Thesis     —     Wave 2", size=22, weight="bold")
 text(center_x - 380, thesis_y + 44, 760,
@@ -227,8 +228,8 @@ text(center_x - 380, thesis_y + 44, 760,
 
 
 # ============== L7: SYNTHESIS (highlighted) ==============
-arrow(center_x, thesis_y + 80 + 2, center_x, 1038, w=3)
-synth_y = 1040
+arrow(center_x, thesis_y + 80 + 2, center_x, 1068, w=3)
+synth_y = 1070
 box(center_x - 520, synth_y, 1040, 110, (254, 215, 170), stroke=(217, 119, 6), stroke_w=3)
 text(center_x - 520, synth_y + 14, 1040,
      "(g)  Synthesis  —  the brief writer",
@@ -239,8 +240,8 @@ text(center_x - 520, synth_y + 56, 1040,
 
 
 # ============== L8: BRIEF ==============
-arrow(center_x, synth_y + 110 + 2, center_x, 1178, w=3)
-brief_y = 1180
+arrow(center_x, synth_y + 110 + 2, center_x, 1208, w=3)
+brief_y = 1210
 box(center_x - 320, brief_y, 640, 80, (187, 247, 208))
 text(center_x - 320, brief_y + 10, 640, "3.  Grounded Brief", size=22, weight="bold", color=(20, 83, 45))
 text(center_x - 320, brief_y + 44, 640,
@@ -249,7 +250,7 @@ text(center_x - 320, brief_y + 44, 640,
 
 
 # ============== L9: INVARIANTS (4 cards) ==============
-inv_y = 1300
+inv_y = 1330
 card_W = (total_w - 3 * 24) // 4
 invariants = [
     ("No fabrication",

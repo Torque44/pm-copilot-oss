@@ -15,22 +15,38 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "pmcopilot-architecture.png"
 LOGOS = HERE / "logos"
-W, H = 2400, 1620
+W, H = 2400, 1660
 BG = (255, 255, 255)
 
 
-def f(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
+# Two font tracks:
+#   - hand: Excalifont-like script (Segoe Script / Segoe Print) for the
+#     heading + body, to match Excalidraw's default font
+#   - sans: clean Segoe UI fallback for tiny labels / footnotes where
+#     handwriting becomes hard to read
+def hand(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
     bold = weight == "bold"
-    candidates = (
-        ["C:\\Windows\\Fonts\\segoeuib.ttf"] if bold
-        else ["C:\\Windows\\Fonts\\segoeui.ttf"]
-    ) + ["arial.ttf"]
+    candidates = [
+        # Bundled Excalifont if present, then Segoe Script (cursive)
+        # then Segoe Print, then Comic Sans, then fall back to sans.
+        "C:\\Windows\\Fonts\\Excalifont-Regular.woff2",
+        "C:\\Windows\\Fonts\\segoesc.ttf",
+        "C:\\Windows\\Fonts\\segoepr.ttf",
+        "C:\\Windows\\Fonts\\comicbd.ttf" if bold else "C:\\Windows\\Fonts\\comic.ttf",
+        "C:\\Windows\\Fonts\\segoeuib.ttf" if bold else "C:\\Windows\\Fonts\\segoeui.ttf",
+        "arial.ttf",
+    ]
     for path in candidates:
         try:
             return ImageFont.truetype(path, size)
         except Exception:
             continue
     return ImageFont.load_default()
+
+
+def f(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
+    # All text in the diagram uses the handwriting track now.
+    return hand(size, weight)
 
 
 img = Image.new("RGBA", (W, H), BG + (255,))
@@ -101,29 +117,31 @@ center_x = W // 2                  # 1200
 
 
 # ============== HEADER ==============
-text(0, 30, W, "pmcopilot.wtf · architecture", size=42, weight="bold")
-text(0, 86, W,
+# Small label "how it works" + big brand "pmcopilot.wtf" below.
+text(0, 24, W, "how it works", size=28, color=(110, 110, 110))
+text(0, 62, W, "pmcopilot.wtf", size=72, weight="bold")
+text(0, 158, W,
      "7 agents · 3 search backends · BYOK LLM · every claim cites a real source row, enforced in code",
      size=18, color=(110, 110, 110))
 
 
 # ============== L1: USER ==============
-y = 150
+y = 220
 box(center_x - 240, y, 480, 76, (254, 243, 199))
 text(center_x - 240, y + 12, 480, "1.  You", size=22, weight="bold")
 text(center_x - 240, y + 44, 480, "Paste a Polymarket URL  ·  Ask a question", size=16)
 
 
 # ============== L2: SUPERVISOR ==============
-arrow(center_x, 226 + 2, center_x, 252 + 2, w=3)
-y = 254
+arrow(center_x, 296 + 2, center_x, 322 + 2, w=3)
+y = 324
 box(center_x - 240, y, 480, 76, (219, 234, 254))
 text(center_x - 240, y + 12, 480, "2.  Supervisor", size=22, weight="bold")
 text(center_x - 240, y + 44, 480, "Sanitize title  ·  Resolve venue  ·  Fan out wave 1", size=16)
 
 
 # ============== L3: WAVE 1 (5 agents) ==============
-agent_y = 372
+agent_y = 442
 agent_H = 132
 agents = [
     ("(a)  Market",      "Orderbook · imbalance ·\nliquidity depth · spread · 24h vol",  (199, 210, 254)),
@@ -139,11 +157,11 @@ for i, (title_, body, fill) in enumerate(agents):
     text(x + 12, agent_y + 54, AGENT_W - 24, body, size=15, align="left")
     # arrow from supervisor → agent
     cx = x + AGENT_W // 2
-    arrow(center_x, 330 + 2, cx, agent_y - 4, w=2)
+    arrow(center_x, 400 + 2, cx, agent_y - 4, w=2)
 
 
 # ============== L4: DATA SOURCES per-agent (real logos) ==============
-src_y = 528
+src_y = 598
 src_H = 120
 src_specs = [
     ("CLOB orderbook  +  Gamma meta",                  ["polymarket"]),
@@ -168,7 +186,7 @@ for i, (label, names) in enumerate(src_specs):
 
 
 # ============== L5: BYOK LLM BUS — all 5 in one tight row ==============
-bus_y = 678
+bus_y = 748
 bus_H = 152
 box(start_x, bus_y, total_w, bus_H, (224, 231, 255))
 
@@ -199,8 +217,8 @@ arrow(center_x, src_y + src_H + 2, center_x, bus_y - 2, w=3)
 
 
 # ============== L6: THESIS ==============
-arrow(center_x, bus_y + bus_H + 2, center_x, 858, w=3)
-thesis_y = 860
+arrow(center_x, bus_y + bus_H + 2, center_x, 928, w=3)
+thesis_y = 930
 box(center_x - 380, thesis_y, 760, 80, (251, 207, 232))
 text(center_x - 380, thesis_y + 10, 760, "(f)  Thesis     —     Wave 2", size=22, weight="bold")
 text(center_x - 380, thesis_y + 44, 760,
@@ -209,8 +227,8 @@ text(center_x - 380, thesis_y + 44, 760,
 
 
 # ============== L7: SYNTHESIS (highlighted) ==============
-arrow(center_x, thesis_y + 80 + 2, center_x, 968, w=3)
-synth_y = 970
+arrow(center_x, thesis_y + 80 + 2, center_x, 1038, w=3)
+synth_y = 1040
 box(center_x - 520, synth_y, 1040, 110, (254, 215, 170), stroke=(217, 119, 6), stroke_w=3)
 text(center_x - 520, synth_y + 14, 1040,
      "(g)  Synthesis  —  the brief writer",
@@ -221,8 +239,8 @@ text(center_x - 520, synth_y + 56, 1040,
 
 
 # ============== L8: BRIEF ==============
-arrow(center_x, synth_y + 110 + 2, center_x, 1108, w=3)
-brief_y = 1110
+arrow(center_x, synth_y + 110 + 2, center_x, 1178, w=3)
+brief_y = 1180
 box(center_x - 320, brief_y, 640, 80, (187, 247, 208))
 text(center_x - 320, brief_y + 10, 640, "3.  Grounded Brief", size=22, weight="bold", color=(20, 83, 45))
 text(center_x - 320, brief_y + 44, 640,
@@ -231,7 +249,7 @@ text(center_x - 320, brief_y + 44, 640,
 
 
 # ============== L9: INVARIANTS (4 cards) ==============
-inv_y = 1230
+inv_y = 1300
 card_W = (total_w - 3 * 24) // 4
 invariants = [
     ("No fabrication",
@@ -251,8 +269,8 @@ for i, (head, body) in enumerate(invariants):
 
 
 # ============== FOOTER ==============
-text(0, H - 42, W,
-     "pmcopilot.wtf  ·  github.com/Torque44/pm-copilot-oss  ·  keys AES-GCM in IndexedDB · sent as headers · never logged",
+text(0, H - 40, W,
+     "github.com/Torque44/pm-copilot-oss",
      size=14, color=(150, 150, 150))
 
 

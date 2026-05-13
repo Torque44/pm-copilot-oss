@@ -135,7 +135,7 @@ def image(x, y, size, file_id):
 
 
 # ---- layout (matches render_png.py) -----------------------------------
-W, H = 2400, 1620
+W, H = 2400, 1660
 AGENT_W = 360
 GAP = 24
 total_w = 5 * AGENT_W + 4 * GAP
@@ -144,14 +144,15 @@ center_x = W // 2
 
 elements: list = []
 
-# ── Title ────────────────────────────────────────────────────────────
-elements.append(text(0, 30, W, 50, "pmcopilot.wtf · architecture", size=42))
-elements.append(text(0, 90, W, 28,
+# ── Title: small label + big brand ──────────────────────────────────
+elements.append(text(0, 24, W, 36, "how it works", size=28, color="#6e6e76"))
+elements.append(text(0, 62, W, 90, "pmcopilot.wtf", size=72))
+elements.append(text(0, 158, W, 28,
                      "7 agents · 3 search backends · BYOK LLM · every claim cites a real source row, enforced in code",
                      size=18, color="#6e6e76"))
 
 # ── L1: USER ─────────────────────────────────────────────────────────
-y = 150
+y = 220
 elements.append(rect(center_x - 240, y, 480, 76, "#fef3c7"))
 elements.append(text(center_x - 240, y + 12, 480, 28, "1.  You", size=22))
 elements.append(text(center_x - 240, y + 46, 480, 22, "Paste a Polymarket URL  ·  Ask a question", size=16))
@@ -160,13 +161,13 @@ elements.append(text(center_x - 240, y + 46, 480, 22, "Paste a Polymarket URL  �
 elements.append(arrow(center_x, y + 78, center_x, y + 102, stroke_w=3))
 
 # ── L2: SUPERVISOR ───────────────────────────────────────────────────
-y2 = 254
+y2 = 324
 elements.append(rect(center_x - 240, y2, 480, 76, "#dbeafe"))
 elements.append(text(center_x - 240, y2 + 12, 480, 28, "2.  Supervisor", size=22))
 elements.append(text(center_x - 240, y2 + 46, 480, 22, "Sanitize title  ·  Resolve venue  ·  Fan out wave 1", size=16))
 
 # ── L3: WAVE 1 AGENTS (5 boxes) ──────────────────────────────────────
-agent_y = 372
+agent_y = 442
 agent_h = 132
 agent_specs = [
     ("(a)  Market",      "Orderbook · imbalance ·\nliquidity depth · spread · 24h vol",  "#c7d2fe"),
@@ -185,7 +186,7 @@ for i, (title_, body, fill) in enumerate(agent_specs):
     elements.append(arrow(center_x, y2 + 76, cx, agent_y - 4, stroke_w=2))
 
 # ── L4: DATA SOURCES per-agent ───────────────────────────────────────
-src_y = 528
+src_y = 598
 src_h = 120
 src_specs = [
     ("CLOB orderbook  +  Gamma meta",        [("logo-polymarket", "polymarket")]),
@@ -209,7 +210,7 @@ for i, (caption, logos) in enumerate(src_specs):
     elements.append(arrow(cx, agent_y + agent_h + 2, cx, src_y - 2, stroke="#7c7c88", stroke_w=1, style="dotted"))
 
 # ── L5: BYOK LLM bus — all 5 in one tight row ────────────────────────
-bus_y = 678
+bus_y = 748
 bus_h = 152
 elements.append(rect(start_x, bus_y, total_w, bus_h, "#e0e7ff"))
 elements.append(text(start_x, bus_y + 14, total_w, 30,
@@ -235,8 +236,8 @@ for j, (lid, label, tag, color) in enumerate(llm_logos):
 elements.append(arrow(center_x, src_y + src_h + 2, center_x, bus_y - 2, stroke_w=3))
 
 # ── L6: THESIS ──────────────────────────────────────────────────────
-elements.append(arrow(center_x, bus_y + bus_h + 2, center_x, 858, stroke_w=3))
-thesis_y = 860
+elements.append(arrow(center_x, bus_y + bus_h + 2, center_x, 928, stroke_w=3))
+thesis_y = 930
 elements.append(rect(center_x - 380, thesis_y, 760, 80, "#fbcfe8"))
 elements.append(text(center_x - 380, thesis_y + 12, 760, 28, "(f)  Thesis     —     Wave 2", size=22))
 elements.append(text(center_x - 380, thesis_y + 46, 760, 22,
@@ -244,8 +245,8 @@ elements.append(text(center_x - 380, thesis_y + 46, 760, 22,
                      size=16))
 
 # ── L7: SYNTHESIS (highlighted) ──────────────────────────────────────
-elements.append(arrow(center_x, thesis_y + 82, center_x, 968, stroke_w=3))
-synth_y = 970
+elements.append(arrow(center_x, thesis_y + 82, center_x, 1038, stroke_w=3))
+synth_y = 1040
 elements.append(rect(center_x - 520, synth_y, 1040, 110, "#fed7aa", stroke="#d97706", stroke_w=3))
 elements.append(text(center_x - 520, synth_y + 16, 1040, 30,
                      "(g)  Synthesis  —  the brief writer",
@@ -255,8 +256,8 @@ elements.append(text(center_x - 520, synth_y + 58, 1040, 22,
                      size=15, color="#7c2d12"))
 
 # ── L8: BRIEF ───────────────────────────────────────────────────────
-elements.append(arrow(center_x, synth_y + 112, center_x, 1108, stroke_w=3))
-brief_y = 1110
+elements.append(arrow(center_x, synth_y + 112, center_x, 1178, stroke_w=3))
+brief_y = 1180
 elements.append(rect(center_x - 320, brief_y, 640, 80, "#bbf7d0"))
 elements.append(text(center_x - 320, brief_y + 12, 640, 28, "3.  Grounded Brief", size=22, color="#14532d"))
 elements.append(text(center_x - 320, brief_y + 46, 640, 22,
@@ -264,7 +265,7 @@ elements.append(text(center_x - 320, brief_y + 46, 640, 22,
                      size=16, color="#14532d"))
 
 # ── L9: INVARIANTS (4 cards) ─────────────────────────────────────────
-inv_y = 1230
+inv_y = 1300
 card_w = (total_w - 3 * 24) // 4
 inv_specs = [
     ("No fabrication",
@@ -283,8 +284,8 @@ for i, (head, body) in enumerate(inv_specs):
     elements.append(text(x + 16, inv_y + 50, card_w - 32, 96, body, size=14, color="#465064", align="left"))
 
 # footer
-elements.append(text(0, H - 42, W, 22,
-                     "pmcopilot.wtf  ·  github.com/Torque44/pm-copilot-oss  ·  keys AES-GCM in IndexedDB · sent as headers · never logged",
+elements.append(text(0, H - 40, W, 22,
+                     "github.com/Torque44/pm-copilot-oss",
                      size=14, color="#9a9aa3"))
 
 

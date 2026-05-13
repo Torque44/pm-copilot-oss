@@ -199,27 +199,40 @@ for i in range(5):
     elements.append(arrow(cx, agent_y + agent_h + 5, cx, src_y - 5, stroke="#525252", stroke_w=1, style="dotted"))
 
 # ── L5: BYOK LLM bus (full width) ────────────────────────────────────
+# OpenAI is the active shipping provider; the rest are BYOK-only.
 bus_y = 880
-bus_h = 195
+bus_h = 220
 bus_x = start_x
 bus_w = total_w
 elements.append(rect(bus_x, bus_y, bus_w, bus_h, "#e0e7ff", stroke_w=2))
-elements.append(text(bus_x + 10, bus_y + 20, bus_w - 20, 32, "primary llm   ·   your key, your bill   ·   byok", size=24))
+elements.append(text(bus_x + 10, bus_y + 16, bus_w - 20, 32, "primary llm   ·   currently shipping with openai", size=24))
 
-# 5 logos in a row inside the bus
-llm_logos = [
+# Big OpenAI logo on the left half
+left_cx = bus_x + 280
+elements.append(image(left_cx - 55, bus_y + 60, 110, "logo-openai"))
+elements.append(text(left_cx - 220, bus_y + 180, 440, 22, "openai chatgpt  ·  default", size=18, color="#0d8a72"))
+
+# Vertical divider
+elements.append(arrow(bus_x + 570, bus_y + 60, bus_x + 570, bus_y + 175, stroke="#9999aa", stroke_w=1, style="dashed", roughness=1))
+
+# Right side: BYOK label + 4 muted logos in a row
+right_x0 = bus_x + 620
+elements.append(text(right_x0, bus_y + 60, bus_w - (right_x0 - bus_x) - 20, 26,
+                     "also works with your own key — bring any of these:",
+                     size=18, color="#374151", align="left"))
+
+byok_logos = [
     ("logo-anthropic", "anthropic claude",  "#cc785c"),
-    ("logo-openai",    "openai chatgpt",    "#0d8a72"),
     ("logo-google",    "google gemini",     "#1a73e8"),
     ("logo-xai",       "xai grok",          "#000000"),
     ("logo-perplexity","perplexity sonar",  "#20808d"),
 ]
-llm_logo_size = 70
-slot_w = (bus_w - 80) // 5
-for j, (lid, name, color) in enumerate(llm_logos):
-    cx = bus_x + 40 + j * slot_w + slot_w // 2
-    elements.append(image(cx - llm_logo_size // 2, bus_y + 65, llm_logo_size, lid))
-    elements.append(text(cx - 150, bus_y + 145, 300, 22, name, size=17, color=color))
+right_w = bus_w - (right_x0 - bus_x) - 40
+slot_w = right_w // 4
+for j, (lid, name, color) in enumerate(byok_logos):
+    cx = right_x0 + j * slot_w + slot_w // 2
+    elements.append(image(cx - 30, bus_y + 100, 60, lid))
+    elements.append(text(cx - 140, bus_y + 168, 280, 22, name, size=15, color=color))
 
 # small footnote
 elements.append(text(bus_x + 10, bus_y + bus_h - 25, bus_w - 20, 18,

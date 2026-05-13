@@ -129,20 +129,20 @@ png_bytes = bytes(resvg_py.svg_to_bytes(svg_string=anthropic_svg))
 img = Image.open(BytesIO(png_bytes))
 fit_square(img).save(OUT / "anthropic.png", "PNG")
 
-# 7) perplexity.png  — the official wedge-P glyph
+# 7) perplexity.png  — Perplexity's official mark: black square with a
+#    white hexagonal-hourglass frame, vertical bisector, and inner star.
 perplexity_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" fill="white"/>
-  <g fill="#20808d">
-    <!-- vertical line through center -->
-    <rect x="122" y="40" width="12" height="176" rx="2"/>
-    <!-- top-left wedge -->
-    <path d="M48 92 L122 156 L122 92 Z"/>
-    <!-- top-right wedge -->
-    <path d="M208 92 L134 156 L134 92 Z"/>
-    <!-- bottom-left wedge -->
-    <path d="M48 164 L122 100 L122 164 Z" fill-opacity="0.25"/>
-    <!-- bottom-right wedge -->
-    <path d="M208 164 L134 100 L134 164 Z" fill-opacity="0.25"/>
+  <rect width="256" height="256" fill="black"/>
+  <g fill="none" stroke="white" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter">
+    <!-- outer hexagonal-hourglass frame (top trapezoid + bottom trapezoid) -->
+    <path d="M 60 54 L 196 54 L 162 128 L 196 202 L 60 202 L 94 128 Z"/>
+    <!-- vertical center line, extends past frame top/bottom -->
+    <line x1="128" y1="24" x2="128" y2="232"/>
+    <!-- mid horizontal pinch -->
+    <line x1="94"  y1="128" x2="162" y2="128"/>
+    <!-- inner X (diagonals through pinch) -->
+    <line x1="78"  y1="78"  x2="178" y2="178"/>
+    <line x1="178" y1="78"  x2="78"  y2="178"/>
   </g>
 </svg>"""
 png_bytes = bytes(resvg_py.svg_to_bytes(svg_string=perplexity_svg))

@@ -271,10 +271,28 @@ export function pickBestSubMarket(ev: GammaEvent): GammaMarket | null {
   const candidates = ev.markets.filter(m =>
     m.active && !m.closed && m.enableOrderBook !== false && m.acceptingOrders !== false
   );
-  if (!candidates.length) return null;
-  // Prefer by 24h volume, fall back to all-time
-  candidates.sort((a, b) => (b.volume24hr ?? 0) - (a.volume24hr ?? 0) || Number(b.volume ?? 0) - Number(a.volume ?? 0));
-  return candidates[0] ?? null;
+  if (candidates.length) {
+    // Active path: prefer by 24h volume, fall back to all-time
+    candidates.sort((a, b) => (b.volume24hr ?? 0) - (a.volume24hr ?? 0) || Number(b.volume ?? 0) - Number(a.volume ?? 0));
+    return candidates[0] ?? null;
+  }
+  // Resolved-event fallback: every sub-market is closed. Pick the winning
+  // outcome (price closest to 1.00 on the YES side) so the brief renders a
+  // post-mortem with the correct "final YES @ $X" banner. Without this
+  // fallback, /api/resolve 404s every resolved-market URL.
+  const closed = ev.markets.filter(m => m.closed);
+  if (!closed.length) return null;
+  // pickBestSubMarket sort: outcome with highest YES price first (the
+  // winner), then by all-time volume as a tiebreaker.
+  closed.sort((a, b) => {
+    const aPrices = parseJson<string[]>(a.outcomePrices, []);
+    const bPrices = parseJson<string[]>(b.outcomePrices, []);
+    const aYes = aPrices[0] != null ? Number(aPrices[0]) : 0;
+    const bYes = bPrices[0] != null ? Number(bPrices[0]) : 0;
+    if (aYes !== bYes) return bYes - aYes;
+    return Number(b.volume ?? 0) - Number(a.volume ?? 0);
+  });
+  return closed[0] ?? null;
 }
 
 export function gammaToMarketMeta(

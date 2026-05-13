@@ -2,42 +2,31 @@
 
 ## Files
 
-- [`pmcopilot-architecture.excalidraw`](./pmcopilot-architecture.excalidraw) —
-  the canonical hand-drawn diagram. Open at [excalidraw.com](https://excalidraw.com)
-  → Menu → Open → select this file. Edit, drop in real logo PNGs, export to
-  PNG/SVG, embed in pitches.
-- The Mermaid mirror below renders in GitHub so the diagram is readable
-  without opening Excalidraw.
+- **[`pmcopilot-architecture.excalidraw`](./pmcopilot-architecture.excalidraw)** —
+  the canonical hand-drawn diagram with embedded brand logos. Open at
+  [excalidraw.com](https://excalidraw.com) → Menu → Open → select this file.
+  Edit, export to PNG/SVG, embed in pitches.
+- **[`build.py`](./build.py)** — script that generates the `.excalidraw`
+  file. Edit the script + re-run (`python docs/diagrams/build.py`) if you
+  want to change the diagram structure; never hand-edit the `.excalidraw`
+  JSON.
+- This README has a Mermaid mirror that GitHub renders so the diagram is
+  readable without opening Excalidraw.
 
-## How to add real brand logos to the .excalidraw
+The logos in the file are **base64-embedded SVG badges** (per-vendor color +
+single-letter monogram). To swap in real press-kit PNGs:
 
-The file uses brand-coloured text for each provider/data source so it's
-self-contained and human-readable. To swap text for actual logos:
-
-1. Open the file at excalidraw.com.
-2. Drag the logo PNG onto the canvas (recommend ~80×80 px for inline,
-   ~120×120 for header logos).
-3. Right-click the logo → "Send to back" so it sits behind the text label.
-4. Drag the logo over the matching text (`Anthropic Claude` / `OpenAI ChatGPT`
-   / etc.). Optionally delete the text once the logo is positioned.
-
-Suggested logo sources (use the brand assets, not random downloads):
-
-- Anthropic Claude — anthropic.com/brand
-- OpenAI ChatGPT — openai.com/brand
-- Google Gemini — about.google/brand-resource-center
-- xAI Grok — x.ai (brand assets in footer)
-- Perplexity — perplexity.ai/brand
-- Polymarket — polymarket.com (favicon works for inline use)
-- Exa AI — exa.ai (logo in nav)
+1. Open at excalidraw.com.
+2. Click a logo, hit `delete`.
+3. Drag the real PNG onto the canvas in the same spot.
 
 ---
 
-## Mermaid mirror
+## Mermaid mirror (renders on GitHub)
 
 ```mermaid
 flowchart TB
-    user["1. YOU<br/>paste polymarket url or ask a question"]:::user
+    user["1. YOU<br/>paste a polymarket url · ask a question"]:::user
     supervisor["2. SUPERVISOR<br/>sanitize title · resolve venue · fan out wave 1"]:::supervisor
 
     user --> supervisor
@@ -45,9 +34,9 @@ flowchart TB
     subgraph WAVE1 ["wave 1 — parallel fan-out"]
         direction LR
         market["(a) MARKET<br/>orderbook · imbalance ·<br/>liquidity depth · spread"]:::market
-        holders["(b) HOLDERS<br/>top-5 wallets · concentration ·<br/>whale side-bias"]:::holders
+        holders["(b) HOLDERS<br/>top-5 wallets · concentration ·<br/>side-bias · ENS labels"]:::holders
         news["(c) NEWS<br/>self-healing chain<br/>3 backends × retry × 6h cache"]:::news
-        sentiment["(d) SENTIMENT<br/>vetted X handles · 14d ·<br/>URL provenance"]:::sentiment
+        sentiment["(d) SENTIMENT<br/>vetted X handles · 14d ·<br/>two-pass · URL provenance"]:::sentiment
         comparables["(e) COMPARABLES<br/>no LLM · resolved markets ·<br/>Bayesian base rate"]:::comparables
     end
 
@@ -72,7 +61,7 @@ flowchart TB
     sentiment -.-> xai
     comparables -.-> resolved
 
-    byok["PRIMARY LLM · your key, your bill · BYOK<br/><br/>Anthropic Claude · OpenAI ChatGPT · Google Gemini · xAI Grok · Perplexity Sonar<br/><br/>keys AES-GCM in IndexedDB · sent per-request as headers · never logged"]:::byok
+    byok["PRIMARY LLM · your key, your bill · BYOK<br/><br/>🟧 Anthropic Claude · 🟩 OpenAI ChatGPT · 🟦 Google Gemini · ⬛ xAI Grok · 🟪 Perplexity Sonar<br/><br/>keys AES-GCM in IndexedDB · sent per-request as headers · never logged"]:::byok
 
     polyclob --> byok
     polydata --> byok
@@ -80,7 +69,7 @@ flowchart TB
     xai --> byok
     resolved --> byok
 
-    thesis["(f) THESIS — wave 2<br/>supports vs challenges · direction score<br/>cites IDs only"]:::thesis
+    thesis["(f) THESIS — wave 2<br/>supports vs challenges · direction score<br/>cites by id only"]:::thesis
     synthesis["(g) SYNTHESIS — the brief writer<br/>can cite ONLY ids that exist in upstream evidence<br/>invented citations stripped server-side"]:::synthesis
     brief["3. GROUNDED BRIEF<br/>every claim is a clickable cite chip"]:::brief
 
@@ -104,7 +93,7 @@ flowchart TB
 
 ---
 
-## Invariants enforced in code (the "10x better" payload)
+## Invariants enforced in code
 
 ### 🚫 No fabrication
 
@@ -124,8 +113,9 @@ model literally cannot mint a URL.
 Wikipedia, Reddit, Substack, Medium, Forbes contributor, Yahoo aggregator
 are blocked at the agent boundary (3 layers: Exa pre-filter, news chain
 post-filter, agent rendering). Curated allowlist per sub-category surfaces
-only trader-grade outlets; off-list survivors get an "unverified" badge
-the trader can discount.
+only trader-grade outlets; off-list survivors get an "unverified" badge.
+Global TV networks (CNN/CNBC/NBC/BBC/Sky/Al Jazeera/ESPN) are verified
+across every sub-category.
 
 ### ♻️ Self-healing news chain
 
@@ -150,6 +140,14 @@ hallucinations when there's no real-time data to ground in. News still
 runs but searches the 30-day window *before* resolution, not "right now".
 A slate-amber banner above the market header signals the brief is a
 post-mortem.
+
+### 🔍 Live web for ask
+
+The ask agent (chat panel) also calls **Exa** per question to back-fill
+the prompt with last-30-days web sources. Each hit registers as
+`[ask-src-N]` in the citation registry; the LLM cites them by index.
+Closes the "no live web search in this chat" gap — current-events
+questions get fresh sources, not training-data recall.
 
 ### 🔒 BYOK key handling
 

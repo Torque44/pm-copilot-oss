@@ -7,7 +7,7 @@
 // behavior so a refactor doesn't quietly regress the salvage.
 
 import { describe, it, expect } from 'vitest';
-import { salvageSectionedClaims } from './ask';
+import { isMultiIntent, salvageSectionedClaims } from './ask';
 import type { Citation } from './types';
 
 // Test fixture registry. Citation requires label + payload; we use the
@@ -107,5 +107,67 @@ describe('salvageSectionedClaims', () => {
     expect(out).toHaveLength(2);
     expect(out[0]!.text).toMatch(/^\*\*Thesis \(YES\):\*\*/);
     expect(out[1]!.text).toMatch(/^\*\*Thesis \(NO\):\*\*/);
+  });
+});
+
+// ---------------------------------------------------------------
+// isMultiIntent — gate that keeps the fast-path from hijacking
+// compound questions and returning a single-intent answer.
+// Bug it fixes: a question like
+//   "trump rejected the deal twice this month. why is YES at 0.61?
+//    show me book depth, top holders, and one comparable resolved market."
+// matched the `top|biggest|largest .* holder` regex and the fast-path
+// returned only the holders snippet, dropping the other three asks.
+// ---------------------------------------------------------------
+describe('isMultiIntent', () => {
+  it('lets simple single-intent questions through (returns false)', () => {
+    expect(isMultiIntent('top holders?')).toBe(false);
+    expect(isMultiIntent('who are the biggest YES holders')).toBe(false);
+    expect(isMultiIntent("what's the spread?")).toBe(false);
+    expect(isMultiIntent('what is the mid')).toBe(false);
+    expect(isMultiIntent('show me top holders please')).toBe(false);
+  });
+
+  it('flags the original bug-report question as multi-intent', () => {
+    const q = 'trump rejected the deal twice this month. why is YES still at 0.61? show me book depth, top holders, and one comparable resolved market.';
+    expect(isMultiIntent(q)).toBe(true);
+  });
+
+  it('flags two-question-mark messages as multi-intent', () => {
+    expect(isMultiIntent("what's the spread? and who are the top holders?")).toBe(true);
+  });
+
+  it('flags "? <directive>" patterns as multi-intent', () => {
+    expect(isMultiIntent('why is YES at 0.61? show me book depth')).toBe(true);
+    expect(isMultiIntent('how concentrated are holders? tell me the comp')).toBe(true);
+  });
+
+  it('flags explicit conjunctions joining independent asks', () => {
+    expect(isMultiIntent('show me top holders, also give me one comp')).toBe(true);
+    expect(isMultiIntent('top holders, plus a comparable resolved market')).toBe(true);
+    expect(isMultiIntent('show me holders; what news catalysts moved this')).toBe(true);
+  });
+
+  it('flags messages that hit two or more distinct intent buckets', () => {
+    // holders + book
+    expect(isMultiIntent('top holders and book depth')).toBe(true);
+    // why + news
+    expect(isMultiIntent('why is this moving on the latest news')).toBe(true);
+    // comp + holders
+    expect(isMultiIntent('top holders for past resolved comparables')).toBe(true);
+  });
+
+  it('flags very long messages as multi-intent regardless of structure', () => {
+    const long = 'x'.repeat(150);
+    expect(isMultiIntent(long)).toBe(true);
+  });
+
+  it('does NOT flag "spread and depth" (one bucket: book) as multi-intent', () => {
+    expect(isMultiIntent("what's the spread and depth")).toBe(false);
+  });
+
+  it('handles empty / whitespace strings safely', () => {
+    expect(isMultiIntent('')).toBe(false);
+    expect(isMultiIntent('   ')).toBe(false);
   });
 });

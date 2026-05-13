@@ -106,6 +106,20 @@ HOW TO RESPOND BASED ON QUESTION TYPE
 
   Each section is a SEPARATE entry in the claims array, each ≤ 60 words.
 
+▸ COMPOUND question — the user packed multiple distinct asks into one message. Signals: two or more "?" marks, a question followed by an imperative ("why is X? show me Y and Z"), or a comma-separated list of asks like "show me book depth, top holders, and one comparable".
+  Example: "trump rejected the deal twice this month. why is YES still at 0.61? show me book depth, top holders, and one comparable resolved market."
+
+  → Reply with ONE claim PER distinct ask, in the order the user wrote them. 1-3 sentences each. Cite from the supplied evidence. Do NOT use the \`**Section:**\` labels (those are for the full-brief mode) — just answer each part directly. Do NOT collapse multiple asks into one block; each part of the user's question gets its own claim entry.
+
+  Example shape: {"claims":[
+    {"text":"Despite the two rejections, YES is at 61¢ because the deadline is 231 days out and the orderbook hasn't been forced down — only 39% NO interest at top-of-book [book-stats]. Headline noise hasn't translated into real flow yet.","citations":["book-stats"]},
+    {"text":"Book depth (YES side): mid 0.61, spread 1¢, $140.7k within ±5¢ of mid [book-stats]. Top bid 0.60 × 14,653, top ask 0.62 × 14,653 [book-1b] [book-1a].","citations":["book-stats","book-1b","book-1a"]},
+    {"text":"Top holders: ArmageddonRewardsBilly YES $23.5k [whale-3], 63H4 YES $21.7k [whale-4], TheRealWarMonger YES $18.9k [whale-5]. Overall split YES 60% / NO 40% [whale-stats].","citations":["whale-3","whale-4","whale-5","whale-stats"]},
+    {"text":"Closest comparable: 'Will Russia/Ukraine sign permanent peace deal by Dec 31 2024' resolved NO at 4¢ [comp-1] — same threshold-in-window shape, same trader skepticism on the long-dated deadline.","citations":["comp-1"]}
+  ]}
+
+  NEVER answer a compound question with only one of its parts. If the user asked for 4 things, return 4 claims (skipping the part only if the grounding genuinely lacks it — and explicitly say so in its place).
+
 ▸ OUT-OF-GROUNDING factual question — asks for a SPECIFIC recent fact whose answer isn't in the brief's grounding.
   Examples: "who won race 5 of the 2026 season by how many seconds?", "what was the close of TSLA today?"
 
@@ -573,16 +587,90 @@ export function salvageSectionedClaims(
 }
 
 /**
+ * Detect a multi-intent / compound question.  The fast-path returns a
+ * narrow answer for a single intent ("top holders?", "what's the
+ * spread?"); when the user actually asked several things at once, we
+ * must bypass the fast-path and let the LLM address every part.
+ *
+ * A question is treated as multi-intent when ANY of these hold:
+ *  - two or more "?" marks
+ *  - one "?" followed by another directive ("show me…", "tell me…",
+ *    "give me…", "what about…")
+ *  - explicit conjunctions joining independent asks
+ *    (" and show ", " also ", " plus ", "; ")
+ *  - the question matches two or more distinct intent buckets
+ *    (holders, book/spread, news/catalysts, comparables, "why", kol)
+ *  - sheer length (>140 chars) — long messages are almost always
+ *    compound in practice
+ *
+ * Exported for unit testing.
+ */
+export function isMultiIntent(question: string): boolean {
+  const q = question.trim().toLowerCase();
+  if (!q) return false;
+
+  // Two question marks ⇒ at least two questions.
+  const qmarks = (q.match(/\?/g) ?? []).length;
+  if (qmarks >= 2) return true;
+
+  // "? <directive>" pattern — one question followed by an imperative.
+  if (qmarks === 1 && /\?\s*(?:show|tell|give|find|explain|compare|what|who|how|why)\b/.test(q)) {
+    return true;
+  }
+
+  // Explicit conjunctions that join independent asks.  We deliberately
+  // do NOT match a bare " and " (too common inside single-intent
+  // questions like "what's the spread and depth?") — only conjunctions
+  // that bridge distinct verb phrases.
+  if (/\b(?:also|plus)\b/.test(q)) return true;
+  if (/;|\.\s+(?:show|tell|give|why|how|what)\b/.test(q)) return true;
+  if (/\band\s+(?:show|tell|give|find|one\b)/.test(q)) return true;
+
+  // Length heuristic — long messages are compound by practice.  This
+  // catches the "trump rejected the deal twice this month. why is YES
+  // still at 0.61? show me book depth, top holders, and one comparable"
+  // shape even when no other heuristic fires.
+  if (q.length > 140) return true;
+
+  // Multiple distinct intent buckets.  Pluralised tokens use `s?` so
+  // both "holder" and "holders" match — bare `\bholder\b` fails on
+  // "holders" because `s` is a word character.
+  const buckets: RegExp[] = [
+    /\b(?:holders?|whales?|wallets?|smart\s+money)\b/,
+    /\b(?:spread|book|depth|liquid(?:ity)?|orderbook|mid)\b/,
+    /\b(?:news|catalysts?|articles?|headlines?)\b/,
+    /\b(?:comp(?:arable)?s?|past|history|base\s*rate|resolved)\b/,
+    /\bwhy\b/,
+    /\b(?:sentiment|kols?|tweets?|twitter)\b/,
+  ];
+  const hits = buckets.reduce((n, rx) => n + (rx.test(q) ? 1 : 0), 0);
+  if (hits >= 2) return true;
+
+  return false;
+}
+
+/**
  * Fast-path: deterministic answers for the most common demo questions.
  * These never call the LLM, so they CANNOT time out. Returns null if the
  * question doesn't match any pattern, in which case we fall through to the
  * full LLM path.
+ *
+ * IMPORTANT: the fast-path only fires for single-intent questions.  A
+ * compound question (multiple asks in one message) is routed to the LLM
+ * so every part of the question gets addressed — see isMultiIntent.
  */
 function fastPath(
   question: string,
   grounding: AskGrounding,
   registry: Map<string, Citation>
 ): AskAnswer | null {
+  // Compound / multi-intent questions: bail out and let the LLM
+  // address every part.  Without this gate a question like
+  //   "why is YES at 0.61? show me book depth, top holders, and a comp"
+  // would match the holders regex and return ONLY the holders snippet,
+  // dropping 75% of the user's intent on the floor.
+  if (isMultiIntent(question)) return null;
+
   const q = question.toLowerCase().trim();
 
   // Pattern 1: top holders / who holds / smart money / whales

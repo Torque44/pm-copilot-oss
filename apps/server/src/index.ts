@@ -12,9 +12,12 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { byokHeader } from './middleware/byokHeader.js';
+import { identityHeader } from './middleware/identityHeader.js';
 import { adminAuth } from './middleware/adminAuth.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { positionsHandler } from './routes/positions.js';
+import { trackHandler } from './routes/track.js';
+import { adminAnalyticsHandler } from './routes/admin-analytics.js';
 import { profileHandler } from './routes/profile.js';
 import { authTestHandler } from './routes/auth-test.js';
 import { resolveHandler } from './routes/resolve.js';
@@ -100,6 +103,7 @@ async function main() {
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use(byokHeader);
+  app.use(identityHeader);
 
   // ---- Health ----
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -156,6 +160,13 @@ async function main() {
   // /api/event-stream (long-lived SSE relay) was removed in the
   // cf-azure-rewrite. The deploy story doesn't include long-lived
   // streams and no client surface consumed it.
+
+  // ---- Usage telemetry (L3 — see docs/PRIVACY.md) ----
+  // Client fires /api/track on visit + onboarding_complete; the brief
+  // and ask handlers record events server-side directly. /api/admin/analytics
+  // is the founder dump endpoint, gated by ADMIN_TOKEN.
+  app.post('/api/track', rateLimit({ windowMs: 60_000, max: 30, bucket: 'track' }), trackHandler);
+  app.get('/api/admin/analytics', adminAuth, adminAnalyticsHandler);
 
   // ---- Admin: force flush + clear caches ----
   // Gated by X-Admin-Token header; ADMIN_TOKEN env must be set in prod.

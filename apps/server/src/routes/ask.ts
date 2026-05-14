@@ -44,6 +44,7 @@ import type {
   MarketMeta, BookGrounding, HoldersGrounding, NewsGrounding, AgentEvent, Category,
 } from '@pm-copilot/core';
 import { getCached as getCachedBrief, type BriefEnvelope } from '../briefStore.js';
+import { recordEvent } from '../analytics.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Off-topic question gate — pre-LLM, regex-based, zero cost.
@@ -267,6 +268,17 @@ export async function askHandler(req: Request, res: Response) {
     res.status(400).json({ error: 'question required' });
     return;
   }
+
+  // L3 telemetry — record that an ask was made (we deliberately do NOT
+  // log the question text; only its length as a coarse signal).
+  // See docs/PRIVACY.md for the full disclosure.
+  void recordEvent({
+    wallet: req.identity?.wallet ?? null,
+    handle: req.identity?.handle ?? null,
+    type: 'ask',
+    marketId,
+    meta: { questionLength: question.length },
+  });
 
   // ── Defense layer 1: off-topic gate ──
   // Cheap regex denylist for obvious non-market questions (math homework,

@@ -30,6 +30,7 @@ import { runSupervisor } from '@pm-copilot/core/agents/supervisor';
 import { byokProvider } from '@pm-copilot/core/providers/byok';
 import { topTweetsForMarket } from '@pm-copilot/core/mcp/loaders/x-stub';
 import { rememberGrounding } from '../groundingStore.js';
+import { recordEvent } from '../analytics.js';
 import { getExaSearcher } from '../exa.js';
 import { getNewsCache } from '../news-cache.js';
 import type { MarketMeta, AgentEvent, Category } from '@pm-copilot/core';
@@ -114,6 +115,17 @@ export async function briefHandler(req: Request, res: Response) {
   const marketId = req.query.marketId ? String(req.query.marketId) : null;
   const category = parseCategory(req.query.category);
   const force = req.query.force === '1' || req.query.force === 'true';
+
+  // L3 telemetry — record that a brief was requested (no LLM content
+  // captured; just identity + marketId + category). See docs/PRIVACY.md.
+  // Fire-and-forget so a failed write never blocks the brief.
+  void recordEvent({
+    wallet: req.identity?.wallet ?? null,
+    handle: req.identity?.handle ?? null,
+    type: 'brief',
+    ...(marketId ? { marketId } : {}),
+    category,
+  });
 
   // Set up the NDJSON streaming response. Each emit becomes one JSON line.
   // X-Accel-Buffering=no disables nginx buffering if a proxy is in front

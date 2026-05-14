@@ -20,6 +20,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { isPlausibleEvmAddress } from '../../hooks/useAuth';
+import { TweetEmbed } from '../TweetEmbed/TweetEmbed';
 import './landing.css';
 
 // v1 simplification (May 2026): the wallet-picker stage is gone. Live
@@ -664,12 +665,29 @@ export function LandingFlow({
             </div>
           </section>
 
-          {/* Band 04 — final CTA, mirrors the hero command row */}
+          {/* Band 04 — launch announcement / social proof. Embeds the
+              public launch thread so visitors see the project is real,
+              recently shipped, and has a public posture. */}
+          <section className="band band-launch">
+            <div className="band-inner">
+              <div className="band-head mono">
+                <span>04</span>
+                <span>shipped 13 may 2026</span>
+                <span className="rule" />
+                <span>launch thread on x</span>
+              </div>
+              <div className="launch-tweet-wrap">
+                <TweetEmbed handle="0xayushya" tweetId="2054597696506495423" />
+              </div>
+            </div>
+          </section>
+
+          {/* Band 05 — final CTA, mirrors the hero command row */}
           <section className="band final-cta">
             <div className="band-inner final-grid">
               <div>
                 <div className="band-head mono compact">
-                  <span>04</span>
+                  <span>05</span>
                   <span>read-only by design</span>
                   <span className="rule" />
                 </div>

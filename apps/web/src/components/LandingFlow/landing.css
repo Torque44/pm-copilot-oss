@@ -604,6 +604,26 @@ h1.headline .accent { color: var(--citation); }
   font-family: var(--font-mono);
 }
 
+/* launch-tweet band — embedded X post sits between the agent board
+   and the final CTA as social proof. The Twitter widget renders an
+   iframe at a fixed inline width; we just centre it inside band-inner
+   and give it a little breathing room above. */
+.band-launch .launch-tweet-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+.band-launch .tweet-embed-wrap {
+  width: 100%;
+  max-width: 560px;
+}
+.band-launch .twitter-tweet {
+  /* widgets.js sets the iframe's own dims; we just kill the residual
+     left-margin a default blockquote ships with so the loading text
+     centres before the widget swap-in. */
+  margin: 0 auto !important;
+}
+
 /* final CTA band — domain + paste affordance side-by-side with hero copy */
 .final-cta {
   background:

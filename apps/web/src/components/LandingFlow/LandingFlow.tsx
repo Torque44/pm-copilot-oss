@@ -715,6 +715,20 @@ export function LandingFlow({
               <span>pmcopilot.wtf</span>
               <span>open source prediction market research desk</span>
             </div>
+            <div className="band-inner land-footer-privacy mono">
+              <span>
+                we store your pasted wallet, optional X handle, and which markets
+                you research so we can show how the product is used. no chat
+                content is stored. see{' '}
+                <a
+                  href="https://github.com/Torque44/pm-copilot-oss/blob/main/docs/PRIVACY.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  privacy policy
+                </a>.
+              </span>
+            </div>
           </footer>
         </main>
       </div>

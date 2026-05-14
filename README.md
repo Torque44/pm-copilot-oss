@@ -252,8 +252,13 @@ The supervisor will route the relevant agent at request time.
 
 ## Privacy & safety
 
-- No telemetry. The server logs request paths and elapsed times, never
-  request bodies or LLM content.
+- **Hosted deploy at `pmcopilot.wtf`** stores the pasted wallet address,
+  optional X handle, and structured usage events (visits, brief requests,
+  ask occurrences, market views) so the operator can show product-research
+  metrics. **No chat content, no LLM responses, no IPs, no provider keys
+  are stored.** Full disclosure in [`docs/PRIVACY.md`](docs/PRIVACY.md).
+  This applies only to the hosted deploy — local installs (`pnpm dev`)
+  collect nothing.
 - BYOK keys never touch disk. They live encrypted in IndexedDB and travel
   only as per-request HTTP headers.
 - The agent pipeline is read-only — no order submission, no fund movement.

@@ -704,6 +704,21 @@ h1.headline .accent { color: var(--citation); }
   gap: 18px;
   font-family: var(--font-mono);
 }
+.land-footer .land-footer-privacy {
+  padding: 8px 0 28px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.land-footer .land-footer-privacy a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.land-footer .land-footer-privacy a:hover {
+  color: #fff;
+}
 
 /* ============== STAGE 2: auth modal ============== */
 .lf-stage-auth {

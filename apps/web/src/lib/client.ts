@@ -109,6 +109,24 @@ async function loadByokHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
+/** Attach the visitor's pasted wallet + X handle to every request so the
+ *  server can attribute usage events (see docs/PRIVACY.md). Reads
+ *  unencrypted localStorage — these are NOT secrets the way BYOK keys are.
+ *  Missing values just mean we send anonymous events. */
+function loadIdentityHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const headers: Record<string, string> = {};
+  try {
+    const wallet = window.localStorage.getItem('pm-copilot:auth:wallet');
+    const handle = window.localStorage.getItem('pm-copilot:auth:xHandle');
+    if (wallet) headers['x-pm-wallet'] = wallet;
+    if (handle) headers['x-pm-handle'] = handle;
+  } catch {
+    // Best-effort — localStorage can throw in private windows / Safari.
+  }
+  return headers;
+}
+
 function mergeHeaders(base: HeadersInit | undefined, extra: Record<string, string>): Headers {
   const h = new Headers(base);
   for (const [k, v] of Object.entries(extra)) {
@@ -132,7 +150,8 @@ function resolvePath(path: string): string {
 export async function apiFetch(path: string, opts: ApiRequestOpts = {}): Promise<Response> {
   const { skipBYOK, headers: rawHeaders, body: rawBody, ...rest } = opts;
   const byokHeaders = skipBYOK ? {} : await loadByokHeaders();
-  const headers = mergeHeaders(rawHeaders, byokHeaders);
+  const identityHeaders = loadIdentityHeaders();
+  const headers = mergeHeaders(rawHeaders, { ...byokHeaders, ...identityHeaders });
 
   let body = rawBody;
   if (

@@ -430,6 +430,40 @@ export function App() {
     else window.localStorage.removeItem('pm-copilot:wallet');
   }, [wallet]);
 
+  // L3 telemetry — fire a 'visit' ping once per session-mount, plus an
+  // 'onboarding_complete' the first time we observe the flag flip true.
+  // Server attaches wallet+handle from the request headers (set by
+  // client.ts), so we don't pass them in the body. See docs/PRIVACY.md.
+  const visitFiredRef = useRef(false);
+  const onboardingFiredRef = useRef(false);
+  useEffect(() => {
+    if (visitFiredRef.current) return;
+    visitFiredRef.current = true;
+    void fetch('/api/track', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(auth.wallet ? { 'x-pm-wallet': auth.wallet } : {}),
+        ...(auth.xHandle ? { 'x-pm-handle': auth.xHandle } : {}),
+      },
+      body: JSON.stringify({ type: 'visit' }),
+    }).catch(() => { /* swallow — analytics never blocks UX */ });
+  }, [auth.wallet, auth.xHandle]);
+  useEffect(() => {
+    if (onboardingFiredRef.current) return;
+    if (!auth.onboardingComplete) return;
+    onboardingFiredRef.current = true;
+    void fetch('/api/track', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(auth.wallet ? { 'x-pm-wallet': auth.wallet } : {}),
+        ...(auth.xHandle ? { 'x-pm-handle': auth.xHandle } : {}),
+      },
+      body: JSON.stringify({ type: 'onboarding_complete' }),
+    }).catch(() => {});
+  }, [auth.onboardingComplete, auth.wallet, auth.xHandle]);
+
   const { positions } = usePositions(wallet || null);
   const recents = useRecentlyViewed();
   const ask = useAsk(brief.rawMarket);

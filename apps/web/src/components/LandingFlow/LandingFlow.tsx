@@ -769,7 +769,7 @@ export function LandingFlow({
 
           <form className="lf-modal-body" onSubmit={onSubmitAddr}>
             <div className="modal-label mono">
-              paste your polymarket wallet address (0x…) to read your positions
+              paste your polymarket wallet address (0x…) <span className="modal-label-aside">— optional, only needed for the positions tab</span>
             </div>
             <div className="addr-row">
               <input
@@ -790,6 +790,18 @@ export function LandingFlow({
               no permissions requested. <b>tradeable execution lands in v2 — this is v1.</b>
               <br />
               <span className="addr-hint-aside">or paste a polymarket market URL to browse the brief without signing in.</span>
+            </div>
+            <div className="modal-skip-row mono">
+              <button
+                type="button"
+                className="modal-skip-link"
+                onClick={() => {
+                  setAddrError(null);
+                  setStage('twitter');
+                }}
+              >
+                skip — just let me browse →
+              </button>
             </div>
           </form>
 

@@ -45,10 +45,12 @@ function readState(): AuthState {
 }
 
 export type UseAuthResult = {
-  /** True when wallet is set AND the user finished the onboarding flow.
-   *  Both gates must be true before App.tsx renders the workbench, so
-   *  the LandingFlow can keep mounted through wallet → twitter → handoff
-   *  instead of unmounting the moment a wallet is recorded. */
+  /** True once the user has finished the onboarding flow — wallet is
+   *  optional (May 2026 change to remove the highest-friction gate
+   *  blocking the workbench). Most of the product (briefs, asks, market
+   *  views) doesn't need a wallet; positions in the right rail are the
+   *  only feature that does, and that surface degrades gracefully when
+   *  wallet is null. */
   signedIn: boolean;
   wallet: string | null;
   xHandle: string | null;
@@ -115,7 +117,11 @@ export function useAuth(): UseAuthResult {
   }, []);
 
   return {
-    signedIn: !!state.wallet && state.onboardingComplete,
+    // Wallet is no longer required to enter the workbench. Completing
+    // onboarding (with or without wallet) is the single gate. The
+    // positions tab in the right rail handles a null wallet by showing
+    // an "add your Polymarket address to see positions" placeholder.
+    signedIn: state.onboardingComplete,
     wallet: state.wallet,
     xHandle: state.xHandle,
     onboardingComplete: state.onboardingComplete,

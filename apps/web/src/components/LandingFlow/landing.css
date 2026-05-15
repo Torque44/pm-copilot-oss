@@ -814,6 +814,33 @@ h1.headline .accent { color: var(--citation); }
   color: var(--text-muted);
   margin-bottom: 10px;
 }
+.modal-label-aside {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  opacity: 0.7;
+  font-weight: normal;
+}
+.modal-skip-row {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+.modal-skip-link {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  padding: 4px 0;
+  letter-spacing: 0;
+}
+.modal-skip-link:hover { color: var(--text); }
+.modal-skip-link:focus-visible {
+  outline: 1px dashed var(--border-strong);
+  outline-offset: 2px;
+}
 .wallet-list { display: flex; flex-direction: column; gap: 6px; }
 .wallet-row {
   display: flex;

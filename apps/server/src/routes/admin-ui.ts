@@ -298,7 +298,7 @@ const ADMIN_HTML = `<!doctype html>
 <script>
 // ============================================================
 // Auth — token is held in sessionStorage; every admin fetch carries
-// it as `X-Admin-Token` header. The HttpOnly cookie path still works
+// it as an X-Admin-Token header. The HttpOnly cookie path still works
 // for curl callers and stays in place as a fallback, but the dashboard
 // no longer depends on the browser accepting/sending the cookie. This
 // sidesteps the browser-specific cookie-rejection edge cases we hit on

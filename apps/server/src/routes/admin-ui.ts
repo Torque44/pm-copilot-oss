@@ -343,13 +343,10 @@ async function login(ev) {
     // Token is good. Save it for subsequent requests.
     saveToken(token);
 
-    // Also issue the HttpOnly cookie (no-op on failure — we don't depend
-    // on it). Useful for curl callers who already have it set up.
-    fetch('/api/admin/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token }),
-    }).catch(() => {});
+    // (No fire-and-forget call to /api/admin/login — the dashboard no
+    // longer needs the HttpOnly cookie, and that endpoint is
+    // rate-limited 20/min/IP. Skipping it eliminates a needless 429
+    // surface when an admin rapid-clicks Sign In or has stale JS.)
 
     // Pivot to dashboard, render with the probe response we already have.
     document.getElementById('login').classList.add('hidden');

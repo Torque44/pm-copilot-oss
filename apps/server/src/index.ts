@@ -176,8 +176,12 @@ async function main() {
   // anyway, but rate-limit is cheap belt + suspenders. The dashboard page
   // itself is registered BEFORE the SPA fallback so /admin is served as
   // standalone HTML, not as the React app.
+  // Login rate limit: bumped from 5 to 20/min/IP. The token has 256 bits
+  // of entropy (a 64-hex random) so guessing is not a practical attack
+  // and the tight limit caused legitimate-admin retries (stale-cached JS,
+  // rapid Sign In clicks during browser-cookie issues) to spuriously 429.
   app.post('/api/admin/login',
-    rateLimit({ windowMs: 60_000, max: 5, bucket: 'admin-login' }),
+    rateLimit({ windowMs: 60_000, max: 20, bucket: 'admin-login' }),
     adminLoginHandler);
   app.post('/api/admin/logout', adminLogoutHandler);
   app.get('/admin', adminUiHandler);

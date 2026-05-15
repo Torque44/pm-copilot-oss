@@ -18,6 +18,8 @@ import { rateLimit } from './middleware/rateLimit.js';
 import { positionsHandler } from './routes/positions.js';
 import { trackHandler } from './routes/track.js';
 import { adminAnalyticsHandler } from './routes/admin-analytics.js';
+import { adminLoginHandler, adminLogoutHandler } from './routes/admin-login.js';
+import { adminUiHandler } from './routes/admin-ui.js';
 import { profileHandler } from './routes/profile.js';
 import { authTestHandler } from './routes/auth-test.js';
 import { resolveHandler } from './routes/resolve.js';
@@ -167,6 +169,18 @@ async function main() {
   // is the founder dump endpoint, gated by ADMIN_TOKEN.
   app.post('/api/track', rateLimit({ windowMs: 60_000, max: 30, bucket: 'track' }), trackHandler);
   app.get('/api/admin/analytics', adminAuth, adminAnalyticsHandler);
+
+  // ---- Admin dashboard (browser UI) ----
+  // Login is rate-limited tightly (5/min/IP) to frustrate brute-force token
+  // guessing — the token has 256 bits of entropy so guessing isn't practical
+  // anyway, but rate-limit is cheap belt + suspenders. The dashboard page
+  // itself is registered BEFORE the SPA fallback so /admin is served as
+  // standalone HTML, not as the React app.
+  app.post('/api/admin/login',
+    rateLimit({ windowMs: 60_000, max: 5, bucket: 'admin-login' }),
+    adminLoginHandler);
+  app.post('/api/admin/logout', adminLogoutHandler);
+  app.get('/admin', adminUiHandler);
 
   // ---- Admin: force flush + clear caches ----
   // Gated by X-Admin-Token header; ADMIN_TOKEN env must be set in prod.

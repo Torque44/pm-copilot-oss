@@ -252,13 +252,13 @@ The supervisor will route the relevant agent at request time.
 
 ## Privacy & safety
 
-- **Hosted deploy at `pmcopilot.wtf`** stores the pasted wallet address,
-  optional X handle, and structured usage events (visits, brief requests,
-  ask occurrences, market views) so the operator can show product-research
-  metrics. **No chat content, no LLM responses, no IPs, no provider keys
-  are stored.** Full disclosure in [`docs/PRIVACY.md`](docs/PRIVACY.md).
-  This applies only to the hosted deploy — local installs (`pnpm dev`)
-  collect nothing.
+- **Hosted deploy at `pmcopilot.wtf`** stores the pasted wallet address
+  (optional), optional X handle, structured usage events (visits, brief
+  requests, market views), and the text of questions asked to the chat
+  agent (90-day retention, 4,000-char cap). **No agent responses, no IPs,
+  no provider keys are stored.** Full disclosure in
+  [`docs/PRIVACY.md`](docs/PRIVACY.md). This applies only to the hosted
+  deploy — local installs (`pnpm dev`) collect nothing.
 - BYOK keys never touch disk. They live encrypted in IndexedDB and travel
   only as per-request HTTP headers.
 - The agent pipeline is read-only — no order submission, no fund movement.

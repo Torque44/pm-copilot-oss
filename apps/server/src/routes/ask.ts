@@ -269,15 +269,26 @@ export async function askHandler(req: Request, res: Response) {
     return;
   }
 
-  // L3 telemetry — record that an ask was made (we deliberately do NOT
-  // log the question text; only its length as a coarse signal).
-  // See docs/PRIVACY.md for the full disclosure.
+  // L4 telemetry (upgraded from L3 on May 15 2026) — record the question
+  // text alongside the wallet + marketId. Capped at 4000 chars so a
+  // single malicious caller can't bloat events.ndjson. Disclosed in
+  // docs/PRIVACY.md with a 90-day retention promise; landing footer
+  // surfaces the disclosure too.
+  //
+  // We DO NOT store the agent's response — only the question. Response
+  // content stays ephemeral in the SSE/JSON reply to the caller.
+  const truncatedQuestion = question.length > 4000
+    ? question.slice(0, 4000) + '…[truncated]'
+    : question;
   void recordEvent({
     wallet: req.identity?.wallet ?? null,
     handle: req.identity?.handle ?? null,
     type: 'ask',
     marketId,
-    meta: { questionLength: question.length },
+    meta: {
+      questionLength: question.length,
+      question: truncatedQuestion,
+    },
   });
 
   // ── Defense layer 1: off-topic gate ──

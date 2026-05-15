@@ -735,9 +735,9 @@ export function LandingFlow({
             </div>
             <div className="band-inner land-footer-privacy mono">
               <span>
-                we store your pasted wallet, optional X handle, and which markets
-                you research so we can show how the product is used. no chat
-                content is stored. see{' '}
+                we store your pasted wallet, optional X handle, which markets you
+                research, and the text of questions you ask (90-day retention).
+                we do not store agent responses or your provider api keys. see{' '}
                 <a
                   href="https://github.com/Torque44/pm-copilot-oss/blob/main/docs/PRIVACY.md"
                   target="_blank"

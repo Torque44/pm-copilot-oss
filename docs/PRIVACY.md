@@ -1,6 +1,6 @@
 # Privacy policy — pm-copilot
 
-Last updated: 2026-05-11
+Last updated: 2026-05-15 (now stores Ask question text — see below)
 
 This is a v1 read-only research tool. It's run by a single operator
 (@0xayushya / Torque44) for product-research and portfolio purposes.
@@ -15,26 +15,40 @@ volume):
 
 | Field | Source | Why |
 |---|---|---|
-| Wallet address (`0x…`) | What you paste into the onboarding screen | Counts unique users; lets us tell investors "X people use this" |
+| Wallet address (`0x…`) | What you paste into the onboarding screen (optional since May 15 2026) | Counts unique users; "X people use this" stat |
 | X / Twitter handle | What you paste into the onboarding screen (optional) | Same |
 | Visit timestamps | When you load the site | DAU / WAU / retention metrics |
 | Brief requests | Each time you research a market | "Top researched markets" stat |
-| Ask requests | Each time you ask a follow-up question | Volume only — see below |
+| Ask question text | The text of every question you ask the chat / Ask agent | Qualitative product-research: understanding what users actually want to know about prediction markets. Capped at 4,000 characters per question. **Retention: 90 days, then automatically deleted.** |
 | Market views | Each time you click a market in the rail | Engagement metrics |
 | The category of the market (politics / sports / crypto / etc.) | Derived from the marketId | Topic-popularity breakdown |
 
 That's it. Specifically:
 
 - We DO NOT store your IP address.
-- We DO NOT store the text of any question you ask the chat / Ask agent.
-  We only store *that* an ask happened, for which market, and the length
-  of the question.
-- We DO NOT store the response any agent gave you.
+- We DO NOT store the response any agent gave you. Only your question.
 - We DO NOT store your provider API keys. Those live encrypted in your
   browser's IndexedDB (AES-GCM) and travel only as per-request
   `x-llm-key` headers, never persisted server-side.
 - We DO NOT share, sell, or otherwise hand this data to any third party,
   including for LLM training or analytics SaaS.
+
+## A note on question text (added 2026-05-15)
+
+We previously stored only the *length* of each Ask question. As of
+May 15 2026 we store the question text itself (capped at 4,000 chars),
+tied to the wallet and marketId. Why we changed: aggregate length data
+told us how engaged users are, but not what they actually want to know.
+Knowing the latter is the only way to make the product better.
+
+If you'd rather not have your questions stored:
+- Don't paste a wallet — questions tied to anonymous sessions can't be
+  re-identified to you. You can still use the entire product.
+- Or email the deletion address below; we'll purge questions tied to
+  your wallet on request, within 7 days.
+
+Question text is retained for 90 days from posting, then automatically
+removed.
 
 ## Where it lives
 

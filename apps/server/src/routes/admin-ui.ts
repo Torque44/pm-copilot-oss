@@ -9,7 +9,12 @@
 
 import type { Request, Response } from 'express';
 
-const ADMIN_HTML = String.raw`<!doctype html>
+// NOTE: this MUST be a plain template literal — not String.raw — because
+// the embedded JS uses `\${...}` and `\`...\`` to escape interpolation /
+// backticks for INNER template literals. String.raw preserves those
+// backslashes literally, producing invalid JS syntax that fails silently
+// at parse time (the form then reverts to default browser submit).
+const ADMIN_HTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />

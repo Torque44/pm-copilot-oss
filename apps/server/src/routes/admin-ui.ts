@@ -297,8 +297,31 @@ const ADMIN_HTML = `<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 <script>
 // ============================================================
-// Login flow
+// Auth — token is held in sessionStorage; every admin fetch carries
+// it as `X-Admin-Token` header. The HttpOnly cookie path still works
+// for curl callers and stays in place as a fallback, but the dashboard
+// no longer depends on the browser accepting/sending the cookie. This
+// sidesteps the browser-specific cookie-rejection edge cases we hit on
+// the .wtf TLD (Safari ITP / 3rd-party-cookie blockers / etc.).
+// sessionStorage was chosen over localStorage so closing the tab clears
+// the token automatically — narrower exposure than a persistent token.
 // ============================================================
+const TOKEN_KEY = 'pmc:admin:token';
+
+function getToken() {
+  try { return sessionStorage.getItem(TOKEN_KEY) || null; } catch { return null; }
+}
+function saveToken(t) {
+  try { sessionStorage.setItem(TOKEN_KEY, t); } catch {}
+}
+function clearToken() {
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch {}
+}
+function authHeaders() {
+  const t = getToken();
+  return t ? { 'x-admin-token': t } : {};
+}
+
 async function login(ev) {
   ev.preventDefault();
   const token = document.getElementById('token').value.trim();
@@ -307,19 +330,33 @@ async function login(ev) {
   if (!token) { showErr('paste your admin token'); return false; }
 
   try {
-    const res = await fetch('/api/admin/login', {
+    // Validate the token by hitting the admin analytics endpoint directly
+    // with the header. This avoids the login-cookie dance entirely and
+    // also confirms the dashboard fetch will succeed before we pivot UI.
+    const probe = await fetch('/api/admin/analytics?format=raw', {
+      headers: { 'x-admin-token': token },
+    });
+    if (probe.status === 401) { showErr('invalid token'); return false; }
+    if (probe.status === 503) { showErr('ADMIN_TOKEN is not configured on the server'); return false; }
+    if (!probe.ok) { showErr('login failed (' + probe.status + ')'); return false; }
+
+    // Token is good. Save it for subsequent requests.
+    saveToken(token);
+
+    // Also issue the HttpOnly cookie (no-op on failure — we don't depend
+    // on it). Useful for curl callers who already have it set up.
+    fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      credentials: 'same-origin',
       body: JSON.stringify({ token }),
-    });
-    if (res.status === 401) { showErr('invalid token'); return false; }
-    if (res.status === 503) { showErr('ADMIN_TOKEN is not configured on the server'); return false; }
-    if (!res.ok) { showErr('login failed (' + res.status + ')'); return false; }
-    // Cookie is set; pivot to dashboard.
+    }).catch(() => {});
+
+    // Pivot to dashboard, render with the probe response we already have.
     document.getElementById('login').classList.add('hidden');
     document.getElementById('dash').classList.remove('hidden');
-    await refresh();
+    const data = await probe.json();
+    renderAll(data);
+    setLastUpdated();
   } catch (err) {
     showErr('network error: ' + (err && err.message ? err.message : 'unknown'));
   }
@@ -332,24 +369,32 @@ function showErr(msg) {
 }
 
 async function logout() {
+  clearToken();
   try {
-    await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+    await fetch('/api/admin/logout', { method: 'POST' });
   } catch {}
   // Hard reload to fully reset state.
   location.reload();
 }
 
-// On page load: try fetching analytics with the existing cookie. If 200, we're
-// already logged in; otherwise show the login screen.
+// On page load: if we have a stored token, try it. Auto-skips the login
+// screen for a returning admin within the same browser tab session.
 (async () => {
+  const token = getToken();
+  if (!token) return;
   try {
-    const r = await fetch('/api/admin/analytics?format=raw', { credentials: 'same-origin' });
+    const r = await fetch('/api/admin/analytics?format=raw', {
+      headers: { 'x-admin-token': token },
+    });
     if (r.ok) {
       document.getElementById('login').classList.add('hidden');
       document.getElementById('dash').classList.remove('hidden');
       const data = await r.json();
       renderAll(data);
       setLastUpdated();
+    } else {
+      // Stored token no longer valid (rotated, expired, etc.). Wipe it.
+      clearToken();
     }
   } catch {}
 })();
@@ -364,8 +409,13 @@ async function refresh() {
   btn.disabled = true;
   btn.textContent = 'loading…';
   try {
-    const r = await fetch('/api/admin/analytics?format=raw', { credentials: 'same-origin' });
-    if (r.status === 401) { location.reload(); return; }
+    const r = await fetch('/api/admin/analytics?format=raw', { headers: authHeaders() });
+    if (r.status === 401) {
+      // Token rotated or no longer valid — wipe and reload to show login.
+      clearToken();
+      location.reload();
+      return;
+    }
     const data = await r.json();
     renderAll(data);
     setLastUpdated();

@@ -1,0 +1,621 @@
+openapi: 3.1.0
+info:
+  title: pmcopilot API
+  version: "1.0.0-rc1"
+  description: |
+    Citation-grounded research API for prediction markets.
+
+    Designed for embedding inside terminals (Kairos, others) that need
+    market-anchored thesis/news/sentiment/comparables/resolution data
+    without rebuilding the agent stack.
+
+    Authentication: every request must include `X-Api-Key`. Keys are
+    issued per environment (dev / staging / prod).
+  contact:
+    name: AJ (Ayushya Jain)
+    email: ayushya2002@gmail.com
+    url: https://pmcopilot.wtf
+  license:
+    name: MIT
+    url: https://github.com/Torque44/pm-copilot-oss/blob/main/LICENSE
+
+servers:
+  - url: https://api.pmcopilot.wtf/v1
+    description: Production
+  - url: https://staging.api.pmcopilot.wtf/v1
+    description: Staging
+  - url: https://dev.api.pmcopilot.wtf/v1
+    description: Sandbox / dev
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Meta
+    description: Health + version
+  - name: Market
+    description: Market metadata, outcomes, holders, resolution
+  - name: Signals
+    description: News, sentiment, thesis, comparables
+  - name: Agents
+    description: Q&A + multi-agent orchestration
+
+paths:
+  /health:
+    get:
+      tags: [Meta]
+      summary: Liveness probe
+      description: Returns service status. Does not require an API key in dev.
+      security: []
+      operationId: getHealth
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /markets/{market_id}:
+    get:
+      tags: [Market]
+      summary: Market metadata
+      operationId: getMarket
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+      responses:
+        "200":
+          description: Market envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Market"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /markets/{market_id}/outcomes:
+    get:
+      tags: [Market]
+      summary: Full outcomes view (multi-resolution + sub-markets)
+      operationId: getMarketOutcomes
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+      responses:
+        "200":
+          description: Outcomes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  market_id: { type: string }
+                  outcomes:
+                    type: array
+                    items: { $ref: "#/components/schemas/Outcome" }
+                  fetched_at: { type: string, format: date-time }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /markets/{market_id}/holders:
+    get:
+      tags: [Market]
+      summary: Top holders + behavior signals
+      operationId: getMarketHolders
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: Holders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  market_id: { type: string }
+                  holders:
+                    type: array
+                    items: { $ref: "#/components/schemas/Holder" }
+                  fetched_at: { type: string, format: date-time }
+
+  /markets/{market_id}/news:
+    get:
+      tags: [Signals]
+      summary: Market-tagged news with explicit linking
+      description: |
+        Replaces a tag-based news ingest. Each article is anchored to the
+        specific market via embedding similarity + LLM relevance scoring.
+        Articles below `min_relevance` (default 0.6) are filtered out.
+      operationId: getMarketNews
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: min_relevance
+          in: query
+          schema: { type: number, minimum: 0, maximum: 1, default: 0.6 }
+      responses:
+        "200":
+          description: News items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  market_id: { type: string }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/NewsItem" }
+                  fetched_at: { type: string, format: date-time }
+
+  /markets/{market_id}/sentiment:
+    get:
+      tags: [Signals]
+      summary: Sentiment score + sources
+      description: |
+        Aggregates social posts + news headlines into a single sentiment
+        score with directional confidence and explicit source list.
+      operationId: getMarketSentiment
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+      responses:
+        "200":
+          description: Sentiment envelope
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sentiment" }
+
+  /markets/{market_id}/thesis:
+    get:
+      tags: [Signals]
+      summary: Auto-generated thesis with citations
+      description: |
+        Returns the leading thesis (synthesized from all wave-1/wave-2
+        agents). Pass `counter=true` to additionally include the
+        counter-thesis (steelmanned opposite side, same allowlisted
+        sources).
+      operationId: getMarketThesis
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+        - name: counter
+          in: query
+          description: Include counter-thesis in the response.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Thesis (and optionally counter-thesis)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThesisEnvelope" }
+
+  /markets/{market_id}/comparables:
+    get:
+      tags: [Signals]
+      summary: Comparable historical markets (threshold-shape matching)
+      description: |
+        Returns markets with similar threshold-in-window shape (tweet
+        counts, weather thresholds, price thresholds, vote shares, sports
+        totals). Each comparable includes realized value if resolved.
+      operationId: getMarketComparables
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 5 }
+      responses:
+        "200":
+          description: Comparables
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  market_id: { type: string }
+                  comparables:
+                    type: array
+                    items: { $ref: "#/components/schemas/Comparable" }
+                  fetched_at: { type: string, format: date-time }
+
+  /markets/{market_id}/resolution:
+    get:
+      tags: [Market]
+      summary: Resolution status + realized value
+      description: |
+        For unresolved markets: returns resolution criteria, source
+        hierarchy, and dispute window. For resolved markets: returns
+        realized YES/NO + realized value (numeric where applicable —
+        tweet counts, temperature, price, vote share, etc.).
+      operationId: getMarketResolution
+      parameters:
+        - $ref: "#/components/parameters/MarketId"
+      responses:
+        "200":
+          description: Resolution envelope
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resolution" }
+
+  /ask:
+    post:
+      tags: [Agents]
+      summary: Q&A with active market context
+      description: |
+        Single-turn Q&A grounded in a specific market. Off-topic questions
+        are refused server-side. Returns a list of agent events
+        (tool calls, sources, final answer).
+      operationId: postAsk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AskRequest" }
+      responses:
+        "200":
+          description: Ask events + final answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AskResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /research:
+    post:
+      tags: [Agents]
+      summary: Multi-agent orchestrator (runs all wave-1/wave-2 agents)
+      description: |
+        Fires the full supervisor pipeline for a given market. Returns
+        a single envelope with market metadata, holders, news, sentiment,
+        thesis, counter-thesis (optional), and comparables. Heavier than
+        individual endpoints; cache aggressively.
+      operationId: postResearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResearchRequest" }
+      responses:
+        "200":
+          description: Full research envelope
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchResponse" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: |
+        Per-environment API key issued to Kairos. Send in the
+        `X-Api-Key` header on every request. Keys are scoped to a
+        single environment (dev / staging / prod).
+
+  parameters:
+    MarketId:
+      name: market_id
+      in: path
+      required: true
+      description: |
+        Canonical market id. For Polymarket markets this is the gamma
+        market id (or slug). Limitless market ids are namespaced with
+        a `lim:` prefix (e.g. `lim:0xabc…`).
+      schema: { type: string, minLength: 1, maxLength: 128 }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Market or resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, description: Stable error code }
+        message: { type: string, description: Human-readable message }
+        request_id: { type: string, description: For support correlation }
+
+    Health:
+      type: object
+      required: [ok, service, version]
+      properties:
+        ok: { type: boolean }
+        service: { type: string, example: "pm-copilot" }
+        version: { type: string, example: "1.0.0-rc1" }
+        uptime_s: { type: number }
+
+    Market:
+      type: object
+      required: [market_id, title, category, status]
+      properties:
+        market_id: { type: string }
+        title: { type: string }
+        slug: { type: string }
+        category:
+          type: string
+          enum: [politics, crypto, sports, culture, geopolitics, science, finance, other]
+        status:
+          type: string
+          enum: [open, closed, resolved, disputed]
+        venue:
+          type: string
+          enum: [polymarket, limitless, kalshi]
+        oracle:
+          type: string
+          example: "UMA"
+        yes_price_cents: { type: number, minimum: 0, maximum: 100 }
+        no_price_cents: { type: number, minimum: 0, maximum: 100 }
+        volume_usd: { type: number }
+        liquidity_usd: { type: number }
+        ends_at: { type: string, format: date-time }
+        ends_at_timezone: { type: string, example: "ET" }
+        description: { type: string }
+        url: { type: string, format: uri }
+
+    Outcome:
+      type: object
+      properties:
+        label: { type: string, example: "December 31, 2026" }
+        yes_price_cents: { type: number }
+        no_price_cents: { type: number }
+        volume_usd: { type: number }
+        token_id: { type: string }
+        ends_at: { type: string, format: date-time }
+
+    Holder:
+      type: object
+      properties:
+        address: { type: string }
+        display_name: { type: string, nullable: true }
+        side:
+          type: string
+          enum: [yes, no]
+        shares: { type: number }
+        avg_price_cents: { type: number }
+        value_usd: { type: number }
+        unrealized_pnl_usd: { type: number }
+        unrealized_pnl_pct: { type: number }
+        first_position_at: { type: string, format: date-time }
+        behavior_tags:
+          type: array
+          items:
+            type: string
+            enum:
+              [whale, sniper, market_maker, fresh_wallet, repeat_winner,
+               event_correlated, manipulation_flag]
+
+    NewsItem:
+      type: object
+      properties:
+        title: { type: string }
+        url: { type: string, format: uri }
+        source: { type: string, example: "Reuters" }
+        published_at: { type: string, format: date-time }
+        relevance_score: { type: number, minimum: 0, maximum: 1 }
+        impact_direction:
+          type: string
+          enum: [up, down, neutral, unclear]
+        summary: { type: string }
+        citation_id: { type: string }
+
+    Sentiment:
+      type: object
+      properties:
+        market_id: { type: string }
+        score: { type: number, minimum: -1, maximum: 1 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        label:
+          type: string
+          enum: [strongly_positive, positive, neutral, negative, strongly_negative, insufficient_data]
+        sources_count: { type: integer }
+        sample_size: { type: integer }
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              platform: { type: string, example: "twitter" }
+              handle: { type: string }
+              text: { type: string }
+              url: { type: string }
+              sentiment: { type: number }
+              created_at: { type: string, format: date-time }
+        fetched_at: { type: string, format: date-time }
+
+    ThesisEnvelope:
+      type: object
+      required: [market_id, thesis]
+      properties:
+        market_id: { type: string }
+        thesis: { $ref: "#/components/schemas/Thesis" }
+        counter_thesis:
+          allOf:
+            - $ref: "#/components/schemas/Thesis"
+            - description: Only present when `counter=true` was requested.
+        generated_at: { type: string, format: date-time }
+
+    Thesis:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum: [buy_yes, buy_no, watch, avoid]
+        edge_pp: { type: number, description: "Edge in percentage points vs market." }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        summary: { type: string, description: One-paragraph thesis. }
+        bull_case: { type: string }
+        bear_case: { type: string }
+        sections:
+          type: array
+          description: |
+            7-section structured report (Fundamental, News & Events,
+            Sentiment & Social, Risk Assessment, Historical Precedents,
+            Resolution, Execution).
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              body: { type: string }
+        citations:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              url: { type: string }
+              source: { type: string }
+              quote: { type: string }
+
+    Comparable:
+      type: object
+      properties:
+        comparable_market_id: { type: string }
+        title: { type: string }
+        similarity_score: { type: number, minimum: 0, maximum: 1 }
+        shape:
+          type: object
+          description: Extracted threshold-shape envelope.
+          properties:
+            kind:
+              type: string
+              enum: [tweet_count, weather_threshold, price_threshold, vote_share, sports_total, other]
+            threshold: { type: number }
+            window_days: { type: integer }
+        resolved: { type: boolean }
+        realized_yes:
+          type: boolean
+          nullable: true
+        realized_value:
+          type: number
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Resolution:
+      type: object
+      properties:
+        market_id: { type: string }
+        status:
+          type: string
+          enum: [unresolved, resolved, disputed]
+        resolution_source: { type: string, description: "Where the oracle reads truth from." }
+        oracle:
+          type: string
+          example: "UMA"
+        dispute_window_h: { type: integer }
+        resolved_yes:
+          type: boolean
+          nullable: true
+        realized_value:
+          type: number
+          nullable: true
+          description: "Numeric realized value when applicable (tweet count, temperature, etc.)."
+        realized_value_unit:
+          type: string
+          nullable: true
+          example: "tweets"
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolution_text:
+          type: string
+          description: "Full natural-language resolution criteria from the venue."
+
+    AskRequest:
+      type: object
+      required: [market_id, question]
+      properties:
+        market_id: { type: string }
+        question: { type: string, maxLength: 4000 }
+        max_tokens: { type: integer, minimum: 64, maximum: 4096, default: 1024 }
+
+    AskResponse:
+      type: object
+      properties:
+        market_id: { type: string }
+        question: { type: string }
+        answer: { type: string }
+        citations:
+          type: array
+          items: { $ref: "#/components/schemas/Citation" }
+        events:
+          type: array
+          description: Agent event log for debugging / observability.
+          items:
+            type: object
+            properties:
+              t: { type: string, description: "Event type tag" }
+              ts: { type: string, format: date-time }
+              payload: { type: object }
+        complete: { type: boolean }
+
+    Citation:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string, format: uri }
+        source: { type: string }
+        quote: { type: string }
+        published_at: { type: string, format: date-time }
+
+    ResearchRequest:
+      type: object
+      required: [market_id]
+      properties:
+        market_id: { type: string }
+        include_counter_thesis: { type: boolean, default: true }
+        include_holders: { type: boolean, default: true }
+        include_news: { type: boolean, default: true }
+        include_sentiment: { type: boolean, default: true }
+        include_comparables: { type: boolean, default: true }
+        max_news_items: { type: integer, default: 10 }
+        max_comparables: { type: integer, default: 5 }
+
+    ResearchResponse:
+      type: object
+      properties:
+        market_id: { type: string }
+        market: { $ref: "#/components/schemas/Market" }
+        outcomes:
+          type: array
+          items: { $ref: "#/components/schemas/Outcome" }
+        holders:
+          type: array
+          items: { $ref: "#/components/schemas/Holder" }
+        news:
+          type: array
+          items: { $ref: "#/components/schemas/NewsItem" }
+        sentiment: { $ref: "#/components/schemas/Sentiment" }
+        thesis: { $ref: "#/components/schemas/Thesis" }
+        counter_thesis: { $ref: "#/components/schemas/Thesis" }
+        comparables:
+          type: array
+          items: { $ref: "#/components/schemas/Comparable" }
+        resolution: { $ref: "#/components/schemas/Resolution" }
+        generated_at: { type: string, format: date-time }

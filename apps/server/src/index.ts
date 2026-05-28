@@ -38,6 +38,7 @@ import { loadSnapshot, installShutdownHooks, flush } from './persist.js';
 import { hydrate as hydrateCache, clear as clearCache } from './cache.js';
 import { hydrate as hydrateGrounding } from './groundingStore.js';
 import { hydrate as hydrateBriefs, invalidateBrief } from './briefStore.js';
+import kairosV1Router from './routes/kairos-v1.js';
 
 // Prefer SERVER_PORT, fall back to PORT, then 8787. Skip PORT if it collides
 // with the Vite frontend (5173) — that happens when the dev harness inherits
@@ -158,6 +159,14 @@ async function main() {
   app.post('/api/ask', rateLimit({ windowMs: 60 * 60 * 1000, max: 30, bucket: 'ask' }), askHandler);
   app.get('/api/events', marketsLimiter, getEventsListHandler);
   app.get('/api/event', marketsLimiter, getEventByIdHandler);
+
+  // ---- Kairos external API (/v1/*) ----
+  // X-Api-Key required for every route except /v1/health. Keys load from
+  // KAIROS_API_KEYS env at boot. Per-IP rate limit at mount level.
+  // Spec: docs/kairos/openapi.yaml.
+  app.use('/v1',
+    rateLimit({ windowMs: 60_000, max: 120, bucket: 'kairos-v1' }),
+    kairosV1Router);
 
   // /api/event-stream (long-lived SSE relay) was removed in the
   // cf-azure-rewrite. The deploy story doesn't include long-lived

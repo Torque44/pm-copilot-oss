@@ -1,0 +1,10 @@
+# GitBook configuration.
+# Publishes the Kairos integration docs as a GitBook space synced from
+# this repo. Point a GitBook space at this repo + branch and it renders
+# docs/kairos/ as the doc site (Overview / Integration Guide / API Ref /
+# Deploy runbook). The openapi.yaml renders as an interactive API reference.
+root: ./docs/kairos/
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md

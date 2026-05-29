@@ -117,6 +117,27 @@ function getParam(req: Request, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
+/** Gamma stores clobTokenIds as a JSON-stringified [yesToken, noToken].
+ *  Parse it and return the YES token. Indexing the raw string would
+ *  yield the literal '[' char — the bug this guards against. */
+function firstTokenId(clobTokenIds: unknown): string | null {
+  if (Array.isArray(clobTokenIds)) return (clobTokenIds[0] as string) ?? null;
+  if (typeof clobTokenIds !== 'string') return null;
+  try {
+    const arr = JSON.parse(clobTokenIds);
+    return Array.isArray(arr) ? (arr[0] ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Gamma returns volume as a numeric string. Coerce to number per spec. */
+function toNum(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Read agent grounding from the cached brief event log, if present. */
 function pluckGrounding(events: BriefEnvelope[], agent: string): GroundingData | null {
   for (const ev of events) {
@@ -210,8 +231,8 @@ router.get('/markets/:market_id/outcomes', async (req: Request, res: Response) =
           typeof sub.lastTradePrice === 'number'
             ? Math.round(sub.lastTradePrice * 1000) / 10
             : null,
-        volume_usd: sub.volume ?? null,
-        token_id: sub.clobTokenIds?.[0] ?? null,
+        volume_usd: toNum(sub.volume),
+        token_id: firstTokenId(sub.clobTokenIds),
         ends_at: sub.endDate ?? null,
       }))
     : [

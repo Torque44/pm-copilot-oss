@@ -198,7 +198,13 @@ paths:
       description: |
         Returns markets with similar threshold-in-window shape (tweet
         counts, weather thresholds, price thresholds, vote shares, sports
-        totals). Each comparable includes realized value if resolved.
+        totals).
+
+        v1 returns a prose `summary` of the comparable set plus citations.
+        The structured `comparables[]` array (per-market similarity_score,
+        shape, realized_value) is populated in v1.1 once the comparables
+        agent surfaces its internal hit objects — empty in v1, never
+        fabricated.
       operationId: getMarketComparables
       parameters:
         - $ref: "#/components/parameters/MarketId"
@@ -216,7 +222,12 @@ paths:
                   market_id: { type: string }
                   comparables:
                     type: array
+                    description: "Structured hits — empty in v1 (see endpoint description)."
                     items: { $ref: "#/components/schemas/Comparable" }
+                  summary: { type: [string, "null"], description: "Prose read of the comparable set." }
+                  citations:
+                    type: array
+                    items: { $ref: "#/components/schemas/Citation" }
                   fetched_at: { type: string, format: date-time }
 
   /markets/{market_id}/resolution:
@@ -423,26 +434,23 @@ components:
 
     Sentiment:
       type: object
+      description: |
+        v1 returns a prose read (summary) plus the sources behind it. The
+        numeric score/confidence are null until the sentiment agent is
+        upgraded to emit scored direction (v1.1) — null rather than a
+        fabricated number.
       properties:
         market_id: { type: string }
-        score: { type: number, minimum: -1, maximum: 1 }
-        confidence: { type: number, minimum: 0, maximum: 1 }
+        score: { type: [number, "null"], minimum: -1, maximum: 1 }
+        confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
         label:
-          type: string
-          enum: [strongly_positive, positive, neutral, negative, strongly_negative, insufficient_data]
+          type: [string, "null"]
+          enum: [strongly_positive, positive, neutral, negative, strongly_negative, reported, insufficient_data, null]
+        summary: { type: [string, "null"], description: "Prose sentiment read." }
         sources_count: { type: integer }
-        sample_size: { type: integer }
         sources:
           type: array
-          items:
-            type: object
-            properties:
-              platform: { type: string, example: "twitter" }
-              handle: { type: string }
-              text: { type: string }
-              url: { type: string }
-              sentiment: { type: number }
-              created_at: { type: string, format: date-time }
+          items: { $ref: "#/components/schemas/Citation" }
         fetched_at: { type: string, format: date-time }
 
     ThesisEnvelope:
@@ -463,11 +471,13 @@ components:
         verdict:
           type: string
           enum: [buy_yes, buy_no, watch, avoid]
-        edge_pp: { type: number, description: "Edge in percentage points vs market." }
-        confidence: { type: number, minimum: 0, maximum: 1 }
-        summary: { type: string, description: One-paragraph thesis. }
-        bull_case: { type: string }
-        bear_case: { type: string }
+        edge_pp:
+          type: [number, "null"]
+          description: "Numeric edge vs market. Null in v1 — the engine produces a directional verdict, not a numeric edge."
+        confidence: { type: [number, "null"], minimum: 0, maximum: 1 }
+        summary: { type: [string, "null"], description: One-paragraph thesis. }
+        bull_case: { type: [string, "null"], description: "Null in v1 — surfaced via the counter_thesis object instead." }
+        bear_case: { type: [string, "null"], description: "Null in v1 — surfaced via the counter_thesis object instead." }
         sections:
           type: array
           description: |

@@ -259,17 +259,17 @@ Deprecations get a `Deprecation: <date>` header on the response 30 days before s
 
 ---
 
-## v1.0-rc1 implementation notes — read before codegen
+## v1.0.0 response shapes — the spec is accurate, codegen directly
 
-The OpenAPI spec is the **target contract** at v1.0. The current implementation (v1.0-rc1) ships with two known shape divergences that will be aligned before v1.0:
+The implementation matches `openapi.yaml` field-for-field. No adapter layer needed. Two honesty notes so you know which fields carry data in v1 vs which are reserved:
 
-1. **`/ask` returns `claims[]` + `citations[]`** (current) rather than `answer: string` + `citations[]` (spec). Each claim is `{ text: string, citations: string[] }` so concatenating `.map(c => c.text).join(' ')` gives you a flat answer string for now.
-2. **`/markets/{id}/thesis` returns** `{ verdict: 'yes'|'no'|'none', confidence: 'high'|'med'|'low', sections: { setup, book, smart, catalysts, verdict }, citations }` — structured as a Brief shape per pmcopilot's internal model rather than the flat `verdict / edge_pp / summary / bull_case / bear_case` of the spec.
-3. **`/markets/{id}/sentiment` and `/comparables`** return `claims[] + citations[]` (SectionOut shape) rather than the structured envelope in the spec.
+- **`/thesis`** returns a clean `thesis` object: `verdict` (`buy_yes`/`buy_no`/`watch`), `confidence` (0-1), `summary`, `sections[]`, `citations[]`. The engine produces a *directional* verdict, not a numeric edge, so **`edge_pp`, `bull_case`, `bear_case` are `null` in v1** (the opposing case comes from `counter_thesis` when you pass `?counter=true`). All declared nullable in the spec.
+- **`/sentiment`** returns a prose `summary` + `sources[]`. **`score`/`confidence` are `null` in v1** — the sentiment agent emits a written read, not a scored direction. We return null rather than fabricate a number (anti-hallucination is the whole point). Numeric scoring lands in v1.1.
+- **`/comparables`** returns a prose `summary` + `citations[]`. The structured `comparables[]` array (per-market `similarity_score`, `shape`, `realized_value`) is **empty in v1** — the matcher computes hits internally but doesn't yet surface them as objects. Populated in v1.1.
+- **`/holders`** returns `address`, `display_name`, `side`, `shares`, `value_usd`. `avg_price_cents` / `unrealized_pnl_*` are `null` in v1 (the holders feed carries position size, not entry price).
+- **`/ask`** returns a clean `answer` string + `citations[]`.
 
-These are tracked in the v1.0 milestone and will be aligned in v1.0 final (Week 2). The codegen-from-spec approach is still recommended — Zayd's client just needs a small adapter layer for these three endpoints.
-
-If you'd prefer the spec be updated to match the implementation as-is, ping me — happy to ship that as v1.0-rc2 today.
+Everything else (`/markets`, `/outcomes`, `/resolution`, `/news`) is fully populated. Nullable fields are declared nullable in the spec, so a generated client handles them natively.
 
 ## Known limits in v1
 

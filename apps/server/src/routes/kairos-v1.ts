@@ -37,7 +37,7 @@ router.get('/health', (_req: Request, res: Response) => {
   res.json({
     ok: true,
     service: 'pm-copilot',
-    version: '1.0.0-rc1',
+    version: '1.0.0',
     uptime_s: process.uptime(),
   });
 });
@@ -136,6 +136,62 @@ function toNum(v: unknown): number | null {
   if (v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// ── Internal-shape → external-spec transforms ────────────────────────
+// The supervisor/agents emit pmcopilot's internal Brief/claims shapes
+// (prose claims with {{book·1}} citation-pill placeholders). The external
+// API contract (docs/kairos/openapi.yaml) promises clean fields. These
+// helpers do the translation so partners never see internal syntax.
+
+/** Strip internal citation-pill placeholders ({{book·1}}) and join claim
+ *  texts into clean prose. */
+function claimsToProse(claims: ReadonlyArray<{ text: string }> | undefined): string {
+  if (!claims?.length) return '';
+  return claims
+    .map((c) => String(c.text ?? '').replace(/\{\{[^}]+\}\}/g, '').replace(/\s{2,}/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** Brief directional edge → spec verdict enum. */
+function mapVerdict(edge: 'yes' | 'no' | 'none'): 'buy_yes' | 'buy_no' | 'watch' {
+  if (edge === 'yes') return 'buy_yes';
+  if (edge === 'no') return 'buy_no';
+  return 'watch';
+}
+
+/** Brief confidence band → 0-1 number (spec wants numeric confidence). */
+function confidenceToNumber(c: 'high' | 'med' | 'low'): number {
+  return c === 'high' ? 0.8 : c === 'med' ? 0.55 : 0.3;
+}
+
+/** News relevance band → 0-1 score (spec wants relevance_score:number). */
+function relevanceToScore(r: 'high' | 'med' | 'low' | undefined): number | null {
+  if (r === 'high') return 0.9;
+  if (r === 'med') return 0.6;
+  if (r === 'low') return 0.3;
+  return null;
+}
+
+/** Internal Citation → external citation shape. */
+function mapCitation(c: { id?: string; url?: string; kind?: string; label?: string }) {
+  return { id: c.id ?? null, url: c.url ?? null, source: c.kind ?? null, quote: c.label ?? null };
+}
+
+/** Brief.sections object → spec [{title, body}] array. */
+function mapSections(sections: Record<string, ReadonlyArray<{ text: string }>>) {
+  const order = ['setup', 'book', 'smart', 'catalysts', 'verdict'] as const;
+  const titles: Record<string, string> = {
+    setup: 'Setup',
+    book: 'Order Book',
+    smart: 'Smart Money',
+    catalysts: 'Catalysts & News',
+    verdict: 'Verdict',
+  };
+  return order
+    .filter((k) => sections[k]?.length)
+    .map((k) => ({ title: titles[k] ?? k, body: claimsToProse(sections[k]) }));
 }
 
 /** Read agent grounding from the cached brief event log, if present. */
@@ -266,6 +322,13 @@ router.get('/markets/:market_id/holders', async (req: Request, res: Response) =>
       side: h.side,
       shares: h.shares,
       value_usd: h.sizeUsd,
+      // avg_price + unrealized PnL are not in pmcopilot's holders feed yet
+      // (HolderRow carries size, not entry). Spec marks them nullable.
+      avg_price_cents: null,
+      unrealized_pnl_usd: null,
+      unrealized_pnl_pct: null,
+      first_position_at: null,
+      behavior_tags: [] as string[],
     })),
     concentration_top5_pct: grounding && grounding.kind === 'holders' ? grounding.concentrationTop5Pct : null,
     side_bias: grounding && grounding.kind === 'holders' ? grounding.sideBias : null,
@@ -286,14 +349,17 @@ router.get('/markets/:market_id/news', async (req: Request, res: Response) => {
   const items = grounding && grounding.kind === 'news' ? grounding.items.slice(0, limit) : [];
   return res.json({
     market_id: m.marketId,
-    items: items.map((a) => ({
+    items: items.map((a, i) => ({
       title: a.headline,
       url: a.url,
       source: a.source,
       published_at: a.publishedAt ?? null,
-      relevance: a.relevance ?? null,
-      from: a.from ?? null,
-      snippet: a.snippet ?? null,
+      relevance_score: relevanceToScore(a.relevance),
+      // pmcopilot's news agent does not classify directional impact yet.
+      impact_direction: 'unclear' as const,
+      summary: a.snippet ?? null,
+      citation_id: `news-${i + 1}`,
+      // extra signal beyond the spec — harmless additive field
       unverified: a.unverified ?? false,
     })),
     background: grounding && grounding.kind === 'news' ? grounding.background ?? null : null,
@@ -315,10 +381,20 @@ router.get('/markets/:market_id/sentiment', async (req: Request, res: Response) 
     (e): e is Extract<AgentEvent, { t: 'agent:done' }> =>
       (e as AgentEvent).t === 'agent:done' && (e as Extract<AgentEvent, { t: 'agent:done' }>).agent === 'sentiment',
   );
+  const claims = sentimentDone?.output?.claims ?? [];
+  const summary = claimsToProse(claims);
   return res.json({
     market_id: m.marketId,
-    claims: sentimentDone?.output?.claims ?? [],
-    citations: sentimentDone?.output?.citations ?? [],
+    // pmcopilot's sentiment agent emits a prose read, not a scored
+    // direction. Numeric score/confidence are null until the agent is
+    // upgraded to emit them (v1.1). label stays null rather than
+    // fabricating a direction we didn't actually compute.
+    score: null,
+    confidence: null,
+    label: summary ? 'reported' : 'insufficient_data',
+    summary: summary || null,
+    sources_count: (sentimentDone?.output?.citations ?? []).length,
+    sources: (sentimentDone?.output?.citations ?? []).map(mapCitation),
     fetched_at: new Date().toISOString(),
   });
 });
@@ -326,8 +402,21 @@ router.get('/markets/:market_id/sentiment', async (req: Request, res: Response) 
 // ─────────────────────────────────────────────────────────────────────
 // GET /v1/markets/{market_id}/thesis
 // ─────────────────────────────────────────────────────────────────────
+const COUNTER_PROMPT =
+  'Argue the case AGAINST the current market consensus and the leading thesis. ' +
+  'Give three strong reasons the OPPOSITE side could be right, grounded in the news, holders, and comparables. ' +
+  'Do not soften. If the lean is YES, argue NO; if NO, argue YES. ' +
+  'End with one concrete observation that, if it happened, would flip the view.';
+
+function oppositeVerdict(v: 'buy_yes' | 'buy_no' | 'watch'): 'buy_yes' | 'buy_no' | 'watch' {
+  if (v === 'buy_yes') return 'buy_no';
+  if (v === 'buy_no') return 'buy_yes';
+  return 'watch';
+}
+
 router.get('/markets/:market_id/thesis', async (req: Request, res: Response) => {
   const marketId = getParam(req, 'market_id');
+  const wantCounter = String(req.query['counter'] || '').toLowerCase() === 'true';
   const m = await resolveMarketById(marketId);
   if (!m) return notFound(res, 'market');
   const events = await getOrRunBriefEvents(req, m);
@@ -338,12 +427,55 @@ router.get('/markets/:market_id/thesis', async (req: Request, res: Response) => 
       message: 'thesis still generating; retry in 5-10s',
     });
   }
+
+  const verdict = mapVerdict(brief.edge);
+  const thesis = {
+    verdict,
+    // pmcopilot's Brief carries a directional edge, not a numeric one,
+    // and does not split bull/bear — null rather than fabricate.
+    edge_pp: null as number | null,
+    confidence: confidenceToNumber(brief.confidence),
+    summary: claimsToProse(brief.sections.verdict) || null,
+    bull_case: null as string | null,
+    bear_case: null as string | null,
+    sections: mapSections(brief.sections as unknown as Record<string, { text: string }[]>),
+    citations: brief.citations.map(mapCitation),
+  };
+
+  let counter_thesis: typeof thesis | undefined;
+  if (wantCounter) {
+    try {
+      const routing = byokProvider(req.byok ?? {});
+      const slot = readGrounding(m.marketId);
+      const counterEvents: unknown[] = [];
+      const counterAns = await runAsk(
+        m,
+        { book: slot?.book ?? null, holders: slot?.holders ?? null, news: slot?.news ?? null },
+        COUNTER_PROMPT,
+        ((ev: unknown) => counterEvents.push(ev)) as Parameters<typeof runAsk>[3],
+        routing.primary,
+        undefined,
+        getExaSearcher(),
+      );
+      counter_thesis = {
+        verdict: oppositeVerdict(verdict),
+        edge_pp: null,
+        confidence: null as unknown as number,
+        summary: claimsToProse(counterAns?.claims) || null,
+        bull_case: null,
+        bear_case: null,
+        sections: [],
+        citations: (counterAns?.citations ?? []).map(mapCitation),
+      };
+    } catch {
+      counter_thesis = undefined; // counter is best-effort; omit on failure
+    }
+  }
+
   return res.json({
     market_id: m.marketId,
-    verdict: brief.edge,
-    confidence: brief.confidence,
-    sections: brief.sections,
-    citations: brief.citations,
+    thesis,
+    ...(counter_thesis ? { counter_thesis } : {}),
     generated_at: new Date().toISOString(),
   });
 });
@@ -361,10 +493,17 @@ router.get('/markets/:market_id/comparables', async (req: Request, res: Response
     (e): e is Extract<AgentEvent, { t: 'agent:done' }> =>
       (e as AgentEvent).t === 'agent:done' && (e as Extract<AgentEvent, { t: 'agent:done' }>).agent === 'comparables',
   );
+  // The comparables agent computes structured ComparableHit[] internally
+  // but only surfaces a prose AgentResult. Exposing the structured hits
+  // (similarity_score, shape, realized_value) is a v1.1 core change. For
+  // now: clean prose summary + citations, structured array empty rather
+  // than fabricated.
+  void limit;
   return res.json({
     market_id: m.marketId,
-    claims: (compDone?.output?.claims ?? []).slice(0, limit),
-    citations: compDone?.output?.citations ?? [],
+    comparables: [] as unknown[],
+    summary: claimsToProse(compDone?.output?.claims) || null,
+    citations: (compDone?.output?.citations ?? []).map(mapCitation),
     fetched_at: new Date().toISOString(),
   });
 });
@@ -429,8 +568,8 @@ router.post('/ask', async (req: Request, res: Response) => {
     return res.json({
       market_id: m.marketId,
       question,
-      claims: answer?.claims ?? [],
-      citations: answer?.citations ?? [],
+      answer: claimsToProse(answer?.claims),
+      citations: (answer?.citations ?? []).map(mapCitation),
       events: askEvents,
       complete: true,
     });
@@ -468,17 +607,56 @@ router.post('/research', async (req: Request, res: Response) => {
   return res.json({
     market_id: m.marketId,
     market: marketMetaToPublic(m),
-    holders: holdersG && holdersG.kind === 'holders' ? holdersG.rows : [],
-    news: newsG && newsG.kind === 'news' ? newsG.items : [],
+    holders:
+      holdersG && holdersG.kind === 'holders'
+        ? holdersG.rows.map((h) => ({
+            address: h.address,
+            display_name: h.label ?? null,
+            side: h.side,
+            shares: h.shares,
+            value_usd: h.sizeUsd,
+            avg_price_cents: null,
+            unrealized_pnl_usd: null,
+            unrealized_pnl_pct: null,
+            first_position_at: null,
+            behavior_tags: [] as string[],
+          }))
+        : [],
+    news:
+      newsG && newsG.kind === 'news'
+        ? newsG.items.map((a, i) => ({
+            title: a.headline,
+            url: a.url,
+            source: a.source,
+            published_at: a.publishedAt ?? null,
+            relevance_score: relevanceToScore(a.relevance),
+            impact_direction: 'unclear' as const,
+            summary: a.snippet ?? null,
+            citation_id: `news-${i + 1}`,
+          }))
+        : [],
     book: bookG && bookG.kind === 'book' ? bookG : null,
-    sentiment: sentimentDone?.output ?? null,
-    comparables: compDone?.output ?? null,
+    sentiment: {
+      score: null,
+      confidence: null,
+      summary: claimsToProse(sentimentDone?.output?.claims) || null,
+      sources: (sentimentDone?.output?.citations ?? []).map(mapCitation),
+    },
+    comparables: {
+      comparables: [] as unknown[],
+      summary: claimsToProse(compDone?.output?.claims) || null,
+      citations: (compDone?.output?.citations ?? []).map(mapCitation),
+    },
     thesis: brief
       ? {
-          verdict: brief.edge,
-          confidence: brief.confidence,
-          sections: brief.sections,
-          citations: brief.citations,
+          verdict: mapVerdict(brief.edge),
+          edge_pp: null,
+          confidence: confidenceToNumber(brief.confidence),
+          summary: claimsToProse(brief.sections.verdict) || null,
+          bull_case: null,
+          bear_case: null,
+          sections: mapSections(brief.sections as unknown as Record<string, { text: string }[]>),
+          citations: brief.citations.map(mapCitation),
         }
       : null,
     resolution: {
